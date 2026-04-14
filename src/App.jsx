@@ -188,20 +188,50 @@ return null;
 }
 }
 
+// قائمة المجالات المختلفة — نوزعها على الدفعات
+const KC_DOMAINS = [
+[“علوم وطبيعة”, “فيزياء وكيمياء”, “علم الأحياء”, “فلك وفضاء”],
+[“تاريخ إسلامي”, “قرآن وسنة”, “فقه إسلامي”, “سيرة نبوية”],
+[“جغرافيا عالمية”, “دول وعواصم”, “بحار وجبال”, “مناخ وبيئة”],
+[“رياضة وألعاب”, “كرة القدم”, “ألعاب أولمبية”, “رياضيون مشهورون”],
+[“تقنية وحاسوب”, “اخترعات وابتكارات”, “ذكاء اصطناعي”, “برمجة وإنترنت”],
+[“لغة عربية”, “نحو وصرف”, “أدب وشعر”, “معاني وأمثال”],
+[“طب وصحة”, “جسم الإنسان”, “أمراض وعلاج”, “تغذية وصحة”],
+[“اقتصاد وأعمال”, “دول وثروات”, “عملات ومال”, “تجارة وصناعة”],
+];
+let _domainIndex = 0;
+
 async function generateKnowledgeQuestions(difficulty, count = 10) {
 const seed = Math.random().toString(36).slice(2, 8);
-// أرسل كامل الأسئلة المستخدمة لتجنب التكرار
-const recentQs = Array.from(_usedQTexts).join(” | “);
+const usedList = Array.from(_usedQTexts).slice(-80).join(” | “);
+
+// اختر مجموعة مجالات مختلفة لكل دفعة
+const domains = KC_DOMAINS[_domainIndex % KC_DOMAINS.length];
+_domainIndex++;
+const domainStr = domains.join(”، “);
 
 const diffNote = {
-easy: “سهلة جداً يعرفها أي شخص”,
-medium: “متوسطة تحتاج ثقافة عامة”,
+easy: “سهلة جداً يعرفها أي شخص عادي”,
+medium: “متوسطة تحتاج ثقافة عامة جيدة”,
 hard: “صعبة تحتاج معرفة متعمقة”,
-veryhard: “صعبة جداً للمتخصصين”,
-extreme: “استثنائية الصعوبة - نادرة جداً”,
+veryhard: “صعبة جداً للمتخصصين والمثقفين”,
+extreme: “استثنائية الصعوبة — أسئلة نادرة جداً”,
 }[difficulty] || “متوسطة”;
 
-const prompt = `[seed:${seed}] أنشئ بالضبط ${count} أسئلة اختيار من متعدد (4 خيارات). مستوى الصعوبة: ${diffNote}. نوّع المجالات. ⚠️ لا تكرر: ${recentQs || "لا يوجد"}. أرجع JSON فقط: {"questions": [{"type": "mcq", "mode": "quiz", "q": "...", "options": ["...","...","...","..."], "answer": 0}]}`;
+const prompt = `[seed:${seed}] أنشئ بالضبط ${count} أسئلة اختيار من متعدد (4 خيارات كل سؤال).
+مستوى الصعوبة: ${diffNote}
+ركّز على هذه المجالات: ${domainStr}
+وزّع الأسئلة بالتساوي على هذه المجالات — لا تركّز على مجال واحد فقط.
+
+⚠️ قواعد صارمة جداً:
+
+- لا تكرر أي سؤال من هذه القائمة: ${usedList || “لا يوجد”}
+- كل سؤال يجب أن يكون مختلفاً تماماً في الموضوع والصياغة
+- الأسئلة متنوعة ومختلفة 100%
+- لا تكرر نفس الحقائق بصياغة مختلفة
+
+أرجع JSON فقط بدون أي نص إضافي:
+{“questions”: [{“type”: “mcq”, “mode”: “quiz”, “q”: “نص السؤال هنا؟”, “options”: [“خ1”,“خ2”,“خ3”,“خ4”], “answer”: 0}]}`;
 
 try {
 const response = await fetch(“https://api.anthropic.com/v1/messages”, {
@@ -1730,7 +1760,7 @@ await set(ref(db, `knowledgeLeaderboard/${authUser.uid}`), entry);
 // ─── Start game: load first batch ───
 async function startGame() {
 setPhase(“loading”);
-setLoadingMsg(“🧠 يحضّر لك 100 سؤال…”);
+setLoadingMsg(“🧠 يحضّر لك 100 سؤال متنوعة…”);
 setScore(0);
 setCurrentQ(0);
 setLifelineUsed(false);
@@ -1742,30 +1772,56 @@ setQuestions([]);
 setQuestionBank([]);
 
 ```
-// مسح سجل الأسئلة المستخدمة عند بدء جلسة جديدة
-_clearUsedQuestions();
+try {
+  // نولد الـ 100 سؤال كاملة من البداية في 4 دفعات متوازية
+  // كل دفعة بمستوى مختلف وتعليمات صريحة بعدم التكرار
+  setLoadingMsg("🧠 جار توليد الأسئلة (1/4)...");
+  const batch1 = await generateKnowledgeQuestions("easy", 20);        // أسئلة 1-20
+  
+  setLoadingMsg("🧠 جار توليد الأسئلة (2/4)...");
+  const batch2 = await generateKnowledgeQuestions("medium", 25);      // أسئلة 21-45
 
-// Load first 10 questions
-const qs = await generateKnowledgeQuestions("easy", 10);
-setQuestions(qs);
+  setLoadingMsg("🧠 جار توليد الأسئلة (3/4)...");
+  const batch3 = await generateKnowledgeQuestions("hard", 25);        // أسئلة 46-70
 
-// Pre-load next batch in background
-preloadBatch("medium", 10, qs.length);
+  setLoadingMsg("🧠 جار توليد الأسئلة (4/4)...");
+  const batch4 = await generateKnowledgeQuestions("veryhard", 30);    // أسئلة 71-100
 
-setPhase("playing");
+  // دمج كل الأسئلة مع ضمان عدم التكرار بالتحقق من نص السؤال
+  const allQs = [...batch1, ...batch2, ...batch3, ...batch4];
+  const seen = new Set();
+  const unique = allQs.filter(q => {
+    if (seen.has(q.q)) return false;
+    seen.add(q.q);
+    return true;
+  });
+
+  // إذا ما وصلنا 100 سؤال، نكمل من الـ fallback
+  const fallbackExtra = shuffle(FALLBACK_QUIZ)
+    .filter(q => !seen.has(q.q))
+    .slice(0, Math.max(0, 100 - unique.length))
+    .map(q => ({ ...q, type: "mcq", mode: "quiz" }));
+
+  const final100 = [...unique, ...fallbackExtra].slice(0, 100);
+  setQuestions(final100);
+  setPhase("playing");
+} catch(e) {
+  console.error("Failed to load questions:", e);
+  // Fallback: استخدم الأسئلة المحلية
+  const fallback = [
+    ...shuffle(FALLBACK_QUIZ).map(q => ({ ...q, type: "mcq", mode: "quiz" })),
+    ...shuffle(FALLBACK_QUIZ).map(q => ({ ...q, type: "mcq", mode: "quiz" })),
+    ...shuffle(FALLBACK_QUIZ).map(q => ({ ...q, type: "mcq", mode: "quiz" })),
+  ].slice(0, 100);
+  setQuestions(fallback);
+  setPhase("playing");
+}
 ```
 
 }
 
-// Pre-load questions in background and add to bank
-async function preloadBatch(diff, count, startFrom) {
-setLoadingNext(true);
-try {
-const newQs = await generateKnowledgeQuestions(diff, count);
-setQuestionBank(prev => […prev, …newQs]);
-} catch(e) {}
-setLoadingNext(false);
-}
+// دالة فارغة للتوافق (مو مستخدمة بعد)
+async function preloadBatch(diff, count, startFrom) {}
 
 // ─── Timer ───
 useEffect(() => {
@@ -1863,29 +1919,7 @@ if (newScore >= 100) {
   return;
 }
 
-// Ensure we have questions
-if (nextIdx >= questions.length) {
-  // Pull from bank or load new batch
-  if (questionBank.length >= 10) {
-    const nextBatch = questionBank.slice(0, 10);
-    setQuestions(prev => [...prev, ...nextBatch]);
-    setQuestionBank(prev => prev.slice(10));
-    // Preload more
-    const nextDiff = KC_DIFFICULTY_MAP[newScore]?.diff || "extreme";
-    if (!loadingNext) preloadBatch(nextDiff, 10, 0);
-  } else {
-    // Load synchronously (fallback)
-    const nextDiff = KC_DIFFICULTY_MAP[newScore]?.diff || "extreme";
-    generateKnowledgeQuestions(nextDiff, 10).then(newQs => {
-      setQuestions(prev => [...prev, ...newQs]);
-    });
-  }
-} else if (nextIdx === questions.length - 3 && !loadingNext) {
-  // Pre-load when 3 questions left
-  const nextDiff = KC_DIFFICULTY_MAP[Math.min(newScore + 10, 99)]?.diff || "extreme";
-  preloadBatch(nextDiff, 10, 0);
-}
-
+// كل الأسئلة محملة مسبقاً — فقط تقدم للسؤال التالي
 setCurrentQ(nextIdx);
 ```
 

@@ -359,8 +359,24 @@ function Particles() {
 
 function Logo({ size = "large" }) {
   const s = size === "large" ? 48 : 28;
+  const imgSize = size === "large" ? 56 : 34;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: size === "large" ? 14 : 8, justifyContent: "center" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: size === "large" ? 12 : 7, justifyContent: "center" }}>
+
+      {/* اللوقو الرسمي */}
+      <img
+        src="/logo.PNG"
+        alt="نقطة فوز"
+        style={{
+          width: imgSize,
+          height: imgSize,
+          objectFit: "contain",
+          flexShrink: 0,
+          filter: "drop-shadow(0 0 6px rgba(255,255,255,0.15))",
+        }}
+      />
+
+      {/* النص: نقطة */}
       <div
         style={{
           fontSize: s,
@@ -369,12 +385,16 @@ function Logo({ size = "large" }) {
           background: `linear-gradient(135deg, ${theme.accent}, ${theme.purple}, ${theme.accentAlt})`,
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
-          letterSpacing: "-1px",
-          lineHeight: 1.1,
+          letterSpacing: "0px",
+          lineHeight: 1.2,
+          paddingLeft: 2,
+          paddingRight: 2,
         }}
       >
         نقطة
       </div>
+
+      {/* الفاصل */}
       <div
         style={{
           width: size === "large" ? 4 : 3,
@@ -383,6 +403,8 @@ function Logo({ size = "large" }) {
           borderRadius: 2,
         }}
       />
+
+      {/* النص: فوز */}
       <div
         style={{
           fontSize: s,
@@ -391,8 +413,10 @@ function Logo({ size = "large" }) {
           background: `linear-gradient(135deg, ${theme.accentAlt}, ${theme.yellow})`,
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
-          letterSpacing: "-1px",
-          lineHeight: 1.1,
+          letterSpacing: "0px",
+          lineHeight: 1.2,
+          paddingLeft: 2,
+          paddingRight: 2,
         }}
       >
         فوز

@@ -1128,17 +1128,10 @@ export default function ArenaApp() {
                 onMouseOver={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(66,133,244,0.55)"; }}
                 onMouseOut={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(66,133,244,0.4)"; }}
               >
-                {/* Google Logo - دائرة بيضاء بالألوان الرسمية */}
                 <div style={{
-                  width: 34,
-                  height: 34,
-                  background: "#fff",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                  boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+                  width: 34, height: 34, background: "#fff", borderRadius: "50%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0, boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
                 }}>
                   <svg width="20" height="20" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -1150,25 +1143,33 @@ export default function ArenaApp() {
                 سجّل بـ Google
               </button>
 
-              {/* زر الضيف داخل مربع */}
+              {/* زر الضيف - border واضح وخلفية مميزة */}
               <button
                 onClick={() => { setAuthUser({ guest: true, displayName: "" }); setAuthLoading(false); }}
                 style={{
                   width: "100%",
                   padding: "15px 24px",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "2px solid rgba(255,255,255,0.12)",
+                  background: "rgba(255,255,255,0.07)",
+                  border: "2px solid rgba(255,255,255,0.3)",
                   borderRadius: 14,
                   cursor: "pointer",
-                  color: theme.textMuted,
+                  color: "#ccc",
                   fontSize: 15,
                   fontWeight: 700,
                   fontFamily: "Cairo, sans-serif",
                   direction: "rtl",
                   transition: "all 0.2s ease",
                 }}
-                onMouseOver={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.35)"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-                onMouseOut={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = theme.textMuted; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                onMouseOver={e => {
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)";
+                  e.currentTarget.style.color = "#fff";
+                  e.currentTarget.style.background = "rgba(255,255,255,0.13)";
+                }}
+                onMouseOut={e => {
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)";
+                  e.currentTarget.style.color = "#ccc";
+                  e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+                }}
               >
                 🎮 العب كضيف (بدون حفظ)
               </button>

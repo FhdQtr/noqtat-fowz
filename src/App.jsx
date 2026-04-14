@@ -369,7 +369,7 @@ function Logo({ size = "large" }) {
           fontSize: s,
           fontWeight: 900,
           fontFamily: "Cairo, sans-serif",
-          background: `linear-gradient(135deg, ${theme.accent}, ${theme.purple}, ${theme.accentAlt})`,
+          background: "linear-gradient(135deg, #ffffff 0%, #e8d5d5 50%, #c8a0a8 100%)",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
           letterSpacing: "0px",
@@ -386,7 +386,7 @@ function Logo({ size = "large" }) {
         style={{
           width: size === "large" ? 4 : 3,
           height: size === "large" ? 40 : 24,
-          background: `linear-gradient(180deg, ${theme.accent}, ${theme.accentAlt})`,
+          background: "linear-gradient(180deg, #ffffff, #8B1538)",
           borderRadius: 2,
         }}
       />
@@ -397,7 +397,7 @@ function Logo({ size = "large" }) {
           fontSize: s,
           fontWeight: 900,
           fontFamily: "Cairo, sans-serif",
-          background: `linear-gradient(135deg, ${theme.accentAlt}, ${theme.yellow})`,
+          background: "linear-gradient(135deg, #8B1538 0%, #b02050 50%, #d4356a 100%)",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
           letterSpacing: "0px",
@@ -2052,8 +2052,8 @@ function HomeScreen({ playerName, setPlayerName, nameError, setNameError, authUs
             src="/logo.PNG"
             alt="نقطة فوز"
             style={{
-              width: 120,
-              height: 120,
+              width: 160,
+              height: 160,
               objectFit: "contain",
               filter: "drop-shadow(0 0 18px rgba(139,21,56,0.7)) drop-shadow(0 0 6px rgba(255,255,255,0.2))",
               position: "relative",

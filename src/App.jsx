@@ -1712,6 +1712,10 @@ setLeaderboard(sorted);
 async function saveScore(finalScore) {
 if (!authUser || authUser.guest) return;
 try {
+// احفظ فقط إذا الدرجة الجديدة أعلى من المحفوظة
+const existing = await get(ref(db, `knowledgeLeaderboard/${authUser.uid}`));
+const existingScore = existing.val()?.score || 0;
+if (finalScore > existingScore) {
 const entry = {
 name: playerName || authUser.displayName || “لاعب”,
 score: finalScore,
@@ -1719,6 +1723,7 @@ date: new Date().toISOString().split(“T”)[0],
 uid: authUser.uid,
 };
 await set(ref(db, `knowledgeLeaderboard/${authUser.uid}`), entry);
+}
 } catch (e) {}
 }
 
@@ -1981,17 +1986,29 @@ return (
         <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "Cairo", color: theme.accent, marginBottom: 12, textAlign: "center" }}>
           🏆 أفضل المتحدين
         </div>
-        {leaderboard.map((p, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < leaderboard.length - 1 ? `1px solid ${theme.border}` : "none" }}>
-            <span style={{ fontSize: 18, width: 28, textAlign: "center", flexShrink: 0 }}>
-              {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
-            </span>
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 700, fontFamily: "Cairo", color: p.uid === authUser?.uid ? theme.accent : theme.text }}>
-              {p.name} {p.uid === authUser?.uid ? "(أنت)" : ""}
-            </span>
-            <span style={{ fontSize: 16, fontWeight: 900, fontFamily: "Cairo", color: theme.yellow }}>{p.score}</span>
-          </div>
-        ))}
+        {leaderboard.map((p, i) => {
+          const isMe = p.uid === authUser?.uid;
+          return (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 8px",
+              borderRadius: 10,
+              marginBottom: 4,
+              background: isMe ? `${theme.accent}12` : "transparent",
+              border: isMe ? `1px solid ${theme.accent}33` : "1px solid transparent",
+            }}>
+              <span style={{ fontSize: 20, width: 28, textAlign: "center", flexShrink: 0 }}>
+                {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
+              </span>
+              <span style={{ flex: 1, fontSize: 15, fontWeight: 700, fontFamily: "Cairo", color: isMe ? theme.accent : theme.text }}>
+                {p.name}{isMe ? " (أنت)" : ""}
+              </span>
+              <span style={{ fontSize: 17, fontWeight: 900, fontFamily: "Cairo", color: isMe ? theme.accent : theme.yellow }}>
+                {p.score}
+              </span>
+            </div>
+          );
+        })}
       </div>
     )}
 
@@ -2024,15 +2041,33 @@ return (
 حققت الإنجاز الألماسي النادر 💠
 </p>
 {leaderboard.length > 0 && (
-<div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, marginBottom: 24, textAlign: “right” }}>
-<div style={{ fontSize: 16, fontWeight: 800, fontFamily: “Cairo”, color: theme.yellow, marginBottom: 12, textAlign: “center” }}>🏆 لوحة المتصدرين</div>
-{leaderboard.map((p, i) => (
-<div key={i} style={{ display: “flex”, alignItems: “center”, gap: 10, padding: “8px 0”, borderBottom: i < leaderboard.length - 1 ? `1px solid ${theme.border}` : “none” }}>
-<span style={{ fontSize: 18, width: 28, textAlign: “center”, flexShrink: 0 }}>{i === 0 ? “🥇” : i === 1 ? “🥈” : i === 2 ? “🥉” : `${i+1}.`}</span>
-<span style={{ flex: 1, fontSize: 15, fontWeight: 700, fontFamily: “Cairo”, color: p.uid === authUser?.uid ? theme.yellow : theme.text }}>{p.name}</span>
-<span style={{ fontSize: 16, fontWeight: 900, fontFamily: “Cairo”, color: theme.yellow }}>{p.score}</span>
+<div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, marginBottom: 20, textAlign: “right” }}>
+<div style={{ fontSize: 16, fontWeight: 800, fontFamily: “Cairo”, color: theme.yellow, marginBottom: 12, textAlign: “center” }}>
+🏆 أفضل المتحدين
 </div>
-))}
+{leaderboard.map((p, i) => {
+const isMe = p.uid === authUser?.uid;
+return (
+<div key={i} style={{
+display: “flex”, alignItems: “center”, gap: 10,
+padding: “10px 8px”,
+borderRadius: 10,
+marginBottom: 4,
+background: isMe ? `${theme.accent}12` : “transparent”,
+border: isMe ? `1px solid ${theme.accent}33` : “1px solid transparent”,
+}}>
+<span style={{ fontSize: 20, width: 28, textAlign: “center”, flexShrink: 0 }}>
+{i === 0 ? “🥇” : i === 1 ? “🥈” : i === 2 ? “🥉” : `${i + 1}.`}
+</span>
+<span style={{ flex: 1, fontSize: 15, fontWeight: 700, fontFamily: “Cairo”, color: isMe ? theme.accent : theme.text }}>
+{p.name}{isMe ? “ (أنت)” : “”}
+</span>
+<span style={{ fontSize: 17, fontWeight: 900, fontFamily: “Cairo”, color: isMe ? theme.accent : theme.yellow }}>
+{p.score}
+</span>
+</div>
+);
+})}
 </div>
 )}
 <Button onClick={startGame} fullWidth color=”#d97706” style={{ marginBottom: 10 }}>🔄 تحدّ نفسك مرة ثانية</Button>

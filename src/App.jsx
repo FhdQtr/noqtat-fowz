@@ -95,7 +95,28 @@ const AI_SYSTEM_PROMPT = `أنت مولد أسئلة لمسابقة ثقافية
 
 أجب فقط بـ JSON بدون أي نص إضافي أو backticks.`;
 
-async function generateAIQuestions(modes, count = 10) {
+// ─── Question History (prevents repeats across rounds) ──────────────────────
+const _usedQTexts = new Set();
+function _trackQuestions(qs) {
+  qs.forEach((q) => { if (q.q) _usedQTexts.add(q.q); });
+  if (_usedQTexts.size > 300) {
+    const arr = Array.from(_usedQTexts);
+    arr.slice(0, 100).forEach((k) => _usedQTexts.delete(k));
+  }
+}
+
+async function generateAIQuestions(modes, count = 10, difficulty = "mixed") {
+  const recentQs = Array.from(_usedQTexts).slice(-20).join(" | ");
+  const seed = Math.random().toString(36).slice(2, 8);
+
+  const diffNote = {
+    easy: "سهلة جداً مناسبة للجميع",
+    medium: "متوسطة الصعوبة",
+    hard: "صعبة تحتاج معرفة واسعة",
+    veryhard: "صعبة جداً للمتخصصين",
+    mixed: "نوّع بين مستويات الصعوبة",
+  }[difficulty] || "نوّع بين مستويات الصعوبة";
+
   const modeDescriptions = {
     quiz: `${Math.ceil(count * 0.3)} أسئلة اختيار من متعدد (4 خيارات) متنوعة التصنيفات`,
     speed: `${Math.ceil(count * 0.25)} أسئلة حسابية رياضية (جمع، طرح، ضرب، قسمة، جذور، أُسُس) الجواب يكون رقم فقط`,
@@ -105,18 +126,7 @@ async function generateAIQuestions(modes, count = 10) {
 
   const requestedModes = modes.map((m) => modeDescriptions[m]).filter(Boolean).join("\n");
 
-  const prompt = `أنشئ ${count} أسئلة مسابقة منوعة كالتالي:
-${requestedModes}
-
-أرجع JSON بهذا الشكل بالضبط (بدون backticks أو نص إضافي):
-{
-  "questions": [
-    {"type": "mcq", "mode": "quiz", "q": "نص السؤال", "options": ["خيار1", "خيار2", "خيار3", "خيار4"], "answer": 0},
-    {"type": "input", "mode": "speed", "q": "25 × 4 = ؟", "answer": "100"},
-    {"type": "mcq", "mode": "riddles", "q": "نص اللغز", "options": ["خيار1", "خيار2", "خيار3", "خيار4"], "answer": 0},
-    {"type": "word", "mode": "words", "q": "رتب الحروف", "letters": ["ح","ر","ب"], "answer": "بحر", "hint": "مسطح مائي"}
-  ]
-}`;
+  const prompt = `[seed:${seed}] أنشئ ${count} أسئلة مسابقة منوعة كالتالي:\n${requestedModes}\n\nمستوى الصعوبة: ${diffNote}\nنوّع المجالات: علوم، تاريخ، جغرافيا، رياضة، تقنية، قرآن وسنة، لغة عربية، فلك، طبيعة، طب، اقتصاد، فن وثقافة\n\n⚠️ لا تكرر هذه الأسئلة المستخدمة مسبقاً: ${recentQs || "لا يوجد"}\n⚠️ كل سؤال يجب أن يكون مختلفاً تماماً في الموضوع والصياغة\n\nأرجع JSON بهذا الشكل بالضبط (بدون backticks أو نص إضافي):\n{\n  "questions": [\n    {"type": "mcq", "mode": "quiz", "q": "نص السؤال", "options": ["خيار1", "خيار2", "خيار3", "خيار4"], "answer": 0},\n    {"type": "input", "mode": "speed", "q": "25 × 4 = ؟", "answer": "100"},\n    {"type": "mcq", "mode": "riddles", "q": "نص اللغز", "options": ["خيار1", "خيار2", "خيار3", "خيار4"], "answer": 0},\n    {"type": "word", "mode": "words", "q": "رتب الحروف", "letters": ["ح","ر","ب"], "answer": "بحر", "hint": "مسطح مائي"}\n  ]\n}`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -142,36 +152,132 @@ ${requestedModes}
     const parsed = JSON.parse(clean);
 
     if (parsed.questions && parsed.questions.length > 0) {
+      _trackQuestions(parsed.questions);
       return parsed.questions;
     }
     throw new Error("No questions");
   } catch (err) {
     console.error("AI question generation failed:", err);
-    return null; // Will use fallback
+    return null;
+  }
+}
+
+async function generateKnowledgeQuestions(difficulty, count = 10) {
+  const seed = Math.random().toString(36).slice(2, 8);
+  const recentQs = Array.from(_usedQTexts).slice(-40).join(" | ");
+
+  const diffNote = {
+    easy: "سهلة جداً يعرفها أي شخص",
+    medium: "متوسطة تحتاج ثقافة عامة",
+    hard: "صعبة تحتاج معرفة متعمقة",
+    veryhard: "صعبة جداً للمتخصصين",
+    extreme: "استثنائية الصعوبة - نادرة جداً",
+  }[difficulty] || "متوسطة";
+
+  const prompt = `[seed:${seed}] أنشئ بالضبط ${count} أسئلة اختيار من متعدد (4 خيارات). مستوى الصعوبة: ${diffNote}. نوّع المجالات. ⚠️ لا تكرر: ${recentQs || "لا يوجد"}. أرجع JSON فقط: {"questions": [{"type": "mcq", "mode": "quiz", "q": "...", "options": ["...","...","...","..."], "answer": 0}]}`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 3000,
+        system: AI_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!response.ok) throw new Error("API error");
+    const data = await response.json();
+    const text = data.content.map((i) => (i.type === "text" ? i.text : "")).join("");
+    const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+    if (parsed.questions?.length > 0) {
+      _trackQuestions(parsed.questions);
+      return parsed.questions;
+    }
+    throw new Error("empty");
+  } catch (e) {
+    return shuffle(FALLBACK_QUIZ).slice(0, count).map((q) => ({ ...q, type: "mcq", mode: "quiz" }));
   }
 }
 
 function getFallbackQuestions(modes, count = 10) {
+  const usedTexts = _usedQTexts;
   let questions = [];
   const perMode = Math.max(2, Math.ceil(count / modes.length));
 
   modes.forEach((gm) => {
-    switch (gm) {
-      case "quiz":
-        questions.push(...shuffle(FALLBACK_QUIZ).slice(0, perMode).map((q) => ({ ...q, type: "mcq", mode: "quiz" })));
-        break;
-      case "speed":
-        questions.push(...shuffle(FALLBACK_MATH).slice(0, perMode).map((q) => ({ ...q, type: "input", mode: "speed" })));
-        break;
-      case "riddles":
-        questions.push(...shuffle(FALLBACK_RIDDLES).slice(0, perMode).map((q) => ({ ...q, type: "mcq", mode: "riddles" })));
-        break;
-      case "words":
-        questions.push(...shuffle(FALLBACK_WORDS).slice(0, perMode).map((q) => ({ ...q, type: "word", mode: "words" })));
-        break;
-    }
+    const src = gm === "quiz" ? FALLBACK_QUIZ : gm === "speed" ? FALLBACK_MATH : gm === "riddles" ? FALLBACK_RIDDLES : FALLBACK_WORDS;
+    const type = gm === "speed" ? "input" : gm === "words" ? "word" : "mcq";
+    const filtered = shuffle(src).filter((q) => !usedTexts.has(q.q));
+    const pool = filtered.length >= perMode ? filtered : shuffle(src);
+    questions.push(...pool.slice(0, perMode).map((q) => ({ ...q, type, mode: gm })));
   });
-  return shuffle(questions).slice(0, count);
+
+  const result = shuffle(questions).slice(0, count);
+  _trackQuestions(result);
+  return result;
+}
+
+// ─── Owner Config ────────────────────────────────────────────────────────────
+// ⚠️ ضع هنا الـ UID الخاص بحسابك على Google (من Firebase Console → Authentication)
+// للحصول عليه: سجّل دخول في الموقع ثم افتح DevTools (F12) → Console وشغّل: firebase.auth().currentUser.uid
+const OWNER_UID = "GUv7rp4I2wVWVlG8MFznGNq1t6C3"; // UID فهد القحطاني - مالك الموقع
+
+function isOwner(authUser) {
+  return authUser?.uid === OWNER_UID;
+}
+
+// شارة المالك الخاصة
+function OwnerBadge({ size = "normal" }) {
+  const isSmall = size === "small";
+  return (
+    <span
+      title="مالك الموقع"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: isSmall ? 3 : 4,
+        background: "linear-gradient(135deg, #fbbf24, #f59e0b, #d97706)",
+        borderRadius: isSmall ? 6 : 8,
+        padding: isSmall ? "1px 6px" : "2px 8px",
+        fontSize: isSmall ? 10 : 12,
+        fontWeight: 900,
+        fontFamily: "Cairo, sans-serif",
+        color: "#0a0a0f",
+        boxShadow: "0 0 10px rgba(251,191,36,0.5)",
+        letterSpacing: "0.3px",
+        flexShrink: 0,
+      }}
+    >
+      👑 مالك
+    </span>
+  );
+}
+
+// اسم اللاعب مع شارة المالك إن وُجدت
+function PlayerNameDisplay({ name, authUser, style: extraStyle }) {
+  const owner = isOwner(authUser);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, ...extraStyle }}>
+      {owner ? (
+        <span
+          style={{
+            background: "linear-gradient(135deg, #fbbf24, #f97316)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text",
+            fontWeight: 900,
+          }}
+        >
+          {name}
+        </span>
+      ) : (
+        <span>{name}</span>
+      )}
+      {owner && <OwnerBadge />}
+    </span>
+  );
 }
 
 const GAME_MODES = [
@@ -1107,32 +1213,16 @@ export default function ArenaApp() {
                   try { await signInWithGoogle(); } catch (e) { console.error("Login error:", e); }
                 }}
                 style={{
-                  width: "100%",
-                  padding: "15px 24px",
-                  background: "#4285F4",
-                  border: "none",
-                  borderRadius: 14,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 14,
-                  fontSize: 17,
-                  fontWeight: 800,
-                  fontFamily: "Cairo, sans-serif",
-                  color: "#fff",
-                  boxShadow: "0 4px 20px rgba(66,133,244,0.4)",
-                  transition: "all 0.2s ease",
-                  direction: "rtl",
+                  width: "100%", padding: "15px 24px", background: "#4285F4", border: "none",
+                  borderRadius: 14, cursor: "pointer", display: "flex", alignItems: "center",
+                  justifyContent: "center", gap: 14, fontSize: 17, fontWeight: 800,
+                  fontFamily: "Cairo, sans-serif", color: "#fff",
+                  boxShadow: "0 4px 20px rgba(66,133,244,0.4)", transition: "all 0.2s ease", direction: "rtl",
                 }}
                 onMouseOver={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(66,133,244,0.55)"; }}
                 onMouseOut={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(66,133,244,0.4)"; }}
               >
-                <div style={{
-                  width: 34, height: 34, background: "#fff", borderRadius: "50%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0, boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
-                }}>
+                <div style={{ width: 34, height: 34, background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
                   <svg width="20" height="20" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -1143,37 +1233,20 @@ export default function ArenaApp() {
                 سجّل بـ Google
               </button>
 
-              {/* زر الضيف - border واضح وخلفية مميزة */}
+              {/* زر الضيف داخل مربع */}
               <button
                 onClick={() => { setAuthUser({ guest: true, displayName: "" }); setAuthLoading(false); }}
                 style={{
-                  width: "100%",
-                  padding: "15px 24px",
-                  background: "rgba(255,255,255,0.07)",
-                  border: "2px solid rgba(255,255,255,0.3)",
-                  borderRadius: 14,
-                  cursor: "pointer",
-                  color: "#ccc",
-                  fontSize: 15,
-                  fontWeight: 700,
-                  fontFamily: "Cairo, sans-serif",
-                  direction: "rtl",
-                  transition: "all 0.2s ease",
+                  width: "100%", padding: "15px 24px", background: "rgba(255,255,255,0.07)",
+                  border: "2px solid rgba(255,255,255,0.3)", borderRadius: 14, cursor: "pointer",
+                  color: "#ccc", fontSize: 15, fontWeight: 700, fontFamily: "Cairo, sans-serif",
+                  direction: "rtl", transition: "all 0.2s ease",
                 }}
-                onMouseOver={e => {
-                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)";
-                  e.currentTarget.style.color = "#fff";
-                  e.currentTarget.style.background = "rgba(255,255,255,0.13)";
-                }}
-                onMouseOut={e => {
-                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)";
-                  e.currentTarget.style.color = "#ccc";
-                  e.currentTarget.style.background = "rgba(255,255,255,0.07)";
-                }}
+                onMouseOver={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.6)"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.background = "rgba(255,255,255,0.13)"; }}
+                onMouseOut={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; e.currentTarget.style.color = "#ccc"; e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
               >
                 🎮 العب كضيف (بدون حفظ)
               </button>
-
             </div>
 
             <div style={{ marginTop: 32 }}>
@@ -1204,6 +1277,10 @@ export default function ArenaApp() {
                 return;
               }
               setNameError("");
+              if (type === "knowledge") {
+                setScreen("knowledge");
+                return;
+              }
               setMatchType(type);
               setScreen("joinType");
             }}
@@ -1417,6 +1494,504 @@ export default function ArenaApp() {
             myPlayerId={myPlayerId}
           />
         )}
+
+        {screen === "knowledge" && (
+          <KnowledgeChallengeScreen
+            playerName={playerName}
+            authUser={authUser}
+            onHome={goHome}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Knowledge Challenge Screen ─────────────────────────────────────────────
+
+const KC_DIFFICULTY_MAP = [
+  // level 1-10: easy
+  ...Array.from({length: 10}, (_, i) => ({ level: i + 1, diff: "easy" })),
+  // level 11-20: medium
+  ...Array.from({length: 10}, (_, i) => ({ level: i + 11, diff: "medium" })),
+  // level 21-30: hard
+  ...Array.from({length: 10}, (_, i) => ({ level: i + 21, diff: "hard" })),
+  // level 31-50: veryhard
+  ...Array.from({length: 20}, (_, i) => ({ level: i + 31, diff: "veryhard" })),
+  // level 51-100: extreme
+  ...Array.from({length: 50}, (_, i) => ({ level: i + 51, diff: "extreme" })),
+];
+
+const KC_SPECIAL = { 97: "🥈 الفضي", 98: "🥇 الذهبي", 99: "💎 البلاتيني", 100: "💠 الألماسي" };
+
+const KC_DIFF_COLORS = {
+  easy: "#22c55e",
+  medium: "#fbbf24",
+  hard: "#ff6b35",
+  veryhard: "#ef4444",
+  extreme: "#a855f7",
+};
+
+function KnowledgeChallengeScreen({ playerName, authUser, onHome }) {
+  const [phase, setPhase] = useState("intro"); // intro | loading | playing | gameover | victory
+  const [questions, setQuestions] = useState([]);
+  const [currentQ, setCurrentQ] = useState(0);
+  const [score, setScore] = useState(0);
+  const [timer, setTimer] = useState(20);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+  const [showResult, setShowResult] = useState(false);
+  const [lifelineUsed, setLifelineUsed] = useState(false);   // فرصة ثانية
+  const [timeExtUsed, setTimeExtUsed] = useState(false);     // تمديد الوقت
+  const [onLastChance, setOnLastChance] = useState(false);   // مستخدم الفرصة الثانية الآن
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [loadingMsg, setLoadingMsg] = useState("");
+  const [questionBank, setQuestionBank] = useState([]);      // pre-loaded questions
+  const [loadingNext, setLoadingNext] = useState(false);
+  const timerRef = useRef(null);
+  const totalTime = 20;
+
+  // ─── Load leaderboard ───
+  useEffect(() => {
+    if (phase === "gameover" || phase === "victory") {
+      loadLeaderboard();
+    }
+  }, [phase]);
+
+  async function loadLeaderboard() {
+    try {
+      const snap = await get(ref(db, "knowledgeLeaderboard"));
+      const data = snap.val() || {};
+      const sorted = Object.values(data)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+      setLeaderboard(sorted);
+    } catch (e) {}
+  }
+
+  async function saveScore(finalScore) {
+    if (!authUser || authUser.guest) return;
+    try {
+      const entry = {
+        name: playerName || authUser.displayName || "لاعب",
+        score: finalScore,
+        date: new Date().toISOString().split("T")[0],
+        uid: authUser.uid,
+      };
+      await set(ref(db, `knowledgeLeaderboard/${authUser.uid}`), entry);
+    } catch (e) {}
+  }
+
+  // ─── Start game: load first batch ───
+  async function startGame() {
+    setPhase("loading");
+    setLoadingMsg("🧠 يحضّر لك 100 سؤال...");
+    setScore(0);
+    setCurrentQ(0);
+    setLifelineUsed(false);
+    setTimeExtUsed(false);
+    setOnLastChance(false);
+    setSelectedAnswer(null);
+    setShowResult(false);
+
+    // Load first 10 questions
+    const qs = await generateKnowledgeQuestions("easy", 10);
+    setQuestions(qs);
+
+    // Pre-load next batch in background
+    preloadBatch("medium", 10, qs.length);
+
+    setPhase("playing");
+  }
+
+  // Pre-load questions in background and add to bank
+  async function preloadBatch(diff, count, startFrom) {
+    setLoadingNext(true);
+    try {
+      const newQs = await generateKnowledgeQuestions(diff, count);
+      setQuestionBank(prev => [...prev, ...newQs]);
+    } catch(e) {}
+    setLoadingNext(false);
+  }
+
+  // ─── Timer ───
+  useEffect(() => {
+    if (phase !== "playing" || showResult) return;
+    clearInterval(timerRef.current);
+    setTimer(totalTime);
+    timerRef.current = setInterval(() => {
+      setTimer(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          handleTimeout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [currentQ, phase, showResult]);
+
+  function handleTimeout() {
+    if (onLastChance) {
+      // Used lifeline and still timed out → game over
+      endGame(score);
+    } else if (!lifelineUsed) {
+      // First timeout → trigger last chance automatically (lifeline)
+      setOnLastChance(true);
+      setLifelineUsed(true);
+      setTimer(15);
+    } else {
+      endGame(score);
+    }
+  }
+
+  function handleAnswer(idx) {
+    if (showResult || selectedAnswer !== null) return;
+    clearInterval(timerRef.current);
+    setSelectedAnswer(idx);
+    const q = questions[currentQ];
+    const correct = idx === q.answer;
+
+    if (correct) {
+      setShowResult(true);
+      setOnLastChance(false);
+      setTimeout(() => goNextQuestion(), 1400);
+    } else {
+      if (onLastChance) {
+        // wrong on last chance → game over
+        setShowResult(true);
+        setTimeout(() => endGame(score), 1600);
+      } else if (!lifelineUsed) {
+        // First wrong → give last chance automatically
+        setOnLastChance(true);
+        setLifelineUsed(true);
+        setSelectedAnswer(null);
+        // restart timer with 15s
+        setTimer(15);
+        timerRef.current = setInterval(() => {
+          setTimer(prev => {
+            if (prev <= 1) {
+              clearInterval(timerRef.current);
+              endGame(score);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        setShowResult(true);
+        setTimeout(() => endGame(score), 1600);
+      }
+    }
+  }
+
+  function useTimeExtension() {
+    if (timeExtUsed) return;
+    setTimeExtUsed(true);
+    setTimer(prev => prev + 15);
+  }
+
+  function goNextQuestion() {
+    const nextIdx = currentQ + 1;
+    const newScore = score + 1;
+    setScore(newScore);
+    setSelectedAnswer(null);
+    setShowResult(false);
+    setOnLastChance(false);
+
+    if (newScore >= 100) {
+      saveScore(100);
+      setPhase("victory");
+      return;
+    }
+
+    // Ensure we have questions
+    if (nextIdx >= questions.length) {
+      // Pull from bank or load new batch
+      if (questionBank.length >= 10) {
+        const nextBatch = questionBank.slice(0, 10);
+        setQuestions(prev => [...prev, ...nextBatch]);
+        setQuestionBank(prev => prev.slice(10));
+        // Preload more
+        const nextDiff = KC_DIFFICULTY_MAP[newScore]?.diff || "extreme";
+        if (!loadingNext) preloadBatch(nextDiff, 10, 0);
+      } else {
+        // Load synchronously (fallback)
+        const nextDiff = KC_DIFFICULTY_MAP[newScore]?.diff || "extreme";
+        generateKnowledgeQuestions(nextDiff, 10).then(newQs => {
+          setQuestions(prev => [...prev, ...newQs]);
+        });
+      }
+    } else if (nextIdx === questions.length - 3 && !loadingNext) {
+      // Pre-load when 3 questions left
+      const nextDiff = KC_DIFFICULTY_MAP[Math.min(newScore + 10, 99)]?.diff || "extreme";
+      preloadBatch(nextDiff, 10, 0);
+    }
+
+    setCurrentQ(nextIdx);
+  }
+
+  function endGame(finalScore) {
+    saveScore(finalScore);
+    setPhase("gameover");
+  }
+
+  const level = currentQ + 1;
+  const currentDiff = KC_DIFFICULTY_MAP[Math.min(score, 99)]?.diff || "extreme";
+  const diffColor = KC_DIFF_COLORS[currentDiff] || theme.accent;
+  const specialLabel = KC_SPECIAL[level];
+  const q = questions[currentQ];
+
+  const timerColor = timer > 10 ? theme.green : timer > 5 ? theme.yellow : theme.red;
+
+  // ── INTRO ──
+  if (phase === "intro") {
+    return (
+      <div style={{ animation: "fadeIn 0.6s ease-out", paddingTop: 30 }}>
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ fontSize: 64, marginBottom: 10 }}>🏆</div>
+          <h1 style={{ fontSize: 28, fontWeight: 900, fontFamily: "Cairo", color: theme.text, marginBottom: 8 }}>
+            تحدي المعرفة
+          </h1>
+          <p style={{ color: theme.textMuted, fontFamily: "Tajawal", fontSize: 14, lineHeight: 1.8 }}>
+            أجب على 100 سؤال متصاعد الصعوبة بدون توقف
+          </p>
+        </div>
+
+        {/* Rules */}
+        <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 20, marginBottom: 20 }}>
+          {[
+            { icon: "❓", text: "100 سؤال — تبدأ سهلة وتزيد صعوبة كل 10 أسئلة" },
+            { icon: "⏱️", text: "20 ثانية لكل سؤال" },
+            { icon: "💛", text: "فرصة واحدة للغلط (Last Chance)" },
+            { icon: "⏳", text: "مرة واحدة تمديد الوقت +15 ثانية" },
+            { icon: "🥈", text: "السؤال 97 فضي · 98 ذهبي · 99 بلاتيني · 100 ألماسي 💠" },
+            { icon: "📊", text: "نتيجتك تظهر في لوحة المتصدرين" },
+          ].map((r, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "8px 0", borderBottom: i < 5 ? `1px solid ${theme.border}` : "none" }}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>{r.icon}</span>
+              <span style={{ fontSize: 13, color: theme.textMuted, fontFamily: "Tajawal", lineHeight: 1.6 }}>{r.text}</span>
+            </div>
+          ))}
+        </div>
+
+        <Button onClick={startGame} fullWidth color="#d97706" style={{ fontSize: 18, padding: "18px" }}>
+          🚀 ابدأ التحدي
+        </Button>
+        <div style={{ marginTop: 12 }}>
+          <Button variant="ghost" onClick={onHome} fullWidth color={theme.textMuted}>
+            رجوع
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── LOADING ──
+  if (phase === "loading") {
+    return (
+      <div style={{ paddingTop: 100, textAlign: "center" }}>
+        <div style={{ fontSize: 64, marginBottom: 20, animation: "pulse 1s ease-in-out infinite" }}>🧠</div>
+        <p style={{ fontSize: 18, fontWeight: 700, fontFamily: "Cairo", color: theme.text }}>{loadingMsg}</p>
+        <p style={{ fontSize: 13, color: theme.textMuted, fontFamily: "Tajawal", marginTop: 8 }}>الذكاء الاصطناعي يحضّر الأسئلة...</p>
+      </div>
+    );
+  }
+
+  // ── GAME OVER ──
+  if (phase === "gameover") {
+    return (
+      <div style={{ animation: "fadeIn 0.6s ease-out", paddingTop: 20, textAlign: "center" }}>
+        <div style={{ fontSize: 72, marginBottom: 12 }}>💔</div>
+        <h2 style={{ fontSize: 28, fontWeight: 900, fontFamily: "Cairo", color: theme.red, marginBottom: 6 }}>انتهت اللعبة!</h2>
+        <p style={{ fontSize: 16, color: theme.textMuted, fontFamily: "Tajawal", marginBottom: 24 }}>
+          وصلت للسؤال رقم <span style={{ color: theme.accent, fontWeight: 800 }}>{score + 1}</span> من 100
+        </p>
+
+        {/* Score card */}
+        <div style={{ background: `${theme.red}10`, border: `2px solid ${theme.red}33`, borderRadius: 20, padding: 24, marginBottom: 20 }}>
+          <div style={{ fontSize: 48, fontWeight: 900, fontFamily: "Cairo", color: theme.text }}>{score}</div>
+          <div style={{ fontSize: 14, color: theme.textMuted, fontFamily: "Tajawal" }}>سؤال صحيح من 100</div>
+          {score >= 50 && <div style={{ fontSize: 13, color: theme.yellow, fontFamily: "Tajawal", marginTop: 8 }}>🌟 أداء رائع!</div>}
+          {score >= 90 && <div style={{ fontSize: 13, color: theme.purple, fontFamily: "Tajawal", marginTop: 4 }}>💜 وصلت للمستوى الاستثنائي!</div>}
+        </div>
+
+        {/* Leaderboard */}
+        {leaderboard.length > 0 && (
+          <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, marginBottom: 20, textAlign: "right" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "Cairo", color: theme.accent, marginBottom: 12, textAlign: "center" }}>
+              🏆 أفضل المتحدين
+            </div>
+            {leaderboard.map((p, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < leaderboard.length - 1 ? `1px solid ${theme.border}` : "none" }}>
+                <span style={{ fontSize: 18, width: 28, textAlign: "center", flexShrink: 0 }}>
+                  {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
+                </span>
+                <span style={{ flex: 1, fontSize: 15, fontWeight: 700, fontFamily: "Cairo", color: p.uid === authUser?.uid ? theme.accent : theme.text }}>
+                  {p.name} {p.uid === authUser?.uid ? "(أنت)" : ""}
+                </span>
+                <span style={{ fontSize: 16, fontWeight: 900, fontFamily: "Cairo", color: theme.yellow }}>{p.score}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Button onClick={startGame} fullWidth color={theme.green} style={{ marginBottom: 10 }}>
+          🔄 العب مرة ثانية
+        </Button>
+        <Button variant="ghost" onClick={onHome} fullWidth color={theme.textMuted}>
+          🏠 الرئيسية
+        </Button>
+      </div>
+    );
+  }
+
+  // ── VICTORY ──
+  if (phase === "victory") {
+    return (
+      <div style={{ animation: "fadeIn 0.6s ease-out", paddingTop: 20, textAlign: "center" }}>
+        {Array.from({length: 20}).map((_, i) => (
+          <div key={i} style={{ position: "fixed", fontSize: 20, left: `${Math.random()*100}%`, top: `${Math.random()*100}%`, animation: `confetti ${1+Math.random()*2}s ease-out ${Math.random()}s infinite`, pointerEvents: "none" }}>
+            {["🎉","⭐","🏆","💠","🌟"][i % 5]}
+          </div>
+        ))}
+        <div style={{ fontSize: 80, marginBottom: 16, animation: "pulse 1s ease-in-out infinite" }}>💠</div>
+        <h1 style={{ fontSize: 30, fontWeight: 900, fontFamily: "Cairo", color: "#fbbf24", marginBottom: 8 }}>
+          أسطورة! أجبت على 100 سؤال!
+        </h1>
+        <p style={{ color: theme.textMuted, fontFamily: "Tajawal", fontSize: 15, marginBottom: 24 }}>
+          حققت الإنجاز الألماسي النادر 💠
+        </p>
+        {leaderboard.length > 0 && (
+          <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 16, marginBottom: 24, textAlign: "right" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: "Cairo", color: theme.yellow, marginBottom: 12, textAlign: "center" }}>🏆 لوحة المتصدرين</div>
+            {leaderboard.map((p, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < leaderboard.length - 1 ? `1px solid ${theme.border}` : "none" }}>
+                <span style={{ fontSize: 18, width: 28, textAlign: "center", flexShrink: 0 }}>{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i+1}.`}</span>
+                <span style={{ flex: 1, fontSize: 15, fontWeight: 700, fontFamily: "Cairo", color: p.uid === authUser?.uid ? theme.yellow : theme.text }}>{p.name}</span>
+                <span style={{ fontSize: 16, fontWeight: 900, fontFamily: "Cairo", color: theme.yellow }}>{p.score}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Button onClick={startGame} fullWidth color="#d97706" style={{ marginBottom: 10 }}>🔄 تحدّ نفسك مرة ثانية</Button>
+        <Button variant="ghost" onClick={onHome} fullWidth color={theme.textMuted}>🏠 الرئيسية</Button>
+      </div>
+    );
+  }
+
+  // ── PLAYING ──
+  if (!q) return <div style={{ paddingTop: 80, textAlign: "center" }}><div style={{ fontSize: 40, animation: "spin 1s linear infinite" }}>⏳</div><p style={{ color: theme.textMuted, fontFamily: "Tajawal", marginTop: 12 }}>يحضّر السؤال...</p></div>;
+
+  return (
+    <div style={{ animation: "fadeIn 0.4s ease-out" }}>
+
+      {/* Header row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <button onClick={onHome} style={{ background: "transparent", border: `1.5px solid ${theme.border}`, borderRadius: 10, padding: "6px 12px", color: theme.textMuted, cursor: "pointer", fontSize: 13, fontFamily: "Cairo" }}>
+          ✕ خروج
+        </button>
+
+        {/* Level badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {specialLabel && (
+            <span style={{ background: "linear-gradient(135deg, #fbbf24, #f59e0b)", color: "#0a0a0f", fontSize: 11, fontWeight: 900, padding: "3px 10px", borderRadius: 8, fontFamily: "Cairo", animation: "pulse 1.5s ease-in-out infinite" }}>
+              {specialLabel}
+            </span>
+          )}
+          <div style={{ background: `${diffColor}20`, border: `1.5px solid ${diffColor}44`, borderRadius: 10, padding: "4px 14px", color: diffColor, fontFamily: "Cairo", fontWeight: 800, fontSize: 13 }}>
+            {score + 1} / 100
+          </div>
+        </div>
+      </div>
+
+      {/* Last Chance warning */}
+      {onLastChance && (
+        <div style={{ background: `${theme.red}15`, border: `2px solid ${theme.red}44`, borderRadius: 12, padding: "10px 16px", marginBottom: 12, textAlign: "center", animation: "pulse 0.8s ease-in-out infinite" }}>
+          <span style={{ color: theme.red, fontFamily: "Cairo", fontWeight: 800, fontSize: 14 }}>
+            ⚠️ فرصتك الأخيرة! لا تغلط
+          </span>
+        </div>
+      )}
+
+      {/* Timer */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style={{ color: timerColor, fontFamily: "Cairo", fontWeight: 900, fontSize: 22 }}>{timer}s</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            {/* Lifeline badges */}
+            <span style={{ fontSize: 11, color: lifelineUsed ? theme.textMuted : theme.yellow, fontFamily: "Tajawal", background: theme.bgInput, padding: "3px 8px", borderRadius: 6 }}>
+              {lifelineUsed ? "✓ فرصة ثانية مستخدمة" : "💛 فرصة ثانية متاحة"}
+            </span>
+            {!timeExtUsed && (
+              <button
+                onClick={useTimeExtension}
+                style={{ fontSize: 11, color: "#0a0a0f", fontFamily: "Cairo", fontWeight: 800, background: theme.accent, border: "none", padding: "3px 10px", borderRadius: 6, cursor: "pointer" }}
+              >
+                ⏳ +15 ثانية
+              </button>
+            )}
+          </div>
+        </div>
+        <div style={{ height: 8, background: theme.bgInput, borderRadius: 4, overflow: "hidden" }}>
+          <div style={{ width: `${(timer / totalTime) * 100}%`, height: "100%", background: timerColor, borderRadius: 4, transition: "width 1s linear, background 0.5s" }} />
+        </div>
+      </div>
+
+      {/* Question */}
+      <div style={{ background: theme.bgCard, border: `1.5px solid ${diffColor}44`, borderRadius: 18, padding: 22, marginBottom: 16, minHeight: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p style={{ fontSize: 20, fontWeight: 800, fontFamily: "Cairo", color: theme.text, textAlign: "center", lineHeight: 1.7, margin: 0 }}>
+          {q.q}
+        </p>
+      </div>
+
+      {/* Options */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {q.options?.map((opt, i) => {
+          const isCorrect = i === q.answer;
+          const isSelected = i === selectedAnswer;
+          let bg = theme.bgCard;
+          let border = theme.border;
+          let color = theme.text;
+          if (showResult) {
+            if (isCorrect) { bg = `${theme.green}22`; border = theme.green; color = theme.green; }
+            else if (isSelected && !isCorrect) { bg = `${theme.red}22`; border = theme.red; color = theme.red; }
+          }
+          return (
+            <button
+              key={i}
+              onClick={() => handleAnswer(i)}
+              disabled={showResult || selectedAnswer !== null}
+              style={{
+                padding: "16px 12px",
+                background: bg,
+                border: `2px solid ${border}`,
+                borderRadius: 14,
+                color,
+                fontSize: 16,
+                fontWeight: 700,
+                fontFamily: "Cairo",
+                cursor: (showResult || selectedAnswer !== null) ? "default" : "pointer",
+                transition: "all 0.2s",
+                textAlign: "center",
+                lineHeight: 1.4,
+              }}
+              onMouseEnter={e => { if (!showResult && selectedAnswer === null) { e.currentTarget.style.borderColor = diffColor; e.currentTarget.style.background = `${diffColor}15`; } }}
+              onMouseLeave={e => { if (!showResult && selectedAnswer === null) { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.background = theme.bgCard; } }}
+            >
+              {showResult && isCorrect && "✓ "}
+              {showResult && isSelected && !isCorrect && "✗ "}
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Difficulty label */}
+      <div style={{ textAlign: "center", marginTop: 14, fontSize: 12, color: diffColor, fontFamily: "Tajawal" }}>
+        {"●".repeat(["easy","medium","hard","veryhard","extreme"].indexOf(currentDiff) + 1)} {
+          { easy: "سهل", medium: "متوسط", hard: "صعب", veryhard: "صعب جداً", extreme: "استثنائي" }[currentDiff]
+        }
       </div>
     </div>
   );
@@ -1448,7 +2023,7 @@ function HomeScreen({ playerName, setPlayerName, nameError, setNameError, authUs
             )}
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 18, fontWeight: 800, fontFamily: "Cairo", color: theme.text }}>{playerProfile.name}</span>
+                <PlayerNameDisplay name={playerProfile.name} authUser={authUser} style={{ fontSize: 18, fontWeight: 800, fontFamily: "Cairo", color: theme.text }} />
                 <span style={{ fontSize: 18 }}>{rank?.icon}</span>
               </div>
               <div style={{ fontSize: 13, color: theme.textMuted, fontFamily: "Tajawal" }}>
@@ -1536,6 +2111,56 @@ function HomeScreen({ playerName, setPlayerName, nameError, setNameError, authUs
         <Button onClick={() => onNext("2v2")} fullWidth color={theme.purple}>
           <span style={{ fontSize: 22, marginLeft: 8 }}>👥</span> 2 ضد 2
         </Button>
+
+        {/* تحدي المعرفة - وضع فردي */}
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => onNext("knowledge")}
+            style={{
+              width: "100%",
+              padding: "16px 24px",
+              background: "linear-gradient(135deg, #d97706 0%, #b45309 50%, #92400e 100%)",
+              border: "2px solid #fbbf2444",
+              borderRadius: 14,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              fontFamily: "Cairo, sans-serif",
+              fontWeight: 800,
+              fontSize: 17,
+              color: "#fff",
+              boxShadow: "0 4px 24px rgba(217,119,6,0.35)",
+              transition: "all 0.2s ease",
+              position: "relative",
+              overflow: "hidden",
+            }}
+            onMouseOver={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(217,119,6,0.55)"; }}
+            onMouseOut={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(217,119,6,0.35)"; }}
+          >
+            <span style={{ fontSize: 22 }}>🏆</span>
+            تحدي المعرفة
+            <span style={{
+              background: "#fbbf24",
+              color: "#0a0a0f",
+              fontSize: 10,
+              fontWeight: 900,
+              padding: "2px 7px",
+              borderRadius: 6,
+              marginRight: 4,
+            }}>جديد</span>
+          </button>
+          <div style={{
+            textAlign: "center",
+            fontSize: 11,
+            color: theme.textMuted,
+            fontFamily: "Tajawal",
+            marginTop: 4,
+          }}>
+            أجب على 100 سؤال بدون غلط — فرصة واحدة تنجيك!
+          </div>
+        </div>
       </div>
 
       {/* Sign Out / Guest Note */}

@@ -363,19 +363,6 @@ function Logo({ size = "large" }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: size === "large" ? 12 : 7, justifyContent: "center" }}>
 
-      {/* اللوقو الرسمي */}
-      <img
-        src="/logo.PNG"
-        alt="نقطة فوز"
-        style={{
-          width: imgSize,
-          height: imgSize,
-          objectFit: "contain",
-          flexShrink: 0,
-          filter: "drop-shadow(0 0 6px rgba(255,255,255,0.15))",
-        }}
-      />
-
       {/* النص: نقطة */}
       <div
         style={{
@@ -1223,7 +1210,27 @@ export default function ArenaApp() {
         {/* Login Screen */}
         {!authLoading && !authUser && (
           <div style={{ animation: "fadeIn 0.6s ease-out", paddingTop: 60, textAlign: "center" }}>
-            <div style={{ fontSize: 64, marginBottom: 8 }}>⚔️</div>
+            {/* اللوقو الكبير مع إضاءة */}
+            <div style={{ position: "relative", display: "inline-block", marginBottom: 14 }}>
+              <div style={{
+                position: "absolute",
+                inset: -20,
+                background: "radial-gradient(ellipse at center, rgba(139,21,56,0.35) 0%, rgba(139,21,56,0.12) 50%, transparent 75%)",
+                borderRadius: "50%",
+                pointerEvents: "none",
+              }} />
+              <img
+                src="/logo.PNG"
+                alt="نقطة فوز"
+                style={{
+                  width: 120,
+                  height: 120,
+                  objectFit: "contain",
+                  filter: "drop-shadow(0 0 18px rgba(139,21,56,0.7)) drop-shadow(0 0 6px rgba(255,255,255,0.2))",
+                  position: "relative",
+                }}
+              />
+            </div>
             <Logo size="large" />
             <p style={{ color: theme.textMuted, fontSize: 16, marginTop: 12, fontFamily: "Tajawal", fontWeight: 500, marginBottom: 40 }}>
               سجّل دخولك وابدأ التحدي!
@@ -2032,7 +2039,27 @@ function HomeScreen({ playerName, setPlayerName, nameError, setNameError, authUs
   return (
     <div style={{ animation: "fadeIn 0.6s ease-out", paddingTop: 40 }}>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
-        <div style={{ fontSize: 52, marginBottom: 6 }}>⚔️</div>
+        {/* اللوقو الكبير مع إضاءة */}
+        <div style={{ position: "relative", display: "inline-block", marginBottom: 14 }}>
+          <div style={{
+            position: "absolute",
+            inset: -20,
+            background: "radial-gradient(ellipse at center, rgba(139,21,56,0.35) 0%, rgba(139,21,56,0.12) 50%, transparent 75%)",
+            borderRadius: "50%",
+            pointerEvents: "none",
+          }} />
+          <img
+            src="/logo.PNG"
+            alt="نقطة فوز"
+            style={{
+              width: 120,
+              height: 120,
+              objectFit: "contain",
+              filter: "drop-shadow(0 0 18px rgba(139,21,56,0.7)) drop-shadow(0 0 6px rgba(255,255,255,0.2))",
+              position: "relative",
+            }}
+          />
+        </div>
         <Logo size="large" />
       </div>
 

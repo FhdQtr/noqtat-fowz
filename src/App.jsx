@@ -1759,7 +1759,7 @@ function KnowledgeChallengeScreen({ playerName, authUser, onHome }) {
         </div>
 
         {/* Rules */}
-        <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 20, marginBottom: 20 }}>
+        <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}33`, borderRadius: 16, padding: 20, marginBottom: 20 }}>
           {[
             { icon: "❓", text: "100 سؤال — تبدأ سهلة وتزيد صعوبة كل 10 أسئلة" },
             { icon: "⏱️", text: "20 ثانية لكل سؤال" },
@@ -1768,9 +1768,9 @@ function KnowledgeChallengeScreen({ playerName, authUser, onHome }) {
             { icon: "🥈", text: "السؤال 97 فضي · 98 ذهبي · 99 بلاتيني · 100 ألماسي 💠" },
             { icon: "📊", text: "نتيجتك تظهر في لوحة المتصدرين" },
           ].map((r, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "8px 0", borderBottom: i < 5 ? `1px solid ${theme.border}` : "none" }}>
-              <span style={{ fontSize: 18, flexShrink: 0 }}>{r.icon}</span>
-              <span style={{ fontSize: 13, color: theme.textMuted, fontFamily: "Tajawal", lineHeight: 1.6 }}>{r.text}</span>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderBottom: i < 5 ? `1px solid ${theme.border}44` : "none" }}>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>{r.icon}</span>
+              <span style={{ fontSize: 15, color: theme.text, fontFamily: "Tajawal", lineHeight: 1.7 }}>{r.text}</span>
             </div>
           ))}
         </div>

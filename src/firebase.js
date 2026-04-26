@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, get, onValue, push, remove, update, onDisconnect } from "firebase/database";
+import { getDatabase, ref, set, get, onValue, push, remove, update, onDisconnect, serverTimestamp } from "firebase/database";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "firebase/auth";
 
 const firebaseConfig = {
@@ -299,14 +299,28 @@ export async function removeFromMatchmaking(matchType, playerId) {
 // Join the online lobby (visible to other players)
 export async function joinLobby(playerName, matchType, xp) {
   const playerId = generatePlayerId();
-  await set(ref(db, `lobby/${playerId}`), {
+  const lobbyRef = ref(db, `lobby/${playerId}`);
+
+  const playerData = {
     name: playerName,
     matchType,
     xp: xp || 0,
     status: "available",
     timestamp: Date.now(),
-  });
+    lastActivity: Date.now(),
+  };
+
+  // لما الاتصال ينقطع أو المتصفح يُغلق → يُحذف تلقائياً من اللوبي
+  await onDisconnect(lobbyRef).remove();
+
+  await set(lobbyRef, playerData);
   return playerId;
+}
+
+// تحديث آخر نشاط للاعب في اللوبي (استدعها عند أي تفاعل)
+export async function updateLobbyActivity(playerId) {
+  const activityRef = ref(db, `lobby/${playerId}/lastActivity`);
+  await set(activityRef, Date.now());
 }
 
 // Listen to lobby changes (see who's online)
@@ -366,4 +380,50 @@ function generatePlayerId() {
   return "p_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
 }
 
-export { db, ref, onValue, update, set, get };
+export { db, ref, onValue, update, set, get, serverTimestamp };
+
+// ─── Idle Timeout Hook ──────────────────────────────────────────────────────
+// استخدمها في أي شاشة انتظار:
+// const { resetTimer } = useLobbyIdleTimeout(playerId, 15, () => navigate('/'));
+//
+// import { useLobbyIdleTimeout } from './firebase';
+//
+// تلقائياً تحذف اللاعب من اللوبي وتنفذ onIdle بعد idleMinutes بدون تفاعل
+
+import { useEffect, useRef } from "react";
+
+export function useLobbyIdleTimeout(playerId, idleMinutes = 15, onIdle) {
+  const timer = useRef(null);
+  const IDLE_MS = idleMinutes * 60 * 1000;
+
+  const resetTimer = () => {
+    // حدّث نشاط اللاعب في Firebase
+    if (playerId) updateLobbyActivity(playerId);
+
+    // أعد ضبط المؤقت
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      // احذف من اللوبي وشغّل callback
+      if (playerId) await leaveLobby(playerId);
+      onIdle?.();
+    }, IDLE_MS);
+  };
+
+  useEffect(() => {
+    if (!playerId) return;
+
+    // ابدأ المؤقت فور دخول الشاشة
+    resetTimer();
+
+    // راقب أي تفاعل من المستخدم
+    const events = ["click", "keydown", "touchstart", "mousemove"];
+    events.forEach((e) => window.addEventListener(e, resetTimer));
+
+    return () => {
+      clearTimeout(timer.current);
+      events.forEach((e) => window.removeEventListener(e, resetTimer));
+    };
+  }, [playerId]);
+
+  return { resetTimer };
+}

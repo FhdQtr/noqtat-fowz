@@ -4,7 +4,7 @@ createRoom, joinRoom, listenToRoom, updateRoom, startRoomGame,
 submitAnswer, updateScore, nextQuestion as fbNextQuestion, endGame,
 forfeitGame, deleteRoom,
 joinMatchmaking, listenToMatchmaking, removeFromMatchmaking,
-joinLobby, listenToLobby, leaveLobby,
+joinLobby, listenToLobby, leaveLobby, updateLobbyActivity,
 sendInvite, listenToMyInvites, respondToInvite, listenToInviteResponse, clearInvite,
 signInWithGoogle, signOutUser, onAuthChange,
 savePlayerProfile, getPlayerProfile, updatePlayerAfterGame, getLeaderboard,
@@ -2828,6 +2828,21 @@ const [dots, setDots] = useState(1);
 const lobbyUnsubRef = useRef(null);
 const inviteUnsubRef = useRef(null);
 const myInviteUnsubRef = useRef(null);
+const idleTimerRef = useRef(null);
+const IDLE_MINUTES = 15;
+
+// ─── Idle Timeout: طرد اللاعب بعد 15 دقيقة بدون تفاعل ───────────────────
+const resetIdleTimer = useCallback((pid) => {
+  if (!pid) return;
+  updateLobbyActivity(pid).catch(() => {});
+  clearTimeout(idleTimerRef.current);
+  idleTimerRef.current = setTimeout(async () => {
+    await leaveLobby(pid).catch(() => {});
+    alert('انتهت جلستك بسبب عدم النشاط لمدة ' + IDLE_MINUTES + ' دقيقة.
+سيتم إرجاعك للقائمة الرئيسية.');
+    handleBack();
+  }, IDLE_MINUTES * 60 * 1000);
+}, []);
 
 // Dots animation
 useEffect(() => {
@@ -2846,6 +2861,12 @@ myPid = pid;
 setMyLobbyId(pid);
 
   // Listen to lobby
+  // ابدأ مؤقت الـ idle بعد ما يدخل اللوبي
+  resetIdleTimer(pid);
+  const events = ['click', 'keydown', 'touchstart'];
+  const activityHandler = () => resetIdleTimer(pid);
+  events.forEach((e) => window.addEventListener(e, activityHandler));
+
   const unsub = listenToLobby((data) => {
     if (!data) { setLobbyPlayers([]); return; }
     const entries = Object.entries(data);
@@ -2886,6 +2907,10 @@ return () => {
   if (lobbyUnsubRef.current) lobbyUnsubRef.current();
   if (inviteUnsubRef.current) inviteUnsubRef.current();
   if (myInviteUnsubRef.current) myInviteUnsubRef.current();
+  // أوقف المؤقت وشيل الـ listeners
+  clearTimeout(idleTimerRef.current);
+  const events = ['click', 'keydown', 'touchstart'];
+  events.forEach((e) => window.removeEventListener(e, () => resetIdleTimer(myPid)));
   // Leave lobby using the pid captured in closure
   if (myPid) leaveLobby(myPid).catch(() => {});
 };

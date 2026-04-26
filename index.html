@@ -5,6 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>نقطة فوز | تحدى ربعك</title>
     <link rel="icon" type="image/png" href="/logo.PNG" />
+  <!-- ═══ Google Analytics 4 ═══════════════════════════════════════════ -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z39YW0XMKX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-Z39YW0XMKX');
+
+    // ─── أحداث مخصصة لنقطة فوز ─────────────────────────────────────────
+    // استدعِ هذه الدوال من كودك عند الحاجة:
+    //
+    // gtag('event', 'lobby_joined',   { player_name: name });
+    // gtag('event', 'game_started',   { mode: '1v1' });
+    // gtag('event', 'game_finished',  { result: 'win' });
+    // gtag('event', 'idle_timeout',   { idle_minutes: 15 });
+    // gtag('event', 'invite_sent',    {});
+  </script>
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
   </head>
   <body>
     <div id="root"></div>

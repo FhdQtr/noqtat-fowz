@@ -5,6 +5,9 @@ import App from "./App.jsx";
 import ArenaCreate from "./ArenaCreate.jsx";
 import ArenaPlayer from "./ArenaPlayer.jsx";
 
+// تحميل بنك أسئلة صراع الأبطال (1046 سؤال)
+import "./arena-questions.js";
+
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>

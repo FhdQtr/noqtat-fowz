@@ -2895,8 +2895,7 @@ const resetIdleTimer = useCallback((pid) => {
   clearTimeout(idleTimerRef.current);
   idleTimerRef.current = setTimeout(async () => {
     await leaveLobby(pid).catch(() => {});
-    alert('انتهت جلستك بسبب عدم النشاط لمدة ' + IDLE_MINUTES + ' دقيقة.
-سيتم إرجاعك للقائمة الرئيسية.');
+    alert('انتهت جلستك بسبب عدم النشاط لمدة ' + IDLE_MINUTES + ' دقيقة. سيتم إرجاعك للقائمة الرئيسية.');
     handleBack();
   }, IDLE_MINUTES * 60 * 1000);
 }, []);

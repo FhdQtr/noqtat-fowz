@@ -21,11 +21,20 @@
     // gtag('event', 'game_finished',  { result: 'win' });
     // gtag('event', 'idle_timeout',   { idle_minutes: 15 });
     // gtag('event', 'invite_sent',    {});
+    //
+    // ─── أحداث صراع الأبطال ───────────────────────────────────────────
+    // gtag('event', 'arena_created',  { code, questions_count });
+    // gtag('event', 'arena_joined',   { code });
+    // gtag('event', 'arena_finished', { winner });
   </script>
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- ═══ بنك أسئلة صراع الأبطال (1046 سؤال) ═══════════════════════════ -->
+    <script src="/src/arena-questions.js"></script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

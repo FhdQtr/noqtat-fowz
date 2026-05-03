@@ -586,7 +586,7 @@ export function useArenaEngine(arenaCode, isHost, questionBank) {
  * usePowerups - hook لإدارة شراء واستخدام القدرات
  * يستخدمه اللاعب من شاشة اللعب
  */
-export function usePowerups(arenaCode, playerId, playerData) {
+export function usePowerups(arenaCode, playerId, playerData, currentQuestion = 0) {
   const [purchasing, setPurchasing] = useState(false);
   const [error, setError] = useState(null);
 
@@ -627,6 +627,7 @@ export function usePowerups(arenaCode, playerId, playerData) {
     try {
       await update(ref(db, `arenas/${arenaCode}/players/${playerId}`), {
         score: myScore - powerup.cost,
+        lastPurchaseRound: currentQuestion,
         [`powerups/${powerupId}`]: {
           purchasedAt: Date.now(),
           used: false,

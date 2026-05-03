@@ -30,11 +30,17 @@ const theme = {
 
 export function PowerupsModal({ arenaCode, playerId, playerData, arenaData, onClose }) {
   const { purchasePowerup, activatePowerup, getAvailablePowerups, error, setError } =
-    usePowerups(arenaCode, playerId, playerData);
+    usePowerups(arenaCode, playerId, playerData, arenaData?.currentQuestion ?? 0);
 
   const [selectedTab, setSelectedTab] = useState("offensive");
   const [pendingTarget, setPendingTarget] = useState(null);
   const [purchasing, setPurchasing] = useState(false);
+
+  // التحقق إذا اشترى قدرة في هذه الجولة
+  const currentQ = arenaData?.currentQuestion ?? 0;
+  const alreadyBoughtThisRound =
+    playerData?.lastPurchaseRound !== undefined &&
+    playerData?.lastPurchaseRound === currentQ;
 
   const powerups = getAvailablePowerups();
   const groupedPowerups = {
@@ -53,10 +59,28 @@ export function PowerupsModal({ arenaCode, playerId, playerData, arenaData, onCl
 
   async function handleBuy(powerup) {
     if (!powerup.canAfford || !powerup.meetsStreak || powerup.owned) return;
+    // منع شراء قدرة ثانية في نفس السؤال
+    if (alreadyBoughtThisRound) {
+      setError("اشتريت قدرة فعلاً في هذا السؤال. انتظر السؤال التالي.");
+      return;
+    }
+    // إذا تحتاج هدف، نظهر شاشة الاختيار قبل الشراء
+    if (powerup.requiresTarget) {
+      setPendingTarget(powerup);
+      return;
+    }
+    // قدرة ذاتية: شراء + تفعيل مباشر
     setPurchasing(true);
-    const success = await purchasePowerup(powerup.id);
+    const purchased = await purchasePowerup(powerup.id);
+    if (purchased) {
+      ArenaSounds.play("purchase");
+      const activated = await activatePowerup(powerup.id);
+      if (activated) {
+        ArenaSounds.play("activate");
+        onClose();
+      }
+    }
     setPurchasing(false);
-    if (success) ArenaSounds.play("purchase");
   }
 
   async function handleUse(powerup) {
@@ -68,6 +92,23 @@ export function PowerupsModal({ arenaCode, playerId, playerData, arenaData, onCl
 
   async function handleTargetSelected(targetPlayerId) {
     if (!pendingTarget) return;
+    // إذا القدرة لسه ما اشتريت، نشتريها أولاً
+    if (!pendingTarget.owned) {
+      if (alreadyBoughtThisRound) {
+        setError("اشتريت قدرة فعلاً في هذا السؤال. انتظر السؤال التالي.");
+        setPendingTarget(null);
+        return;
+      }
+      setPurchasing(true);
+      const purchased = await purchasePowerup(pendingTarget.id);
+      if (!purchased) {
+        setPurchasing(false);
+        setPendingTarget(null);
+        return;
+      }
+      ArenaSounds.play("purchase");
+      setPurchasing(false);
+    }
     const success = await activatePowerup(pendingTarget.id, targetPlayerId);
     if (success) { ArenaSounds.play("activate"); setPendingTarget(null); onClose(); }
   }
@@ -95,12 +136,32 @@ export function PowerupsModal({ arenaCode, playerId, playerData, arenaData, onCl
                 <> · ستريك: <strong style={{ color: theme.text }}>{playerData.streak} 🔥</strong></>
               )}
               <span style={{ display: "block", fontSize: 11, color: theme.textMuted, marginTop: 4, fontFamily: "Tajawal" }}>
-                💡 القدرات تطبّق في السؤال التالي
+                💡 قدرة واحدة لكل سؤال · تطبّق في السؤال التالي
               </span>
             </p>
           </div>
           <button onClick={onClose} style={modalStyles.closeBtn} aria-label="إغلاق">✕</button>
         </header>
+
+        {alreadyBoughtThisRound && (
+          <div style={{
+            padding: "12px 16px",
+            background: `${theme.green}15`,
+            border: `1px solid ${theme.green}`,
+            color: theme.green,
+            borderRadius: 12,
+            fontSize: 13,
+            fontWeight: 700,
+            fontFamily: "Cairo",
+            marginBottom: 16,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}>
+            <span style={{ fontSize: 18 }}>✓</span>
+            <span>اشتريت قدرة في هذا السؤال. انتظر السؤال التالي للشراء مرة أخرى.</span>
+          </div>
+        )}
 
         {/* عرض كل القدرات معاً مرتبة حسب النوع */}
         {tabs.map((category) => {
@@ -135,6 +196,7 @@ export function PowerupsModal({ arenaCode, playerId, playerData, arenaData, onCl
                     key={p.id} powerup={p}
                     onBuy={() => handleBuy(p)} onUse={() => handleUse(p)}
                     purchasing={purchasing}
+                    disabled={alreadyBoughtThisRound}
                   />
                 ))}
               </div>
@@ -154,9 +216,9 @@ export function PowerupsModal({ arenaCode, playerId, playerData, arenaData, onCl
   );
 }
 
-function PowerupCard({ powerup, onBuy, onUse, purchasing }) {
+function PowerupCard({ powerup, onBuy, onUse, purchasing, disabled = false }) {
   const isLocked = !powerup.meetsStreak;
-  const canBuy = powerup.canAfford && !powerup.owned && !isLocked;
+  const canBuy = powerup.canAfford && !powerup.owned && !isLocked && !disabled;
   const canUse = powerup.owned && !powerup.used;
   const isUsed = powerup.used;
 

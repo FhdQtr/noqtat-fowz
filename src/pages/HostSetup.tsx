@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ArrowRight, Minus, Plus, Crown, Timer, TimerOff, Layers, Loader2,
-  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle,
+  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
 } from "lucide-react";
 import { createMatch } from "../lib/matchApi";
 import { sfx, unlockAudio } from "../lib/sounds";
@@ -15,6 +15,7 @@ const TYPE_OPTIONS: { id: QuestionType; label: string; icon: typeof Flag }[] = [
   { id: "multiple_choice", label: "اختيار من متعدد", icon: HelpCircle },
   { id: "true_false", label: "صح أم خطأ", icon: Check },
   { id: "image", label: "معالم بالصور", icon: ImageIcon },
+  { id: "memory", label: "اختبار الذاكرة", icon: Brain },
   { id: "flag", label: "أعلام الدول", icon: Flag },
   { id: "completion", label: "أكمل المثل", icon: Quote },
   { id: "ordering", label: "ترتيب", icon: ListOrdered },
@@ -185,7 +186,7 @@ export default function HostSetup() {
             <Layers className="w-4 h-4" />
             أنواع الأسئلة
           </label>
-          <div className="flex flex-wrap gap-2 mb-8">
+          <div className="flex flex-wrap gap-2 mb-2">
             {TYPE_OPTIONS.map(({ id, label, icon: Icon }) => {
               const on = types.includes(id);
               return (
@@ -204,6 +205,10 @@ export default function HostSetup() {
               );
             })}
           </div>
+          <p className="text-xs text-muted-foreground leading-relaxed mb-8">
+            في كل دور، الفريق يختار نوع سؤاله من الأنواع المفعّلة — أول سؤال من النوع سهل بـ٥٠ نقطة،
+            وكل ما كرر نفس النوع صار أصعب ونقاطه أكثر (١٠٠، ١٥٠…)، وفي حد أقصى لكل نوع علشان تتنوع الأسئلة.
+          </p>
 
           {err && (
             <div className="text-maroon-light text-sm font-bold bg-maroon/15 border border-maroon/40 rounded-xl px-4 py-2.5 mb-4">

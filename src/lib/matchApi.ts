@@ -85,16 +85,37 @@ export async function createMatch(opts: CreateMatchOptions): Promise<string> {
   throw new Error("تعذر إنشاء كود، حاول مرة ثانية");
 }
 
-/** الاشتراك في تحديثات المسابقة (بعد التأكد من الدخول) */
-export function subscribeMatch(code: string, cb: (m: Match | null) => void): Unsubscribe {
+/** الاشتراك في تحديثات المسابقة (بعد التأكد من الدخول) — onError عند فشل الاتصال أو الصلاحيات */
+export function subscribeMatch(
+  code: string,
+  cb: (m: Match | null) => void,
+  onError?: (reason: string) => void
+): Unsubscribe {
   let un: Unsubscribe = () => {};
   let cancelled = false;
+  let gotData = false;
+  // مهلة: لو ما وصلنا شي خلال ١٢ ثانية نظهر خطأ بدل تحميل أبدي
+  const timeout = setTimeout(() => {
+    if (!cancelled && !gotData) onError?.("timeout");
+  }, 12000);
   void ensureAuth().then(() => {
     if (cancelled) return;
-    un = onValue(ref(db, `matches/${code}`), (s) => cb(s.exists() ? (s.val() as Match) : null));
+    un = onValue(
+      ref(db, `matches/${code}`),
+      (s) => {
+        gotData = true;
+        clearTimeout(timeout);
+        cb(s.exists() ? (s.val() as Match) : null);
+      },
+      (err) => {
+        clearTimeout(timeout);
+        onError?.(err?.message ?? "permission");
+      }
+    );
   });
   return () => {
     cancelled = true;
+    clearTimeout(timeout);
     un();
   };
 }

@@ -2,15 +2,31 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
+  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
+  MessageSquare, ListChecks,
 } from "lucide-react";
-import { subscribeMatch, joinTeam, leaveMatch, submitAnswer } from "../lib/matchApi";
-import type { Match, Player } from "../types/game";
-import { TEAM_COLORS } from "../types/game";
+import {
+  subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist, typeProgress,
+} from "../lib/matchApi";
+import type { Match, Player, QuestionType } from "../types/game";
+import { TEAM_COLORS, TYPE_LABEL, LEVEL_LABEL, VISUAL_TYPES } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
 import { sfx, unlockAudio } from "../lib/sounds";
+import { useNow } from "../lib/useNow";
 
 const STORAGE_KEY = "nf_player";
+
+const TYPE_ICON: Record<QuestionType, typeof Flag> = {
+  multiple_choice: HelpCircle,
+  true_false: Check,
+  image: ImageIcon,
+  memory: Brain,
+  flag: Flag,
+  completion: Quote,
+  ordering: ListOrdered,
+  riddle: Lightbulb,
+};
 
 export default function Play() {
   const { teamCode = "" } = useParams();
@@ -30,27 +46,38 @@ export default function Play() {
   const [busy, setBusy] = useState(false);
   const [myPick, setMyPick] = useState<number | null>(null);
   const [status, setStatus] = useState<"" | "accepted" | "late">("");
+  const [chooseMsg, setChooseMsg] = useState("");
   const [connErr, setConnErr] = useState("");
   const prevPhase = useRef("");
+  const prevQid = useRef<number | null>(null);
 
   useEffect(() => subscribeMatch(matchCode, setMatch, setConnErr), [matchCode]);
 
   const team = match?.teams?.[teamCode];
   const st = match?.state;
   const isMyTurn = st?.phase === "question" && st.targetTeam === teamCode;
+  const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
 
-  // تصفير الاختيار مع كل سؤال جديد
+  // ساعة حيّة لعدّاد معاينة الصور
+  const now = useNow(
+    st?.viewUntil && (st.phase === "question" || st.phase === "locked") ? 250 : null
+  );
+
+  // تصفير الاختيار مع كل سؤال جديد أو مرحلة جديدة
   useEffect(() => {
     if (!st) return;
-    if (prevPhase.current !== st.phase) {
-      if (st.phase === "question") {
+    const qid = st.question?.id ?? null;
+    if (prevPhase.current !== st.phase || prevQid.current !== qid) {
+      if (st.phase === "question" && (prevPhase.current !== "question" || prevQid.current !== qid)) {
         setMyPick(null);
         setStatus("");
         if (st.targetTeam === teamCode) sfx.questionIn();
       }
+      if (st.phase === "choose") setChooseMsg("");
       if (st.phase === "revealed") st.isCorrect ? sfx.correct() : sfx.wrong();
       if (st.phase === "ended") sfx.fanfare();
       prevPhase.current = st.phase;
+      prevQid.current = qid;
     }
   }, [st, teamCode]);
 
@@ -78,6 +105,20 @@ export default function Play() {
     const res = await submitAnswer(matchCode, player.id, player.name, i);
     setStatus(res === "accepted" ? "accepted" : "late");
     if (res === "accepted") sfx.lock();
+  };
+
+  const pickType = async (t: QuestionType) => {
+    unlockAudio();
+    const res = await chooseType(matchCode, t);
+    if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
+    else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
+    else if (res === "accepted") sfx.lock();
+  };
+
+  const askAssist = async () => {
+    unlockAudio();
+    const ok = await useAssist(matchCode, teamCode);
+    if (ok) sfx.questionIn();
   };
 
   if (connErr)
@@ -171,6 +212,11 @@ export default function Play() {
     );
   }
 
+  const q = st!.question;
+  const visual = q ? VISUAL_TYPES.includes(q.type) : false;
+  const viewing = !!(st!.viewUntil && now < st!.viewUntil);
+  const viewLeft = st!.viewUntil ? Math.max(0, Math.ceil((st!.viewUntil - now) / 1000)) : 0;
+
   // ═══ الشاشة الرئيسية للاعب ═══
   return (
     <div className="min-h-dvh flex flex-col">
@@ -204,16 +250,63 @@ export default function Play() {
           </div>
         )}
 
-        {/* بين الأسئلة */}
-        {match.status === "playing" && (st!.phase === "lobby" || !st!.question) && (
-          <div className="text-center animate-fade-up">
-            <Hourglass className="w-10 h-10 text-gold-light mx-auto mb-3 animate-pulse" />
-            <p className="font-cairo text-lg text-muted-foreground">استعدوا للسؤال القادم…</p>
-          </div>
+        {/* ═══ اختيار نوع السؤال ═══ */}
+        {match.status === "playing" && st!.phase === "choose" && (
+          isMyChoose ? (
+            <div className="w-full flex flex-col gap-4 animate-fade-up">
+              <div className="text-center">
+                <span className="inline-flex items-center gap-2 rounded-full px-5 py-2 border-2 font-cairo font-black animate-pulse-gold"
+                  style={{ borderColor: c.hex, color: c.light, background: `${c.hex}22` }}>
+                  <Crown className="w-4 h-4" />
+                  دوركم — اختاروا نوع السؤال!
+                </span>
+                <p className="text-xs text-muted-foreground mt-2">أول واحد يضغط من فريقكم يحدد — كل نوع يصعب ونقاطه تزيد كل ما كررتوه</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {match.enabledTypes.map((t) => {
+                  const pr = typeProgress(match, teamCode, t);
+                  const Icon = TYPE_ICON[t];
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => pickType(t)}
+                      disabled={!pr.available}
+                      className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35"
+                      style={{ borderColor: `${c.hex}66` }}
+                    >
+                      <Icon className="w-7 h-7 text-gold-light" />
+                      <span className="font-cairo font-bold text-sm">{TYPE_LABEL[t]}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
+                      </span>
+                      <span className={`text-[11px] font-cairo font-bold ${pr.available ? "text-emerald2-light" : "text-maroon-light"}`}>
+                        {pr.available ? `باقي ${pr.left}` : "اكتمل"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {chooseMsg && (
+                <div className="flex items-center justify-center gap-2 text-maroon-light font-cairo animate-scale-in text-sm">
+                  <XCircle className="w-4 h-4" />
+                  {chooseMsg}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center animate-fade-up">
+              <Hourglass className="w-10 h-10 text-gold-light mx-auto mb-3 animate-pulse" />
+              <p className="font-cairo text-lg text-muted-foreground">
+                {st!.targetTeam && match.teams[st!.targetTeam]
+                  ? <>فريق <strong style={{ color: TEAM_COLORS[match.teams[st!.targetTeam].color].light }}>{match.teams[st!.targetTeam].name}</strong> يختار نوع السؤال…</>
+                  : "استعدوا للسؤال القادم…"}
+              </p>
+            </div>
+          )
         )}
 
         {/* السؤال */}
-        {st!.question && st!.phase !== "lobby" && (
+        {q && st!.phase !== "lobby" && st!.phase !== "choose" && (
           <>
             {isMyTurn ? (
               <div className="w-full flex flex-col gap-4 animate-fade-up">
@@ -224,28 +317,63 @@ export default function Play() {
                     دور فريقكم — جاوبوا!
                   </span>
                 </div>
-                <div className="glass-card p-5">
-                  <QuestionMeta q={st!.question} />
-                  <h2 className="mt-4 text-center font-cairo font-extrabold text-lg leading-relaxed">
-                    {st!.question.question}
-                  </h2>
-                </div>
-                <div className={`grid gap-3 ${st!.question.options.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
-                  {st!.question.options.map((opt, i) => (
-                    <button
-                      key={i}
-                      onClick={() => answer(i)}
-                      disabled={myPick !== null}
-                      className={`rounded-xl border-2 px-4 py-4 font-cairo font-bold text-base transition-all active:scale-[0.97] ${
-                        myPick === i
-                          ? "border-gold bg-gold/20 text-gold-light"
-                          : "border-gold-faint/40 bg-night-700/70 hover:border-gold/70 hover:bg-gold/10"
-                      } disabled:opacity-50`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
+
+                {/* معاينة الصورة (ذاكرة/أعلام) */}
+                {visual && viewing && q.image && (
+                  <div className="glass-card p-4 flex flex-col items-center gap-3">
+                    <div className="relative overflow-hidden rounded-2xl border-2 border-gold/50 w-full">
+                      <img src={q.image} alt="احفظوا الصورة" className="w-full object-cover aspect-[3/2]" />
+                    </div>
+                    <p className="font-cairo font-black text-gold-light text-lg animate-pulse">
+                      احفظوا الصورة! باقي {viewLeft} ثواني
+                    </p>
+                  </div>
+                )}
+
+                {/* بعد المعاينة أو سؤال عادي */}
+                {(!visual || !viewing) && (
+                  <>
+                    <div className="glass-card p-5">
+                      <QuestionMeta q={q} />
+                      <h2 className="mt-4 text-center font-cairo font-extrabold text-lg leading-relaxed">
+                        {q.question}
+                      </h2>
+                    </div>
+
+                    {/* الأعلام: شفهي أولاً أو مساعدة الخيارات */}
+                    {q.type === "flag" && !st!.assistUsed ? (
+                      <div className="glass-card !border-gold/60 p-5 flex flex-col items-center gap-4 text-center">
+                        <MessageSquare className="w-8 h-8 text-gold-light" />
+                        <p className="font-cairo font-bold leading-relaxed">
+                          قولوا الإجابة <span className="text-gold-light">شفهياً</span> للمقدم وخذوا الدرجة كاملة
+                        </p>
+                        <p className="text-xs text-muted-foreground">ما تعرفون؟ استخدموا المساعدة — الإجابة الصحيحة بربع النقاط فقط</p>
+                        <button onClick={askAssist} className="btn-ghost-gold flex items-center gap-2">
+                          <ListChecks className="w-5 h-5" />
+                          اختيار من الإجابات (ربع النقاط)
+                        </button>
+                      </div>
+                    ) : (
+                      <div className={`grid gap-3 ${q.options.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+                        {q.options.map((opt, i) => (
+                          <button
+                            key={i}
+                            onClick={() => answer(i)}
+                            disabled={myPick !== null}
+                            className={`rounded-xl border-2 px-4 py-4 font-cairo font-bold text-base transition-all active:scale-[0.97] ${
+                              myPick === i
+                                ? "border-gold bg-gold/20 text-gold-light"
+                                : "border-gold-faint/40 bg-night-700/70 hover:border-gold/70 hover:bg-gold/10"
+                            } disabled:opacity-50`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
                 {status === "accepted" && (
                   <div className="flex items-center justify-center gap-2 text-gold-light font-cairo animate-scale-in">
                     <Lock className="w-4 h-4" />
@@ -260,7 +388,7 @@ export default function Play() {
                 )}
               </div>
             ) : (
-              <div className="text-center animate-fade-up">
+              <div className="text-center animate-fade-up w-full">
                 {st!.phase === "locked" ? (
                   <>
                     <Lock className="w-10 h-10 text-gold-light mx-auto mb-3" />
@@ -273,10 +401,10 @@ export default function Play() {
                     st!.isCorrect ? "!border-emerald2/60" : "!border-maroon/60"
                   }`}>
                     <p className={`font-cairo font-black text-2xl ${st!.isCorrect ? "text-emerald2-light" : "text-maroon-light"}`}>
-                      {st!.isCorrect ? "إجابة صحيحة" : st!.answer ? "إجابة خاطئة" : "بدون إجابة"}
+                      {st!.isCorrect ? "إجابة صحيحة" : "إجابة خاطئة"}
                     </p>
                     <p className="text-sm text-muted-foreground mt-2">
-                      الإجابة: <span className="text-emerald2-light font-bold">{st!.question.options[st!.question.answer]}</span>
+                      الإجابة: <span className="text-emerald2-light font-bold">{q.options[q.answer]}</span>
                     </p>
                   </div>
                 ) : (

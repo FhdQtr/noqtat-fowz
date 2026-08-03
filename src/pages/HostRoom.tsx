@@ -1,20 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
-  Tv, Play, Users, Crown, ChevronLeft, Eye, Repeat2, SkipForward,
+  Tv, Play, Users, Crown, Eye, Repeat2, SkipForward,
   Trophy, Loader2, LogOut, Timer, CheckCircle2, XCircle, Share2, Trash2, WifiOff,
+  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
+  MessageSquare, EyeOff,
 } from "lucide-react";
 import {
-  subscribeMatch, startMatch, pushQuestion, revealAnswer,
-  passToNextTeam, advanceTurn, endMatch, deleteMatch,
+  subscribeMatch, startMatch, chooseType, revealAnswer, judgeVerbal,
+  passToNextTeam, advanceTurn, endMatch, deleteMatch, typeProgress,
 } from "../lib/matchApi";
-import type { Match } from "../types/game";
-import { TEAM_COLORS, LEVEL_POINTS } from "../types/game";
+import type { Match, QuestionType } from "../types/game";
+import { TEAM_COLORS, TYPE_LABEL, LEVEL_LABEL, VISUAL_TYPES, questionPoints } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
 import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/QuestionCard";
 import { sfx, unlockAudio } from "../lib/sounds";
+import { useNow } from "../lib/useNow";
+
+const TYPE_ICON: Record<QuestionType, typeof Flag> = {
+  multiple_choice: HelpCircle,
+  true_false: Check,
+  image: ImageIcon,
+  memory: Brain,
+  flag: Flag,
+  completion: Quote,
+  ordering: ListOrdered,
+  riddle: Lightbulb,
+};
 
 export default function HostRoom() {
   const { code = "" } = useParams();
@@ -29,6 +43,12 @@ export default function HostRoom() {
   useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
 
   const players = useMemo(() => Object.values(match?.players ?? {}), [match]);
+
+  // ساعة حيّة لعدّاد معاينة الصور (الذاكرة/الأعلام)
+  const stv = match?.state;
+  const now = useNow(
+    stv?.viewUntil && (stv.phase === "question" || stv.phase === "locked") ? 250 : null
+  );
 
   // مؤقت السؤال (اختياري)
   useEffect(() => {
@@ -88,9 +108,18 @@ export default function HostRoom() {
 
   const st = match.state;
   const teams = match.teamOrder.map((c) => match.teams[c]).filter(Boolean);
-  const nextTeam = match.teams[match.teamOrder[match.turnIndex % match.teamOrder.length]];
+  const chooseTeam =
+    (st.targetTeam ? match.teams[st.targetTeam] : null) ??
+    match.teams[match.teamOrder[match.turnIndex % match.teamOrder.length]];
   const winners = st.phase === "ended" ? [...teams].sort((a, b) => b.score - a.score) : [];
   const isTie = winners.length > 1 && winners[0].score === winners[1].score;
+
+  const visual = st.question ? VISUAL_TYPES.includes(st.question.type) : false;
+  const viewing = !!(st.viewUntil && now < st.viewUntil);
+  const viewLeft = st.viewUntil ? Math.max(0, Math.ceil((st.viewUntil - now) / 1000)) : 0;
+  const showImage = !visual || viewing || st.phase === "revealed";
+  const flagVerbal =
+    st.question?.type === "flag" && st.phase === "question" && !st.assistUsed;
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -217,7 +246,7 @@ export default function HostRoom() {
         </div>
 
         <button
-          onClick={() => act(() => startMatch(code))}
+          onClick={() => act(() => startMatch(code, match.teamOrder[0]))}
           disabled={busy || players.length === 0}
           className="btn-gold shine mt-10 text-lg px-10 flex items-center gap-2"
         >
@@ -251,36 +280,57 @@ export default function HostRoom() {
         </div>
       </div>
 
-      {/* بين الأسئلة */}
-      {(st.phase === "lobby" || !st.question) && (
+      {/* ═══ اختيار نوع السؤال ═══ */}
+      {(st.phase === "choose" || st.phase === "lobby" || !st.question) && (
         <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-up">
-          {nextTeam && (
+          {chooseTeam && (
             <div className="text-center">
-              <p className="text-muted-foreground mb-2">السؤال القادم لفريق</p>
+              <p className="text-muted-foreground mb-2">الدور على فريق</p>
               <div
                 className="inline-flex items-center gap-3 rounded-2xl px-8 py-4 border-2 animate-pulse-gold"
-                style={{ borderColor: TEAM_COLORS[nextTeam.color].hex, background: `${TEAM_COLORS[nextTeam.color].hex}22` }}
+                style={{ borderColor: TEAM_COLORS[chooseTeam.color].hex, background: `${TEAM_COLORS[chooseTeam.color].hex}22` }}
               >
-                <Crown className="w-6 h-6" style={{ color: TEAM_COLORS[nextTeam.color].light }} />
-                <span className="text-2xl font-black font-cairo" style={{ color: TEAM_COLORS[nextTeam.color].light }}>
-                  {nextTeam.name}
+                <Crown className="w-6 h-6" style={{ color: TEAM_COLORS[chooseTeam.color].light }} />
+                <span className="text-2xl font-black font-cairo" style={{ color: TEAM_COLORS[chooseTeam.color].light }}>
+                  {chooseTeam.name}
                 </span>
               </div>
+              <p className="mt-3 text-sm text-gold-light/90 font-cairo font-bold">
+                الفريق يختار نوع سؤاله من أجهزتهم — أو اختر عنهم:
+              </p>
             </div>
           )}
-          <button
-            onClick={() => act(() => pushQuestion(code, match))}
-            disabled={busy}
-            className="btn-gold shine text-xl px-12 py-4 flex items-center gap-3"
-          >
-            {busy ? <Loader2 className="w-6 h-6 animate-spin" /> : <ChevronLeft className="w-6 h-6" />}
-            نزّل السؤال
-          </button>
+
+          {chooseTeam && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
+              {match.enabledTypes.map((t) => {
+                const pr = typeProgress(match, chooseTeam.code, t);
+                const Icon = TYPE_ICON[t];
+                return (
+                  <button
+                    key={t}
+                    onClick={() => act(() => chooseType(code, t))}
+                    disabled={busy || !pr.available}
+                    className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35 disabled:cursor-not-allowed"
+                  >
+                    <Icon className="w-7 h-7 text-gold-light" />
+                    <span className="font-cairo font-bold text-sm">{TYPE_LABEL[t]}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
+                    </span>
+                    <span className={`text-[11px] font-cairo font-bold ${pr.available ? "text-emerald2-light" : "text-maroon-light"}`}>
+                      {pr.available ? `باقي ${pr.left}` : "اكتمل"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* السؤال المعروض */}
-      {st.question && st.phase !== "lobby" && (
+      {/* ═══ السؤال المعروض ═══ */}
+      {st.question && st.phase !== "lobby" && st.phase !== "choose" && (
         <div className="flex-1 flex flex-col gap-5 animate-fade-up">
           {/* شريط الدور */}
           <div className="flex items-center justify-center gap-3 flex-wrap">
@@ -307,29 +357,82 @@ export default function HostRoom() {
               </div>
             )}
             <span className="text-xs text-muted-foreground">
-              قيمة السؤال: {LEVEL_POINTS[st.question.level]} نقطة
+              قيمة السؤال: {questionPoints(st)} نقطة
+              {st.assistUsed ? " (ربع — استخدموا المساعدة)" : ""}
             </span>
           </div>
+
+          {/* عدّاد معاينة الصورة */}
+          {visual && viewing && (
+            <div className="glass-card !border-gold/60 p-3 flex items-center justify-center gap-3 animate-scale-in">
+              <Eye className="w-5 h-5 text-gold-light" />
+              <span className="font-cairo font-bold text-gold-light">
+                الصورة تُعرض — احفظوا! باقي {viewLeft} ثواني
+              </span>
+            </div>
+          )}
+          {visual && !viewing && st.phase !== "revealed" && (
+            <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
+              <EyeOff className="w-4 h-4" />
+              الصورة اختفت — على الفريق التذكّر
+            </div>
+          )}
 
           <div className="glass-card p-6">
             <QuestionMeta q={st.question} />
             <div className="mt-5">
-              <QuestionBody q={st.question} reveal={st.phase === "revealed"} />
+              <QuestionBody q={st.question} reveal={st.phase === "revealed"} showImage={showImage} />
             </div>
-            <div className="mt-6">
-              <OptionsDisplay
-                q={st.question}
-                chosen={st.answer?.choice ?? null}
-                reveal={st.phase === "revealed"}
-              />
-            </div>
+            {/* المقدم يشوف الإجابة للحكم الشفهي في الأعلام */}
+            {st.question.type === "flag" && st.phase !== "revealed" && (
+              <p className="mt-3 text-center text-sm font-cairo font-bold text-emerald2-light">
+                الإجابة الصحيحة: {st.question.options[st.question.answer]}
+              </p>
+            )}
+            {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة */}
+            {!(st.question.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
+              <div className="mt-6">
+                <OptionsDisplay
+                  q={st.question}
+                  chosen={st.answer?.choice ?? null}
+                  reveal={st.phase === "revealed"}
+                />
+              </div>
+            )}
           </div>
 
           {/* حالة الإجابة */}
-          {st.phase === "question" && (
+          {st.phase === "question" && !flagVerbal && (
             <div className="text-center text-muted-foreground animate-pulse font-cairo">
               بانتظار إجابة فريق {match.teams[st.targetTeam!]?.name}…
               {timeLeft === 0 && <span className="block text-maroon-light font-bold mt-1">انتهى الوقت — انقل السؤال أو اكشف الإجابة</span>}
+            </div>
+          )}
+          {flagVerbal && (
+            <div className="glass-card !border-gold/60 p-5 flex flex-col items-center gap-4 animate-fade-up">
+              <div className="flex items-center gap-2 font-cairo font-bold text-gold-light">
+                <MessageSquare className="w-5 h-5" />
+                اسمع إجابة الفريق الشفهية واحكم عليها — الدرجة كاملة
+              </div>
+              <div className="flex gap-3 flex-wrap justify-center">
+                <button
+                  onClick={() => act(() => judgeVerbal(code, match, true))}
+                  disabled={busy || viewing}
+                  className="btn-gold shine flex items-center gap-2 text-lg px-8"
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                  أجابوا صح
+                </button>
+                <button
+                  onClick={() => act(() => judgeVerbal(code, match, false))}
+                  disabled={busy || viewing}
+                  className="btn-maroon flex items-center gap-2 text-lg px-8"
+                >
+                  <XCircle className="w-5 h-5" />
+                  أجابوا خطأ
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">أو عندهم خيار «اختيار من الإجابات» في أجهزتهم بربع النقاط</p>
             </div>
           )}
           {st.phase === "locked" && st.answer && (
@@ -346,10 +449,10 @@ export default function HostRoom() {
               st.isCorrect ? "!border-emerald2/70 text-emerald2-light" : "!border-maroon/70 text-maroon-light"
             }`}>
               {st.isCorrect
-                ? `إجابة صحيحة! +${st.passCount > 0 ? LEVEL_POINTS[st.question.level] / 2 : LEVEL_POINTS[st.question.level]} نقطة`
+                ? `إجابة صحيحة! +${questionPoints(st)} نقطة`
                 : st.answer
                 ? "إجابة خاطئة"
-                : "ما جاوب أحد"}
+                : "إجابة خاطئة / ما جاوب أحد"}
             </div>
           )}
 

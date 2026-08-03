@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
-import { Crown, Loader2, Timer, Users, XCircle, RotateCw } from "lucide-react";
+import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff } from "lucide-react";
 import { subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
 import { TEAM_COLORS, LEVEL_POINTS } from "../types/game";
@@ -15,9 +15,10 @@ export default function TvScreen() {
   const [match, setMatch] = useState<Match | null | undefined>(undefined);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [portrait, setPortrait] = useState(false);
+  const [connErr, setConnErr] = useState("");
   const prevPhase = useRef("");
 
-  useEffect(() => subscribeMatch(code, setMatch), [code]);
+  useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
 
   useEffect(() => {
     const check = () => setPortrait(window.innerHeight > window.innerWidth);
@@ -61,6 +62,15 @@ export default function TvScreen() {
     prevPlayers.current = players.length;
   }, [players.length]);
 
+  if (connErr)
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-4 bg-night px-6 text-center">
+        <WifiOff className="w-16 h-16 text-gold" />
+        <p className="font-cairo font-bold text-2xl">تعذّر الاتصال بالمسابقة</p>
+        <p className="text-sm text-muted-foreground">تأكد من الإنترنت ثم أعد تحميل الصفحة</p>
+        <button onClick={() => window.location.reload()} className="btn-gold">إعادة المحاولة</button>
+      </div>
+    );
   if (match === undefined)
     return (
       <div className="min-h-dvh flex items-center justify-center bg-night">

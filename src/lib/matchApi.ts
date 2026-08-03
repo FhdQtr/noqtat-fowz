@@ -5,11 +5,13 @@ import {
   ref, set, get, update, runTransaction, onValue, remove, type Unsubscribe,
 } from "firebase/database";
 import { db, ensureAuth } from "./firebase";
-import { pickQuestion, levelForRound } from "../data/questions";
+import {
+  pickQuestionOfType, shuffleQuestion, levelForPick, pointsForPick,
+} from "../data/questions";
 import type {
-  Match, GameState, Question, QuestionType, TeamColor, Player,
+  Match, GameState, Question, QuestionType, QuestionLevel, TeamColor, Player,
 } from "../types/game";
-import { TEAM_COLORS, LEVEL_POINTS } from "../types/game";
+import { TEAM_COLORS, VIEW_SECONDS, VISUAL_TYPES, questionPoints } from "../types/game";
 
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -64,6 +66,9 @@ export async function createMatch(opts: CreateMatchOptions): Promise<string> {
       timer: opts.timer,
       questionStartedAt: null,
       usedIds: [],
+      questionValue: 0,
+      viewUntil: null,
+      assistUsed: false,
     };
 
     const match: Omit<Match, "players"> = {
@@ -142,40 +147,109 @@ export async function joinTeam(matchCode: string, teamCode: string, name: string
   return player;
 }
 
-/** المقدم يبدأ المسابقة */
-export async function startMatch(code: string) {
+/** المقدم يبدأ المسابقة — أول فريق يختار نوع سؤاله */
+export async function startMatch(code: string, firstTeamCode: string) {
   await ensureAuth();
-  await update(ref(db, `matches/${code}`), { status: "playing" });
+  await update(ref(db, `matches/${code}`), {
+    status: "playing",
+    "state/phase": "choose",
+    "state/targetTeam": firstTeamCode,
+  });
 }
 
-/** المقدم ينزل سؤالاً للفريق صاحب الدور */
-export async function pushQuestion(code: string, match: Match): Promise<Question | null> {
-  await ensureAuth();
-  const round = match.state.round + 1;
-  const level = levelForRound(round, match.totalRounds);
-  // ملاحظة: Firebase يحذف المصفوفات الفارغة — usedIds قد تكون غير موجودة
-  const usedIds = match.state.usedIds ?? [];
-  const q = pickQuestion(usedIds, match.enabledTypes, level)
-    ?? pickQuestion(usedIds, match.enabledTypes);
-  if (!q) return null;
+/** سقف تكرار نفس النوع لكل فريق — يكبر كل ما زاد عدد الأسئلة */
+export function typeCap(
+  match: Pick<Match, "totalRounds" | "teamOrder" | "enabledTypes">
+): number {
+  if (match.enabledTypes.length <= 1) return 99; // نوع واحد = بلا سقف
+  const perTeam = Math.ceil(match.totalRounds / Math.max(1, match.teamOrder.length));
+  return Math.max(3, Math.ceil(perTeam / 2));
+}
 
-  const targetTeam = match.teamOrder[match.turnIndex % match.teamOrder.length];
-  await update(ref(db, `matches/${code}`), {
-    state: {
-      ...match.state,
-      phase: "question",
-      round,
-      targetTeam,
-      originalTeam: targetTeam,
-      passCount: 0,
-      question: q,
-      answer: null,
-      isCorrect: null,
-      questionStartedAt: Date.now(),
-      usedIds: [...usedIds, q.id],
-    },
-  });
-  return q;
+export interface TypeProgress {
+  used: number; // كم مرة الفريق اختار النوع
+  cap: number; // السقف
+  left: number; // المتبقي
+  nextLevel: QuestionLevel; // مستوى السؤال الجاي لو اختاروه
+  nextPoints: number; // نقاطه
+  available: boolean;
+}
+
+/** تقدّم فريق في نوع معيّن — لواجهة أزرار الاختيار */
+export function typeProgress(match: Match, teamCode: string, type: QuestionType): TypeProgress {
+  const used = match.typeCounts?.[teamCode]?.[type] ?? 0;
+  const cap = typeCap(match);
+  const left = Math.max(0, cap - used);
+  const nextN = used + 1;
+  return {
+    used,
+    cap,
+    left,
+    nextLevel: levelForPick(nextN),
+    nextPoints: pointsForPick(nextN),
+    available: left > 0,
+  };
+}
+
+/**
+ * الفريق (أو المقدم) يختار نوع السؤال — معاملة ذرّية: أول اختيار يفوز.
+ * المستوى يتصاعد مع كل اختيار لنفس النوع (سهل ← متوسط ← صعب) والنقاط ٥٠×رقم الاختيار.
+ */
+export async function chooseType(
+  code: string,
+  type: QuestionType
+): Promise<"accepted" | "late" | "cap" | "empty" | "error"> {
+  await ensureAuth();
+  let reason: "cap" | "empty" | null = null;
+  try {
+    const res = await runTransaction(ref(db, `matches/${code}`), (m: Match | null) => {
+      if (!m || m.state.phase !== "choose" || m.state.question) return; // سبقك أحد
+      if (!m.enabledTypes.includes(type)) return;
+      const teamCode =
+        m.state.targetTeam ?? m.teamOrder[m.turnIndex % m.teamOrder.length];
+      const counts = m.typeCounts?.[teamCode] ?? {};
+      const used = counts[type] ?? 0;
+      if (used >= typeCap(m)) {
+        reason = "cap";
+        return;
+      }
+      const n = used + 1;
+      const usedIds = m.state.usedIds ?? [];
+      const picked = pickQuestionOfType(usedIds, type, levelForPick(n));
+      if (!picked) {
+        reason = "empty";
+        return;
+      }
+      const q: Question = shuffleQuestion(picked);
+      const now = Date.now();
+      const visual = VISUAL_TYPES.includes(q.type);
+      const viewUntil = visual ? now + VIEW_SECONDS * 1000 : null;
+      return {
+        ...m,
+        typeCounts: { ...m.typeCounts, [teamCode]: { ...counts, [type]: n } },
+        state: {
+          ...m.state,
+          phase: "question",
+          round: m.state.round + 1,
+          targetTeam: teamCode,
+          originalTeam: teamCode,
+          passCount: 0,
+          question: q,
+          answer: null,
+          isCorrect: null,
+          questionStartedAt: viewUntil ?? now,
+          viewUntil,
+          assistUsed: false,
+          questionValue: pointsForPick(n),
+          usedIds: [...usedIds, q.id],
+        },
+      };
+    });
+    if (res.committed) return "accepted";
+    return reason ?? "late";
+  } catch {
+    return "error";
+  }
 }
 
 /** اللاعب يجاوب — أول إجابة فقط تقفل السؤال (معاملة ذرّية) */
@@ -204,6 +278,47 @@ export async function submitAnswer(
   }
 }
 
+/** الأعلام: الفريق يطلب "اختيار من الإجابات" — الإجابة الصحيحة تصير بربع النقاط */
+export async function useAssist(code: string, teamCode: string): Promise<boolean> {
+  await ensureAuth();
+  try {
+    const res = await runTransaction(
+      ref(db, `matches/${code}/state`),
+      (s: GameState | null) => {
+        if (
+          !s ||
+          s.phase !== "question" ||
+          s.question?.type !== "flag" ||
+          s.assistUsed ||
+          s.targetTeam !== teamCode
+        )
+          return;
+        return { ...s, assistUsed: true };
+      }
+    );
+    return res.committed;
+  } catch {
+    return false;
+  }
+}
+
+/** الأعلام: المقدم يحكم على الإجابة الشفهية (درجة كاملة عند الصح) */
+export async function judgeVerbal(code: string, match: Match, correct: boolean) {
+  await ensureAuth();
+  const st = match.state;
+  if (!st.question || st.phase !== "question" || !st.targetTeam) return;
+  const team = match.teams[st.targetTeam];
+  const points = questionPoints(st);
+  const updates: Record<string, unknown> = {
+    "state/phase": "revealed",
+    "state/isCorrect": correct,
+    [`teams/${st.targetTeam}/correctCount`]: team.correctCount + (correct ? 1 : 0),
+    [`teams/${st.targetTeam}/wrongCount`]: team.wrongCount + (correct ? 0 : 1),
+  };
+  if (correct) updates[`teams/${st.targetTeam}/score`] = team.score + points;
+  await update(ref(db, `matches/${code}`), updates);
+}
+
 /** المقدم يكشف النتيجة ويحتسب النقاط */
 export async function revealAnswer(code: string, match: Match) {
   await ensureAuth();
@@ -212,9 +327,8 @@ export async function revealAnswer(code: string, match: Match) {
   const correct = st.answer.choice === st.question.answer;
   const teamCode = st.targetTeam!;
   const team = match.teams[teamCode];
-  const base = LEVEL_POINTS[st.question.level];
-  // السؤال المسروق = نصف النقاط
-  const points = st.passCount > 0 ? Math.round(base / 2) : base;
+  // المسروق = نصف النقاط، وبمساعدة "اختيار من الإجابات" = ربعها
+  const points = questionPoints(st);
 
   const updates: Record<string, unknown> = {
     "state/phase": "revealed",
@@ -226,12 +340,14 @@ export async function revealAnswer(code: string, match: Match) {
   await update(ref(db, `matches/${code}`), updates);
 }
 
-/** المقدم ينقل السؤال للفريق التالي (سرقة) */
+/** المقدم ينقل السؤال للفريق التالي (سرقة) — الصور/الأعلام تُعرض من جديد للفريق الجديد */
 export async function passToNextTeam(code: string, match: Match) {
   await ensureAuth();
   const st = match.state;
   const currentIdx = match.teamOrder.indexOf(st.targetTeam!);
   const nextTeam = match.teamOrder[(currentIdx + 1) % match.teamOrder.length];
+  const visual = st.question ? VISUAL_TYPES.includes(st.question.type) : false;
+  const viewUntil = visual ? Date.now() + VIEW_SECONDS * 1000 : null;
   await update(ref(db, `matches/${code}`), {
     state: {
       ...st,
@@ -240,12 +356,14 @@ export async function passToNextTeam(code: string, match: Match) {
       passCount: st.passCount + 1,
       answer: null,
       isCorrect: null,
-      questionStartedAt: Date.now(),
+      questionStartedAt: viewUntil ?? Date.now(),
+      viewUntil,
+      assistUsed: false,
     },
   });
 }
 
-/** الانتقال للسؤال التالي — يحدّث الدور */
+/** الانتقال للسؤال التالي — الفريق الجاي يختار نوع سؤاله */
 export async function advanceTurn(code: string, match: Match) {
   await ensureAuth();
   const ended = match.state.round >= match.totalRounds;
@@ -256,13 +374,17 @@ export async function advanceTurn(code: string, match: Match) {
       turnIndex: match.turnIndex + 1,
     });
   } else {
+    const nextTeam = match.teamOrder[(match.turnIndex + 1) % match.teamOrder.length];
     await update(ref(db, `matches/${code}`), {
       turnIndex: match.turnIndex + 1,
-      "state/phase": "lobby",
+      "state/phase": "choose",
       "state/question": null,
       "state/answer": null,
       "state/isCorrect": null,
-      "state/targetTeam": null,
+      "state/targetTeam": nextTeam,
+      "state/viewUntil": null,
+      "state/assistUsed": false,
+      "state/questionValue": null,
     });
   }
 }

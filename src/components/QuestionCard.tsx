@@ -1,4 +1,4 @@
-import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle } from "lucide-react";
+import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle, Brain } from "lucide-react";
 import type { Question } from "../types/game";
 import { TYPE_LABEL, LEVEL_LABEL, CATEGORY_LABEL } from "../types/game";
 
@@ -10,6 +10,7 @@ const TYPE_ICON: Record<string, typeof Flag> = {
   completion: Quote,
   multiple_choice: HelpCircle,
   true_false: Check,
+  memory: Brain,
 };
 
 const LETTERS = ["أ", "ب", "ج", "د"];
@@ -40,19 +41,21 @@ export function QuestionMeta({ q }: { q: Question }) {
   );
 }
 
-/** عرض السؤال (مع صورة إن وجدت) */
+/** عرض السؤال (مع صورة إن وجدت) — showImage=false يخفي الصورة (أسئلة الذاكرة/الأعلام بعد انتهاء المعاينة) */
 export function QuestionBody({
   q,
   big = false,
   reveal = false,
+  showImage = true,
 }: {
   q: Question;
   big?: boolean;
   reveal?: boolean;
+  showImage?: boolean;
 }) {
   return (
     <div className="flex flex-col items-center gap-4">
-      {q.image && (
+      {q.image && showImage && (
         <div
           className={`relative overflow-hidden rounded-2xl border-2 border-gold/40 shadow-2xl ${
             big ? "w-full max-w-lg" : "w-full max-w-xs"

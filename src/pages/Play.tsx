@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
-  Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut,
+  Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
 } from "lucide-react";
 import { subscribeMatch, joinTeam, leaveMatch, submitAnswer } from "../lib/matchApi";
 import type { Match, Player } from "../types/game";
@@ -30,9 +30,10 @@ export default function Play() {
   const [busy, setBusy] = useState(false);
   const [myPick, setMyPick] = useState<number | null>(null);
   const [status, setStatus] = useState<"" | "accepted" | "late">("");
+  const [connErr, setConnErr] = useState("");
   const prevPhase = useRef("");
 
-  useEffect(() => subscribeMatch(matchCode, setMatch), [matchCode]);
+  useEffect(() => subscribeMatch(matchCode, setMatch, setConnErr), [matchCode]);
 
   const team = match?.teams?.[teamCode];
   const st = match?.state;
@@ -79,6 +80,18 @@ export default function Play() {
     if (res === "accepted") sfx.lock();
   };
 
+  if (connErr)
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <WifiOff className="w-14 h-14 text-gold" />
+        <p className="font-cairo font-bold text-xl">تعذّر الاتصال بالمسابقة</p>
+        <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+          جرّب فتح الرابط في متصفح كروم أو سفاري <span className="text-gold">العادي</span> — مو المتصفح الخاص (المتخفي) أو متصفح داخل تطبيق — وتأكد من الإنترنت
+        </p>
+        <button onClick={() => window.location.reload()} className="btn-gold">إعادة المحاولة</button>
+        <button onClick={() => nav("/")} className="btn-ghost-gold">العودة للرئيسية</button>
+      </div>
+    );
   if (match === undefined)
     return (
       <div className="min-h-dvh flex items-center justify-center">

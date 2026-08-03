@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   Tv, Play, Users, Crown, ChevronLeft, Eye, Repeat2, SkipForward,
-  Trophy, Loader2, LogOut, Timer, CheckCircle2, XCircle, Share2, Trash2,
+  Trophy, Loader2, LogOut, Timer, CheckCircle2, XCircle, Share2, Trash2, WifiOff,
 } from "lucide-react";
 import {
   subscribeMatch, startMatch, pushQuestion, revealAnswer,
@@ -23,9 +23,10 @@ export default function HostRoom() {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [connErr, setConnErr] = useState("");
   const prevPhase = useRef<string>("");
 
-  useEffect(() => subscribeMatch(code, setMatch), [code]);
+  useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
 
   const players = useMemo(() => Object.values(match?.players ?? {}), [match]);
 
@@ -58,6 +59,18 @@ export default function HostRoom() {
     }
   }, [match]);
 
+  if (connErr)
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <WifiOff className="w-14 h-14 text-gold" />
+        <p className="font-cairo font-bold text-xl">تعذّر الاتصال بالمسابقة</p>
+        <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+          تأكد من الإنترنت، وإذا كنت فاتح الرابط في وضع التخفي أو متصفح داخل تطبيق، افتحه في متصفح عادي
+        </p>
+        <button onClick={() => window.location.reload()} className="btn-gold">إعادة المحاولة</button>
+        <button onClick={() => nav("/")} className="btn-ghost-gold">العودة للرئيسية</button>
+      </div>
+    );
   if (match === undefined)
     return (
       <div className="min-h-dvh flex items-center justify-center">

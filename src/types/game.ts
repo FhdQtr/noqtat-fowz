@@ -9,7 +9,8 @@ export type QuestionType =
   | "flag"
   | "completion"
   | "ordering"
-  | "riddle";
+  | "riddle"
+  | "memory";
 
 export type QuestionLevel = "easy" | "medium" | "hard";
 
@@ -44,6 +45,7 @@ export interface Player {
 
 export type MatchPhase =
   | "lobby" // استقبال اللاعبين
+  | "choose" // الفريق صاحب الدور يختار نوع السؤال
   | "question" // سؤال معروض وينتظر إجابة الفريق
   | "locked" // فريق جاوب — بانتظار المقدم يكشف
   | "revealed" // النتيجة ظاهرة
@@ -68,6 +70,9 @@ export interface GameState {
   timer: number; // 0 = بدون مؤقت، غيره = ثواني
   questionStartedAt: number | null;
   usedIds: number[]; // الأسئلة المستخدمة
+  questionValue?: number; // قيمة السؤال الأساسية (٥٠ × رقم اختيار النوع)
+  viewUntil?: number | null; // للصور/الأعلام: وقت إخفاء الصورة (مللي ثانية)
+  assistUsed?: boolean; // الأعلام: الفريق طلب "اختيار من الإجابات" (ربع النقاط)
 }
 
 export interface Match {
@@ -82,6 +87,8 @@ export interface Match {
   state: GameState;
   teams: Record<string, Team>;
   players: Record<string, Player>;
+  // كم مرة كل فريق اختار كل نوع (للتصعيد والسقف) — Firebase يحذف الكائنات الفارغة
+  typeCounts?: Record<string, Partial<Record<QuestionType, number>>>;
 }
 
 export const TEAM_COLORS: Record<
@@ -114,7 +121,27 @@ export const TYPE_LABEL: Record<QuestionType, string> = {
   completion: "أكمل المثل",
   ordering: "ترتيب",
   riddle: "لغز",
+  memory: "اختبار الذاكرة",
 };
+
+/** مدة عرض الصورة قبل إخفائها (الذاكرة والأعلام) */
+export const VIEW_SECONDS = 10;
+
+/** الأنواع اللي تعتمد على مشاهدة الصورة أولاً */
+export const VISUAL_TYPES: QuestionType[] = ["memory", "flag"];
+
+/** النقاط الفعلية للسؤال الحالي بعد تعديلات السرقة/المساعدة */
+export function questionPoints(st: {
+  question: Question | null;
+  questionValue?: number;
+  passCount: number;
+  assistUsed?: boolean;
+}): number {
+  const base = st.questionValue ?? (st.question ? LEVEL_POINTS[st.question.level] : 0);
+  if (st.assistUsed) return Math.max(1, Math.round(base / 4));
+  if (st.passCount > 0) return Math.max(1, Math.round(base / 2));
+  return base;
+}
 
 export const CATEGORY_LABEL: Record<string, string> = {
   culture: "ثقافة عامة",
@@ -129,4 +156,5 @@ export const CATEGORY_LABEL: Record<string, string> = {
   sports: "رياضة",
   landmarks: "معالم العالم",
   flags: "أعلام",
+  memory: "ذاكرة",
 };

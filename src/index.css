@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 14% 5%;
+    --foreground: 45 30% 94%;
+    --card: 240 12% 8%;
+    --card-foreground: 45 30% 94%;
+    --popover: 240 12% 8%;
+    --popover-foreground: 45 30% 94%;
+    --primary: 45 65% 52%;
+    --primary-foreground: 240 20% 6%;
+    --secondary: 240 10% 14%;
+    --secondary-foreground: 45 30% 94%;
+    --muted: 240 8% 16%;
+    --muted-foreground: 240 6% 62%;
+    --accent: 348 73% 31%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 45 20% 22%;
+    --input: 45 15% 20%;
+    --ring: 45 65% 52%;
+    --radius: 0.875rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    direction: rtl;
+  }
+  body {
+    @apply bg-night text-foreground font-tajawal antialiased;
+    background-image: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(212, 175, 55, 0.07), transparent),
+      radial-gradient(ellipse 60% 50% at 50% 110%, rgba(138, 21, 56, 0.08), transparent);
+    background-attachment: fixed;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+  h1, h2, h3, h4 {
+    @apply font-cairo;
+  }
+  ::selection {
+    background: rgba(212, 175, 55, 0.35);
+  }
+}
+
+@layer components {
+  /* بطاقة زجاجية فاخرة */
+  .glass-card {
+    @apply bg-night-800/80 backdrop-blur-md border border-gold-faint/40 rounded-2xl;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(232, 201, 106, 0.08);
+  }
+  /* زر ذهبي رئيسي */
+  .btn-gold {
+    @apply relative overflow-hidden font-cairo rounded-xl px-6 py-3.5 text-night font-bold transition-all duration-200 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none;
+    background: linear-gradient(135deg, #e8c96a 0%, #d4af37 45%, #a8862a 100%);
+    box-shadow: 0 6px 24px rgba(212, 175, 55, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  }
+  .btn-gold:hover {
+    box-shadow: 0 8px 32px rgba(212, 175, 55, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    transform: translateY(-1px);
+  }
+  /* زر عنابي */
+  .btn-maroon {
+    @apply font-cairo rounded-xl px-6 py-3.5 text-white font-bold transition-all duration-200 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none;
+    background: linear-gradient(135deg, #b02047 0%, #8a1538 55%, #5d0e26 100%);
+    box-shadow: 0 6px 24px rgba(138, 21, 56, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  /* زر شفاف بحدود ذهبية */
+  .btn-ghost-gold {
+    @apply font-cairo rounded-xl px-6 py-3.5 font-bold border border-gold-faint/60 text-gold-light bg-gold/5 transition-all duration-200 hover:bg-gold/15 hover:border-gold/60 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none;
+  }
+  /* عنوان مزخرف */
+  .title-ornament {
+    @apply relative inline-block;
+  }
+  /* نص ذهبي متدرج */
+  .text-gold-gradient {
+    background: linear-gradient(135deg, #f3dd9a 0%, #e8c96a 35%, #d4af37 60%, #a8862a 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* حقل إدخال */
+  .input-night {
+    @apply w-full bg-night-700/80 border border-gold-faint/40 rounded-xl px-4 py-3.5 text-foreground placeholder:text-muted-foreground/60 font-tajawal outline-none transition-all focus:border-gold/70 focus:ring-2 focus:ring-gold/20;
+  }
+  /* شريط لمعان */
+  .shine::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.22) 50%, transparent 70%);
+    background-size: 250% 100%;
+    animation: shimmer 2.8s linear infinite;
+    pointer-events: none;
+  }
+}
+
+/* شريط تمرير مخصص */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #12121b;
+}
+::-webkit-scrollbar-thumb {
+  background: #6b5a2a;
+  border-radius: 8px;
+}
+
+/* كونفيتي ذهبي */
+@keyframes confetti-fall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0.6; }
+}
+.confetti-piece {
+  position: absolute;
+  top: -5vh;
+  animation: confetti-fall linear forwards;
+  pointer-events: none;
+}

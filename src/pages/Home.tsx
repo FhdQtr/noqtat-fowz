@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, Link } from "react-router";
 import { Swords, Tv, Users, Trophy, Sparkles, LogIn } from "lucide-react";
 import { unlockAudio, sfx } from "../lib/sounds";
 import { findMatchByTeamCode } from "../lib/matchApi";
@@ -173,6 +173,8 @@ export default function Home() {
 
       <footer className="pb-6 text-center text-xs text-muted-foreground/70">
         صنع بواسطة فهد القحطاني <span className="text-gold-faint mx-1">|</span> Fhd.AlQahtani
+        <span className="text-gold-faint mx-1">|</span>
+        <Link to="/admin" className="hover:text-gold-light transition-colors">لوحة التحكم</Link>
       </footer>
     </div>
   );

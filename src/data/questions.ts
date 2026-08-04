@@ -6,13 +6,26 @@ import type { Question, QuestionType, QuestionLevel } from "../types/game";
 
 export const QUESTIONS = raw as Question[];
 
+// ═══ بنك أسئلة المقدم المخصص (من لوحة التحكم — يُزامَن من Firebase) ═══
+let customQuestions: Question[] = [];
+
+/** تُستدعى من lib/customBank عند وصول تحديث من Firebase */
+export function setCustomQuestions(list: Question[]) {
+  customQuestions = list;
+}
+
+/** كل الأسئلة المتاحة = البنك الأصلي + أسئلة المقدم غير المعطّلة */
+export function allQuestions(): Question[] {
+  return QUESTIONS.concat(customQuestions);
+}
+
 /** اختيار سؤال عشوائي غير مستخدم */
 export function pickQuestion(
   usedIds: number[],
   enabledTypes: QuestionType[],
   level?: QuestionLevel
 ): Question | null {
-  let pool = QUESTIONS.filter(
+  let pool = allQuestions().filter(
     (q) => enabledTypes.includes(q.type) && !usedIds.includes(q.id)
   );
   if (level) {
@@ -29,7 +42,7 @@ export function pickQuestionOfType(
   type: QuestionType,
   level?: QuestionLevel
 ): Question | null {
-  const ofType = QUESTIONS.filter((q) => q.type === type);
+  const ofType = allQuestions().filter((q) => q.type === type);
   if (!ofType.length) return null;
   const rnd = (pool: Question[]) => pool[Math.floor(Math.random() * pool.length)];
   const fresh = ofType.filter((q) => !usedIds.includes(q.id));
@@ -51,7 +64,7 @@ const NO_SHUFFLE: QuestionType[] = ["true_false", "ordering"];
 
 /** خلط الخيارات مع تصحيح فهرس الإجابة — حتى ما تكون الإجابة غالباً أول خيار */
 export function shuffleQuestion(q: Question): Question {
-  if (NO_SHUFFLE.includes(q.type) || q.options.length <= 2) return q;
+  if (NO_SHUFFLE.includes(q.type) || q.format === "tf" || q.options.length <= 2) return q;
   const idx = q.options.map((_, i) => i);
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

@@ -11,7 +11,7 @@ import {
   passToNextTeam, advanceTurn, endMatch, deleteMatch, typeProgress,
 } from "../lib/matchApi";
 import type { Match, QuestionType } from "../types/game";
-import { TEAM_COLORS, TYPE_LABEL, LEVEL_LABEL, VISUAL_TYPES, questionPoints } from "../types/game";
+import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionPoints } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
@@ -114,7 +114,7 @@ export default function HostRoom() {
   const winners = st.phase === "ended" ? [...teams].sort((a, b) => b.score - a.score) : [];
   const isTie = winners.length > 1 && winners[0].score === winners[1].score;
 
-  const visual = st.question ? VISUAL_TYPES.includes(st.question.type) : false;
+  const visual = st.question ? viewSecondsFor(st.question) !== null : false;
   const viewing = !!(st.viewUntil && now < st.viewUntil);
   const viewLeft = st.viewUntil ? Math.max(0, Math.ceil((st.viewUntil - now) / 1000)) : 0;
   const showImage = !visual || viewing || st.phase === "revealed";
@@ -305,7 +305,7 @@ export default function HostRoom() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
               {match.enabledTypes.map((t) => {
                 const pr = typeProgress(match, chooseTeam.code, t);
-                const Icon = TYPE_ICON[t];
+                const Icon = TYPE_ICON[t] ?? HelpCircle;
                 return (
                   <button
                     key={t}
@@ -314,7 +314,7 @@ export default function HostRoom() {
                     className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35 disabled:cursor-not-allowed"
                   >
                     <Icon className="w-7 h-7 text-gold-light" />
-                    <span className="font-cairo font-bold text-sm">{TYPE_LABEL[t]}</span>
+                    <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>
                     <span className="text-xs text-muted-foreground">
                       {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
                     </span>
@@ -362,16 +362,18 @@ export default function HostRoom() {
             </span>
           </div>
 
-          {/* عدّاد معاينة الصورة */}
+          {/* عدّاد المعاينة (صورة/مقطع) */}
           {visual && viewing && (
             <div className="glass-card !border-gold/60 p-3 flex items-center justify-center gap-3 animate-scale-in">
               <Eye className="w-5 h-5 text-gold-light" />
               <span className="font-cairo font-bold text-gold-light">
-                الصورة تُعرض — احفظوا! باقي {viewLeft} ثواني
+                {st.question?.video
+                  ? "المقطع يُعرض على التلفزيون — اضغط التشغيل من شاشة العرض"
+                  : `الصورة تُعرض — احفظوا! باقي ${viewLeft} ثواني`}
               </span>
             </div>
           )}
-          {visual && !viewing && st.phase !== "revealed" && (
+          {visual && !viewing && st.phase !== "revealed" && !st.question?.video && (
             <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
               <EyeOff className="w-4 h-4" />
               الصورة اختفت — على الفريق التذكّر

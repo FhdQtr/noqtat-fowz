@@ -2,7 +2,8 @@
 // نقطة فوز — الأنواع الأساسية للمسابقة الجماعية
 // ═══════════════════════════════════════════════════════════
 
-export type QuestionType =
+/** الأنواع الأساسية — والمقدم يقدر يضيف أنواعاً مخصصة بأسمائه (سلسلة نصية حرة) */
+export type BuiltinQuestionType =
   | "multiple_choice"
   | "true_false"
   | "image"
@@ -12,7 +13,16 @@ export type QuestionType =
   | "riddle"
   | "memory";
 
+export type QuestionType = string;
+
 export type QuestionLevel = "easy" | "medium" | "hard";
+
+/** مقطع فيديو يوتيوب مرفق بالسؤال (يشاهدونه ثم يظهر السؤال) */
+export interface QuestionVideo {
+  youtubeId: string;
+  start: number; // من ثانية
+  end: number; // إلى ثانية
+}
 
 export interface Question {
   id: number;
@@ -22,7 +32,16 @@ export interface Question {
   question: string;
   options: string[];
   answer: number; // فهرس الإجابة الصحيحة
-  image?: string; // رابط صورة (علم أو معلم)
+  image?: string; // رابط صورة أو data URL (علم/معلم/صورة مخصصة)
+  video?: QuestionVideo; // مقطع يوتيوب (أسئلة الفيديو)
+  format?: "tf" | "mc"; // صيغة الإجابة (لأسئلة المقدم المخصصة)
+}
+
+/** نوع سؤال مخصص يسويه صاحب اللعبة من لوحة التحكم */
+export interface CustomType {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
 export type TeamColor = "maroon" | "emerald" | "royal" | "gold";
@@ -113,7 +132,7 @@ export const LEVEL_LABEL: Record<QuestionLevel, string> = {
   hard: "صعب",
 };
 
-export const TYPE_LABEL: Record<QuestionType, string> = {
+export const TYPE_LABEL: Record<string, string> = {
   multiple_choice: "اختيار من متعدد",
   true_false: "صح أم خطأ",
   image: "خمّن الصورة",
@@ -124,11 +143,40 @@ export const TYPE_LABEL: Record<QuestionType, string> = {
   memory: "اختبار الذاكرة",
 };
 
+// أسماء الأنواع المخصصة — تُسجَّل تلقائياً من مزامنة البنك المخصص
+const customLabels = new Map<string, string>();
+
+/** تُستدعى من lib/customBank عند وصول الأنواع المخصصة من Firebase */
+export function registerTypeLabels(list: CustomType[]) {
+  customLabels.clear();
+  list.forEach((t) => customLabels.set(t.id, t.name));
+}
+
+/** اسم النوع للعرض — يدعم الأنواع المخصصة من لوحة التحكم */
+export function typeLabel(type: QuestionType): string {
+  return TYPE_LABEL[type] ?? customLabels.get(type) ?? type;
+}
+
 /** مدة عرض الصورة قبل إخفائها (الذاكرة والأعلام) */
 export const VIEW_SECONDS = 10;
 
 /** الأنواع اللي تعتمد على مشاهدة الصورة أولاً */
 export const VISUAL_TYPES: QuestionType[] = ["memory", "flag"];
+
+/**
+ * مدة المشاهدة قبل ظهور السؤال (بالثواني):
+ * الذاكرة/الأعلام ١٠ ثواني — أسئلة الفيديو = طول المقطع — وغيرها بدون مشاهدة
+ */
+export function viewSecondsFor(q: Question): number | null {
+  if (VISUAL_TYPES.includes(q.type)) return VIEW_SECONDS;
+  if (q.video) return Math.max(1, q.video.end - q.video.start) + 3; // +3 سماحية تشغيل
+  return null;
+}
+
+/** هل السؤال يُخفى أثناء المشاهدة؟ (الذاكرة والأعلام تُخفى — الفيديو يبقى المشغل ظاهر) */
+export function hidesDuringView(q: Question): boolean {
+  return VISUAL_TYPES.includes(q.type);
+}
 
 /** النقاط الفعلية للسؤال الحالي بعد تعديلات السرقة/المساعدة */
 export function questionPoints(st: {
@@ -157,4 +205,5 @@ export const CATEGORY_LABEL: Record<string, string> = {
   landmarks: "معالم العالم",
   flags: "أعلام",
   memory: "ذاكرة",
+  custom: "أسئلة المقدم",
 };

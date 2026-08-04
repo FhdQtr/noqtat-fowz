@@ -5,6 +5,7 @@ import HostRoom from "./pages/HostRoom";
 import TvScreen from "./pages/TvScreen";
 import Play from "./pages/Play";
 import Challenge from "./pages/Challenge";
+import Admin from "./pages/admin/Admin";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
       <Route path="/tv/:code" element={<TvScreen />} />
       <Route path="/play/:teamCode" element={<Play />} />
       <Route path="/challenge" element={<Challenge />} />
+      <Route path="/admin" element={<Admin />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

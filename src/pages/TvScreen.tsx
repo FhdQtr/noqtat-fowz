@@ -3,10 +3,11 @@ import { useParams } from "react-router";
 import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye } from "lucide-react";
 import { subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
-import { TEAM_COLORS, VISUAL_TYPES, questionPoints } from "../types/game";
+import { TEAM_COLORS, viewSecondsFor, questionPoints } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
+import YouTubeClip from "../components/YouTubeClip";
 import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/QuestionCard";
 import { sfx } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
@@ -99,7 +100,7 @@ export default function TvScreen() {
     match.teams[match.teamOrder[match.turnIndex % match.teamOrder.length]];
 
   const q = st.question;
-  const visual = q ? VISUAL_TYPES.includes(q.type) : false;
+  const visual = q ? viewSecondsFor(q) !== null : false; // مشاهدة أولاً: ذاكرة/أعلام/فيديو
   const viewing = !!(st.viewUntil && now < st.viewUntil);
   const viewLeft = st.viewUntil ? Math.max(0, Math.ceil((st.viewUntil - now) / 1000)) : 0;
   const showImage = !visual || viewing || st.phase === "revealed";
@@ -229,8 +230,10 @@ export default function TvScreen() {
               </div>
             )}
 
-            {/* معاينة الصورة (ذاكرة/أعلام): صورة كبيرة + عدّاد */}
-            {visual && viewing && q.image ? (
+            {/* المعاينة: مقطع فيديو (يوتيوب مدمج) أو صورة كبيرة (ذاكرة/أعلام) */}
+            {visual && viewing && q.video ? (
+              <YouTubeClip key={`${q.id}-${st.round}`} video={q.video} />
+            ) : visual && viewing && q.image ? (
               <div className="flex flex-col items-center gap-4 w-full">
                 <div
                   className="relative overflow-hidden rounded-3xl border-4 border-gold/50 w-full max-w-3xl"

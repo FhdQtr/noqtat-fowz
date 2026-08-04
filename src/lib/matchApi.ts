@@ -11,7 +11,7 @@ import {
 import type {
   Match, GameState, Question, QuestionType, QuestionLevel, TeamColor, Player,
 } from "../types/game";
-import { TEAM_COLORS, VIEW_SECONDS, VISUAL_TYPES, questionPoints } from "../types/game";
+import { TEAM_COLORS, viewSecondsFor, questionPoints } from "../types/game";
 
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -222,8 +222,8 @@ export async function chooseType(
       }
       const q: Question = shuffleQuestion(picked);
       const now = Date.now();
-      const visual = VISUAL_TYPES.includes(q.type);
-      const viewUntil = visual ? now + VIEW_SECONDS * 1000 : null;
+      const vsec = viewSecondsFor(q); // ذاكرة/أعلام/فيديو = مشاهدة أولاً
+      const viewUntil = vsec ? now + vsec * 1000 : null;
       return {
         ...m,
         typeCounts: { ...m.typeCounts, [teamCode]: { ...counts, [type]: n } },
@@ -346,8 +346,8 @@ export async function passToNextTeam(code: string, match: Match) {
   const st = match.state;
   const currentIdx = match.teamOrder.indexOf(st.targetTeam!);
   const nextTeam = match.teamOrder[(currentIdx + 1) % match.teamOrder.length];
-  const visual = st.question ? VISUAL_TYPES.includes(st.question.type) : false;
-  const viewUntil = visual ? Date.now() + VIEW_SECONDS * 1000 : null;
+  const vsec = st.question ? viewSecondsFor(st.question) : null;
+  const viewUntil = vsec ? Date.now() + vsec * 1000 : null;
   await update(ref(db, `matches/${code}`), {
     state: {
       ...st,

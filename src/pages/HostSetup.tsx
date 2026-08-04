@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ArrowRight, Minus, Plus, Crown, Timer, TimerOff, Layers, Loader2,
@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { createMatch } from "../lib/matchApi";
 import { sfx, unlockAudio } from "../lib/sounds";
+import { useCustomTypes } from "../lib/useCustomBank";
 import type { QuestionType } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 
@@ -23,9 +24,11 @@ const TYPE_OPTIONS: { id: QuestionType; label: string; icon: typeof Flag }[] = [
 ];
 
 const ROUND_OPTIONS = [8, 12, 16, 20];
+const TIMER_OPTIONS = [10, 15, 20, 30, 40, 50, 60];
 
 export default function HostSetup() {
   const nav = useNavigate();
+  const customTypes = useCustomTypes();
   const [hostName, setHostName] = useState("");
   const [teamCount, setTeamCount] = useState(2);
   const [teamNames, setTeamNames] = useState<string[]>(["", ""]);
@@ -34,6 +37,18 @@ export default function HostSetup() {
   const [types, setTypes] = useState<QuestionType[]>(TYPE_OPTIONS.map((t) => t.id));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  // الأنواع المعروضة = الأساسية + أنواع المقدم المخصصة (تُفعَّل تلقائياً أول ما تظهر)
+  const allTypeOptions = [
+    ...TYPE_OPTIONS,
+    ...customTypes.map((t) => ({ id: t.id, label: t.name, icon: HelpCircle })),
+  ];
+  const customIds = customTypes.map((t) => t.id);
+  useEffect(() => {
+    if (customIds.length)
+      setTypes((prev) => (customIds.every((id) => prev.includes(id)) ? prev : [...prev, ...customIds.filter((id) => !prev.includes(id))]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customIds.join(",")]);
 
   const setCount = (n: number) => {
     const c = Math.min(4, Math.max(2, n));
@@ -159,7 +174,7 @@ export default function HostSetup() {
           </div>
 
           {/* المؤقت */}
-          <label className="block text-sm font-bold mb-2 text-gold-light/90">وقت الإجابة</label>
+          <label className="block text-sm font-bold mb-2 text-gold-light/90">وقت الإجابة لكل سؤال</label>
           <div className="flex gap-2 mb-6">
             <button
               onClick={() => setTimer(0)}
@@ -168,17 +183,26 @@ export default function HostSetup() {
               }`}
             >
               <TimerOff className="w-4 h-4" />
-              بدون مؤقت
+              بدون وقت
             </button>
-            <button
-              onClick={() => setTimer(30)}
-              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
-                timer === 30 ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
+            <div
+              className={`flex-1 flex items-center gap-2 rounded-xl border px-3 transition-all ${
+                timer > 0 ? "bg-gold/20 border-gold" : "border-gold-faint/40"
               }`}
             >
-              <Timer className="w-4 h-4" />
-              ٣٠ ثانية
-            </button>
+              <Timer className={`w-4 h-4 shrink-0 ${timer > 0 ? "text-gold-light" : "text-muted-foreground"}`} />
+              <select
+                value={timer > 0 ? timer : 30}
+                onChange={(e) => setTimer(Number(e.target.value))}
+                className={`w-full bg-transparent py-2.5 font-cairo font-bold outline-none cursor-pointer ${
+                  timer > 0 ? "text-gold-light" : "text-muted-foreground"
+                } [&>option]:bg-night-800`}
+              >
+                {TIMER_OPTIONS.map((s) => (
+                  <option key={s} value={s}>{s} ثانية</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* أنواع الأسئلة */}
@@ -187,7 +211,7 @@ export default function HostSetup() {
             أنواع الأسئلة
           </label>
           <div className="flex flex-wrap gap-2 mb-2">
-            {TYPE_OPTIONS.map(({ id, label, icon: Icon }) => {
+            {allTypeOptions.map(({ id, label, icon: Icon }) => {
               const on = types.includes(id);
               return (
                 <button
@@ -205,6 +229,11 @@ export default function HostSetup() {
               );
             })}
           </div>
+          {customTypes.length > 0 && (
+            <p className="text-xs text-gold-light/70 mb-1">
+              أنواعك المخصصة من لوحة التحكم تظهر هنا تلقائياً.
+            </p>
+          )}
           <p className="text-xs text-muted-foreground leading-relaxed mb-8">
             في كل دور، الفريق يختار نوع سؤاله من الأنواع المفعّلة — أول سؤال من النوع سهل بـ٥٠ نقطة،
             وكل ما كرر نفس النوع صار أصعب ونقاطه أكثر (١٠٠، ١٥٠…)، وفي حد أقصى لكل نوع علشان تتنوع الأسئلة.

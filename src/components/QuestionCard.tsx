@@ -1,6 +1,6 @@
-import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle, Brain } from "lucide-react";
+import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle, Brain, Clapperboard } from "lucide-react";
 import type { Question } from "../types/game";
-import { TYPE_LABEL, LEVEL_LABEL, CATEGORY_LABEL } from "../types/game";
+import { typeLabel, LEVEL_LABEL, CATEGORY_LABEL } from "../types/game";
 
 const TYPE_ICON: Record<string, typeof Flag> = {
   flag: Flag,
@@ -16,12 +16,12 @@ const TYPE_ICON: Record<string, typeof Flag> = {
 const LETTERS = ["أ", "ب", "ج", "د"];
 
 export function QuestionMeta({ q }: { q: Question }) {
-  const Icon = TYPE_ICON[q.type] ?? HelpCircle;
+  const Icon = q.video ? Clapperboard : TYPE_ICON[q.type] ?? HelpCircle;
   return (
     <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-tajawal">
       <span className="inline-flex items-center gap-1.5 rounded-full border border-gold-faint/50 bg-night-700/70 px-3 py-1 text-gold-light">
         <Icon className="w-3.5 h-3.5" />
-        {TYPE_LABEL[q.type]}
+        {typeLabel(q.type)}
       </span>
       <span className="rounded-full border border-gold-faint/40 bg-night-700/70 px-3 py-1 text-muted-foreground">
         {CATEGORY_LABEL[q.category] ?? q.category}
@@ -131,7 +131,7 @@ export function OptionsDisplay({
                   : "bg-night-600 text-gold-light border border-gold-faint/50"
               }`}
             >
-              {q.type === "true_false" ? (i === 0 ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />) : LETTERS[i]}
+              {q.type === "true_false" || q.format === "tf" ? (i === 0 ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />) : LETTERS[i]}
             </span>
             <span className="flex-1">{opt}</span>
             {isCorrect && <Check className="w-6 h-6 shrink-0" />}

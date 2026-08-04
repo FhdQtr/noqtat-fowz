@@ -3,13 +3,13 @@ import { useNavigate, useParams } from "react-router";
 import {
   Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
   Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
-  MessageSquare, ListChecks,
+  MessageSquare, ListChecks, Eye,
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist, typeProgress,
 } from "../lib/matchApi";
 import type { Match, Player, QuestionType } from "../types/game";
-import { TEAM_COLORS, TYPE_LABEL, LEVEL_LABEL, VISUAL_TYPES } from "../types/game";
+import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
 import { sfx, unlockAudio } from "../lib/sounds";
@@ -213,7 +213,7 @@ export default function Play() {
   }
 
   const q = st!.question;
-  const visual = q ? VISUAL_TYPES.includes(q.type) : false;
+  const visual = q ? viewSecondsFor(q) !== null : false; // مشاهدة أولاً: ذاكرة/أعلام/فيديو
   const viewing = !!(st!.viewUntil && now < st!.viewUntil);
   const viewLeft = st!.viewUntil ? Math.max(0, Math.ceil((st!.viewUntil - now) / 1000)) : 0;
 
@@ -265,7 +265,7 @@ export default function Play() {
               <div className="grid grid-cols-2 gap-3">
                 {match.enabledTypes.map((t) => {
                   const pr = typeProgress(match, teamCode, t);
-                  const Icon = TYPE_ICON[t];
+                  const Icon = TYPE_ICON[t] ?? HelpCircle;
                   return (
                     <button
                       key={t}
@@ -275,7 +275,7 @@ export default function Play() {
                       style={{ borderColor: `${c.hex}66` }}
                     >
                       <Icon className="w-7 h-7 text-gold-light" />
-                      <span className="font-cairo font-bold text-sm">{TYPE_LABEL[t]}</span>
+                      <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>
                       <span className="text-xs text-muted-foreground">
                         {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
                       </span>
@@ -327,6 +327,17 @@ export default function Play() {
                     <p className="font-cairo font-black text-gold-light text-lg animate-pulse">
                       احفظوا الصورة! باقي {viewLeft} ثواني
                     </p>
+                  </div>
+                )}
+
+                {/* الفيديو يُعرض على الشاشة الكبيرة فقط */}
+                {q.video && viewing && (
+                  <div className="glass-card !border-gold/60 p-6 flex flex-col items-center gap-3 text-center">
+                    <Eye className="w-10 h-10 text-gold-light animate-pulse" />
+                    <p className="font-cairo font-black text-xl text-gold-light">
+                      المقطع يُعرض على الشاشة الكبيرة — ركزوا!
+                    </p>
+                    <p className="text-sm text-muted-foreground">بعد انتهاء المقطع يظهر السؤال هنا</p>
                   </div>
                 )}
 

@@ -39,14 +39,28 @@ export default function Admin() {
   const [editTarget, setEditTarget] = useState<CustomQuestion | null>(null);
 
   useEffect(() => {
+    let done = false;
+    // مهلة أمان: لو الاتصال طوّل نظهر رسالة بدل تحميل أبدي
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      setErr("الاتصال أخذ وقتًا أطول من المعتاد — تأكد من الإنترنت ثم حدّث الصفحة");
+      setGate("login");
+    }, 15000);
     getAdminPassHash()
       .then((h) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
         setStoredHash(h);
         if (!h) setGate("setup");
         else if (sessionStorage.getItem(SESSION_KEY) === h) setGate("authed");
         else setGate("login");
       })
       .catch(() => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
         setErr("تعذّر الاتصال — تأكد من الإنترنت ثم حدّث الصفحة");
         setGate("login");
       });

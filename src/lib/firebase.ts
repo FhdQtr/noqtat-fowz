@@ -44,6 +44,8 @@ export function ensureAuth(): Promise<void> {
         }
       });
       signInAnonymously(auth).catch(() => resolve());
+      // مهلة أمان: شبكة بطيئة أو محظورة ما تعلّق التطبيق للأبد
+      setTimeout(resolve, 12000);
     });
   }
   return ready;

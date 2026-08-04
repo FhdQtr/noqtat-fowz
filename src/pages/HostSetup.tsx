@@ -73,18 +73,24 @@ export default function HostSetup() {
     setErr("");
     unlockAudio();
     try {
-      const code = await createMatch({
-        hostName,
-        teamNames: teamNames.map((n, i) => n.trim() || `فريق ${["العنابي", "الأخضر", "الأزرق", "الذهبي"][i]}`),
-        totalRounds,
-        timer,
-        enabledTypes: types,
-      });
+      // مهلة أمان: لو الاتصال طوّل نظهر رسالة بدل تعليق أبدي على «جاري الإنشاء»
+      const code = await Promise.race([
+        createMatch({
+          hostName,
+          teamNames: teamNames.map((n, i) => n.trim() || `فريق ${["العنابي", "الأخضر", "الأزرق", "الذهبي"][i]}`),
+          totalRounds,
+          timer,
+          enabledTypes: types,
+        }),
+        new Promise<never>((_, rej) =>
+          setTimeout(() => rej(new Error("الاتصال بالسيرفر أخذ وقتًا أطول من المعتاد — تأكد من الإنترنت أو جرّب شبكة ثانية")), 20000)
+        ),
+      ]);
       sfx.correct();
       nav(`/host/${code}`);
     } catch (e) {
       console.error(e);
-      setErr(`خطأ: ${e instanceof Error ? e.message : String(e)}`);
+      setErr(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
   };

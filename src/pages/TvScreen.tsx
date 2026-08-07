@@ -253,21 +253,21 @@ export default function TvScreen() {
                 </div>
               </div>
             ) : q.type === "acting" && st.phase !== "revealed" ? (
-              /* ═══ مثّل المثل: QR للممثل — المثل سرّي ما يظهر على الشاشة ═══ */
+              /* ═══ مثّل المثل: المثل سرّي — يقرأه الممثّل من شاشة الحكم فقط ═══ */
               <div className="glass-card w-full p-8 sm:p-10 flex flex-col items-center gap-6 animate-scale-in">
-                <Drama className="w-14 h-14 text-gold-light" />
+                <Drama className="w-14 h-14 text-gold-light animate-pulse" />
                 <h2 className="font-cairo font-black text-3xl sm:text-4xl text-gold-gradient">
                   مثّل المثل!
                 </h2>
-                <p className="text-xl text-muted-foreground font-cairo">
+                <p className="text-xl text-muted-foreground font-cairo leading-relaxed">
                   واحد من فريق{" "}
                   <strong style={{ color: st.targetTeam ? TEAM_COLORS[match.teams[st.targetTeam].color].light : undefined }}>
                     {st.targetTeam ? match.teams[st.targetTeam].name : ""}
                   </strong>{" "}
-                  يمسح الكود — يشوف المثل بجهازه ويمثّله <span className="text-gold-light">بدون كلام</span>
+                  يقف قدام فريقه — يقرأ المثل من <span className="text-gold-light">شاشة الحكم</span> ويمثّله{" "}
+                  <span className="text-gold-light">بدون كلام</span>
                 </p>
-                <QrCode value={`${location.origin}/act/${code}`} size={190} label="يمسحها الممثّل فقط" />
-                <p className="text-sm text-muted-foreground">الفريق يخمّن بصوت عالي — والمقدم يحكم</p>
+                <p className="text-sm text-muted-foreground">الفريق يخمّن بصوت عالي — والحكم يحكم صح أو خطأ</p>
               </div>
             ) : (
               <TimerRing

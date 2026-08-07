@@ -305,6 +305,48 @@ export default function HostRoom() {
         </div>
       </div>
 
+      {/* قادة الفرق — الحكم يقدر يغيّر القائد في أي وقت */}
+      <details className="mb-4 glass-card !p-0 overflow-hidden">
+        <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-cairo font-bold text-gold-light/90 flex items-center gap-2">
+          <Crown className="w-3.5 h-3.5" />
+          قادة الفرق — اضغط لتعيين أو تغيير (القائد هو الوحيد اللي يختار ويجاوب من جهازه)
+        </summary>
+        <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-gold-faint/20">
+          {teams.map((t) => {
+            const c = TEAM_COLORS[t.color];
+            const members = players.filter((p) => p.teamCode === t.code);
+            return (
+              <div key={t.code} className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-cairo font-bold shrink-0" style={{ color: c.light }}>
+                  {t.name}:
+                </span>
+                {members.length === 0 && <span className="text-[11px] text-muted-foreground/60">لا لاعبين</span>}
+                {members.map((p) => {
+                  const isCap = t.captainId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => act(() => setCaptain(code, t.code, isCap ? null : p.id))}
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold font-cairo transition-all flex items-center gap-1 ${
+                        isCap ? "ring-1 ring-gold" : "opacity-75 hover:opacity-100"
+                      }`}
+                      style={{
+                        background: isCap ? "#d4af3730" : `${c.hex}2e`,
+                        color: isCap ? "#f3dd9a" : c.light,
+                        border: `1px solid ${isCap ? "#d4af37" : `${c.hex}55`}`,
+                      }}
+                    >
+                      {isCap && <Crown className="w-2.5 h-2.5" />}
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </details>
+
       {/* ═══ اختيار نوع السؤال ═══ */}
       {(st.phase === "choose" || st.phase === "lobby" || !st.question) && (
         <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-up">
@@ -402,6 +444,19 @@ export default function HostRoom() {
             <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
               <EyeOff className="w-4 h-4" />
               الصورة اختفت — على الفريق التذكّر
+            </div>
+          )}
+
+          {/* مثّل المثل: المثل بارز للحكم — يورّيه للممثل فقط */}
+          {st.question.type === "acting" && st.phase !== "revealed" && (
+            <div className="glass-card !border-gold p-6 text-center animate-scale-in" style={{ boxShadow: "0 0 34px rgba(212,175,55,0.18)" }}>
+              <div className="flex items-center justify-center gap-2 text-gold-light font-cairo font-bold mb-3">
+                <Drama className="w-5 h-5" />
+                ورِّ هالشاشة للممثّل فقط — لا أحد غيره يشوف
+              </div>
+              <p className="font-cairo font-black text-3xl sm:text-4xl leading-relaxed text-gold-gradient">
+                «{st.question.question}»
+              </p>
             </div>
           )}
 

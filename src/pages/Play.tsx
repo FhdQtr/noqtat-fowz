@@ -12,7 +12,7 @@ import type { Match, Player, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
-import TimerRing from "../components/TimerRing";
+import LinearTimer from "../components/LinearTimer";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 
@@ -374,11 +374,16 @@ export default function Play() {
                         </p>
                       </div>
                     ) : (
-                    <TimerRing
-                      startedAt={st!.questionStartedAt ?? 0}
-                      total={match.timer}
-                      active={st!.phase === "question" && match.timer > 0}
-                    >
+                    <>
+                    {/* المؤقت: خط مستقيم + عد تنازلي — واضح للكل */}
+                    {match.timer > 0 && (
+                      <LinearTimer
+                        startedAt={st!.questionStartedAt ?? 0}
+                        total={match.timer}
+                        active={st!.phase === "question"}
+                        big
+                      />
+                    )}
                       <div className="glass-card p-5">
                         <QuestionMeta q={q} />
                         {/* صورة السؤال (خمّن الصورة / المعالم) تظهر للفريق صاحب الدور */}
@@ -391,7 +396,7 @@ export default function Play() {
                           {q.question}
                         </h2>
                       </div>
-                    </TimerRing>
+                    </>
                     )}
 
                     {/* التمثيل: بلا خيارات — تخمين شفهي */}
@@ -487,6 +492,13 @@ export default function Play() {
                 ) : (
                   /* ═══ باقي الفرق تشوف السؤال (قراءة فقط) — جهزوا إجابتكم لو انسرق! ═══ */
                   <div className="w-full flex flex-col gap-4 animate-fade-up">
+                    {match.timer > 0 && st!.phase === "question" && (
+                      <LinearTimer
+                        startedAt={st!.questionStartedAt ?? 0}
+                        total={match.timer}
+                        active
+                      />
+                    )}
                     <p className="text-center text-sm font-cairo text-muted-foreground">
                       السؤال عند فريق{" "}
                       <strong style={{ color: TEAM_COLORS[match.teams[st!.targetTeam!].color].light }}>

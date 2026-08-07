@@ -32,11 +32,11 @@ export default function Home() {
 
   const goTv = () => {
     const code = tvCode.trim().toUpperCase();
-    if (code.length === 6) {
+    if (code.length === 4 || code.length === 6) {
       unlockAudio();
       nav(`/tv/${code}`);
     } else {
-      setErr("كود المسابقة ٦ أحرف");
+      setErr("كود المسابقة ٤ خانات — حرف وأرقام مثل E839");
     }
   };
 

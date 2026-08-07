@@ -200,6 +200,8 @@ export default function HostSetup() {
               <Timer className={`w-4 h-4 shrink-0 ${timer > 0 ? "text-gold-light" : "text-muted-foreground"}`} />
               <select
                 value={timer > 0 ? timer : 30}
+                onClick={() => { if (timer === 0) setTimer(30); }}
+                onFocus={() => { if (timer === 0) setTimer(30); }}
                 onChange={(e) => setTimer(Number(e.target.value))}
                 className={`w-full bg-transparent py-2.5 font-cairo font-bold outline-none cursor-pointer ${
                   timer > 0 ? "text-gold-light" : "text-muted-foreground"

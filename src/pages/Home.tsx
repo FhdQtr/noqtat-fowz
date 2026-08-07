@@ -133,12 +133,12 @@ export default function Home() {
                 value={tvCode}
                 onChange={(e) => setTvCode(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === "Enter" && goTv()}
-                placeholder="XXXXXX"
+                placeholder="A482"
                 className="input-night text-center font-cairo tracking-widest"
                 dir="ltr"
                 maxLength={6}
               />
-              <button onClick={goTv} disabled={tvCode.trim().length !== 6} className="btn-gold px-4 shrink-0">
+              <button onClick={goTv} disabled={![4, 6].includes(tvCode.trim().length)} className="btn-gold px-4 shrink-0">
                 <Tv className="w-5 h-5" />
               </button>
             </div>

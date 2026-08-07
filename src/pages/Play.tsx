@@ -381,6 +381,12 @@ export default function Play() {
                     >
                       <div className="glass-card p-5">
                         <QuestionMeta q={q} />
+                        {/* صورة السؤال (خمّن الصورة / المعالم) تظهر للفريق صاحب الدور */}
+                        {q.image && (!visual || viewing) && (
+                          <div className="mt-4 overflow-hidden rounded-xl border-2 border-gold/40">
+                            <img src={q.image} alt="صورة السؤال" className="w-full object-cover aspect-[3/2]" />
+                          </div>
+                        )}
                         <h2 className="mt-4 text-center font-cairo font-extrabold text-lg leading-relaxed">
                           {q.question}
                         </h2>

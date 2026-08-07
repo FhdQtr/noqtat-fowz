@@ -116,7 +116,7 @@ export default function HostSetup() {
           </div>
 
           {/* اسم المقدم */}
-          <label className="block text-sm font-bold mb-2 text-gold-light/90">اسمك (المقدم)</label>
+          <label className="block text-sm font-bold mb-2 text-gold-light/90">اسمك (الحكم)</label>
           <input
             value={hostName}
             onChange={(e) => setHostName(e.target.value)}

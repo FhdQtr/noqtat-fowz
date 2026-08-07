@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
-import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye } from "lucide-react";
+import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama } from "lucide-react";
 import { subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints } from "../types/game";
@@ -252,6 +252,23 @@ export default function TvScreen() {
                   </span>
                 </div>
               </div>
+            ) : q.type === "acting" && st.phase !== "revealed" ? (
+              /* ═══ مثّل المثل: QR للممثل — المثل سرّي ما يظهر على الشاشة ═══ */
+              <div className="glass-card w-full p-8 sm:p-10 flex flex-col items-center gap-6 animate-scale-in">
+                <Drama className="w-14 h-14 text-gold-light" />
+                <h2 className="font-cairo font-black text-3xl sm:text-4xl text-gold-gradient">
+                  مثّل المثل!
+                </h2>
+                <p className="text-xl text-muted-foreground font-cairo">
+                  واحد من فريق{" "}
+                  <strong style={{ color: st.targetTeam ? TEAM_COLORS[match.teams[st.targetTeam].color].light : undefined }}>
+                    {st.targetTeam ? match.teams[st.targetTeam].name : ""}
+                  </strong>{" "}
+                  يمسح الكود — يشوف المثل بجهازه ويمثّله <span className="text-gold-light">بدون كلام</span>
+                </p>
+                <QrCode value={`${location.origin}/act/${code}`} size={190} label="يمسحها الممثّل فقط" />
+                <p className="text-sm text-muted-foreground">الفريق يخمّن بصوت عالي — والمقدم يحكم</p>
+              </div>
             ) : (
               <TimerRing
                 startedAt={st.questionStartedAt ?? 0}
@@ -267,15 +284,22 @@ export default function TvScreen() {
                     : ""
                 }`}
               >
-                <QuestionBody q={q} big reveal={st.phase === "revealed"} showImage={showImage} />
+                <QuestionBody
+                  q={q}
+                  big
+                  reveal={st.phase === "revealed"}
+                  showImage={showImage}
+                  showCorrect={st.isCorrect !== false}
+                />
                 {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة أو ينكشف الجواب */}
-                {!(q.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
+                {q.type !== "acting" && !(q.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
                   <div className="mt-7">
                     <OptionsDisplay
                       q={q}
                       big
                       chosen={st.phase === "revealed" ? st.answer?.choice ?? null : null}
                       reveal={st.phase === "revealed"}
+                      showCorrect={st.isCorrect !== false}
                     />
                   </div>
                 )}

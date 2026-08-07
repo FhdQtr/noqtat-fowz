@@ -13,12 +13,15 @@ import type {
 } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints } from "../types/game";
 
-const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const CODE_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ"; // بدون I/L/O عشان ما تلتبس
+const CODE_DIGITS = "23456789"; // بدون 0 و1 عشان ما تلتبس مع الحروف
 
-function genCode(len: number): string {
-  let s = "";
-  for (let i = 0; i < len; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
-  return s;
+/** كود مسابقة سهل وسريع: حرف كبير واحد + ٣ أرقام (مثل A482) */
+function genMatchCode(): string {
+  const l = CODE_LETTERS[Math.floor(Math.random() * CODE_LETTERS.length)];
+  let d = "";
+  for (let i = 0; i < 3; i++) d += CODE_DIGITS[Math.floor(Math.random() * CODE_DIGITS.length)];
+  return l + d;
 }
 
 const TEAM_COLOR_ORDER: TeamColor[] = ["maroon", "emerald", "royal", "gold"];
@@ -35,14 +38,14 @@ export interface CreateMatchOptions {
 export async function createMatch(opts: CreateMatchOptions): Promise<string> {
   await ensureAuth();
   for (let attempt = 0; attempt < 6; attempt++) {
-    const code = genCode(6);
+    const code = genMatchCode();
     const snap = await get(ref(db, `matches/${code}`));
     if (snap.exists()) continue;
 
     const teams: Match["teams"] = {};
     const teamOrder: string[] = [];
     opts.teamNames.forEach((name, i) => {
-      const tcode = `${code}-${genCode(3)}`;
+      const tcode = `${code}-${i + 1}`; // كود فريق بسيط: A482-1
       teamOrder.push(tcode);
       teams[tcode] = {
         code: tcode,
@@ -405,6 +408,12 @@ export async function deleteMatch(code: string) {
 export async function leaveMatch(code: string, playerId: string) {
   await ensureAuth();
   await remove(ref(db, `matches/${code}/players/${playerId}`));
+}
+
+/** المقدم يعيّن قائد الفريق (أو يلغيه بـ null) — القائد هو الوحيد اللي يختار النوع ويجاوب */
+export async function setCaptain(code: string, teamCode: string, playerId: string | null) {
+  await ensureAuth();
+  await set(ref(db, `matches/${code}/teams/${teamCode}/captainId`), playerId);
 }
 
 export { TEAM_COLORS };

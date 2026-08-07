@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ArrowRight, Minus, Plus, Crown, Timer, TimerOff, Layers, Loader2,
-  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
+  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain, Drama,
 } from "lucide-react";
 import { createMatch } from "../lib/matchApi";
 import { sfx, unlockAudio } from "../lib/sounds";
@@ -21,6 +21,7 @@ const TYPE_OPTIONS: { id: QuestionType; label: string; icon: typeof Flag }[] = [
   { id: "completion", label: "أكمل المثل", icon: Quote },
   { id: "ordering", label: "ترتيب", icon: ListOrdered },
   { id: "riddle", label: "ألغاز", icon: Lightbulb },
+  { id: "acting", label: "مثّل المثل", icon: Drama },
 ];
 
 const ROUND_OPTIONS = [8, 12, 16, 20];

@@ -1,4 +1,4 @@
-import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle, Brain, Clapperboard } from "lucide-react";
+import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle, Brain, Clapperboard, Drama } from "lucide-react";
 import type { Question } from "../types/game";
 import { typeLabel, LEVEL_LABEL, CATEGORY_LABEL } from "../types/game";
 
@@ -11,6 +11,7 @@ const TYPE_ICON: Record<string, typeof Flag> = {
   multiple_choice: HelpCircle,
   true_false: Check,
   memory: Brain,
+  acting: Drama,
 };
 
 const LETTERS = ["أ", "ب", "ج", "د"];
@@ -47,11 +48,13 @@ export function QuestionBody({
   big = false,
   reveal = false,
   showImage = true,
+  showCorrect = true,
 }: {
   q: Question;
   big?: boolean;
   reveal?: boolean;
   showImage?: boolean;
+  showCorrect?: boolean; // false = ما نظهر الإجابة الصحيحة (سؤال خاطئ بينتقل لفريق ثاني)
 }) {
   return (
     <div className="flex flex-col items-center gap-4">
@@ -78,7 +81,7 @@ export function QuestionBody({
       >
         {q.question}
       </h2>
-      {reveal && (
+      {reveal && showCorrect && q.type !== "acting" && q.options.length > 0 && (
         <div className="text-sm text-muted-foreground">
           الإجابة الصحيحة: <span className="text-emerald2-light font-bold">{q.options[q.answer]}</span>
         </div>
@@ -93,16 +96,18 @@ export function OptionsDisplay({
   chosen = null,
   reveal = false,
   big = false,
+  showCorrect = true,
 }: {
   q: Question;
   chosen?: number | null;
   reveal?: boolean;
   big?: boolean;
+  showCorrect?: boolean; // false = ما نعلّم الإجابة الصحيحة (عشان السؤال ينتقل لفريق ثاني)
 }) {
   return (
     <div className={`grid gap-3 w-full ${q.options.length === 2 ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2"}`}>
       {q.options.map((opt, i) => {
-        const isCorrect = reveal && i === q.answer;
+        const isCorrect = reveal && showCorrect && i === q.answer;
         const isWrongChoice = reveal && chosen === i && i !== q.answer;
         const isChosen = chosen === i;
         return (

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router";
 import {
   Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
   Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
-  MessageSquare, ListChecks, Eye,
+  MessageSquare, ListChecks, Eye, Drama,
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist, typeProgress,
@@ -27,6 +27,7 @@ const TYPE_ICON: Record<QuestionType, typeof Flag> = {
   completion: Quote,
   ordering: ListOrdered,
   riddle: Lightbulb,
+  acting: Drama,
 };
 
 export default function Play() {
@@ -58,6 +59,14 @@ export default function Play() {
   const st = match?.state;
   const isMyTurn = st?.phase === "question" && st.targetTeam === teamCode;
   const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
+
+  // قائد الفريق — لو معيّن، هو الوحيد اللي يختار النوع ويجاوب
+  const allPlayers = Object.values(match?.players ?? {});
+  const captainIdRaw = team?.captainId ?? null;
+  const captain = captainIdRaw ? allPlayers.find((p) => p.id === captainIdRaw) ?? null : null;
+  const captainId = captain ? captainIdRaw : null; // لو القائد غادر نعتبرها بدون قائد
+  const captainName = captain?.name ?? null;
+  const isCaptain = !captainId || captainId === player?.id;
 
   // ساعة حيّة لعدّاد معاينة الصور
   const now = useNow(
@@ -100,7 +109,7 @@ export default function Play() {
   };
 
   const answer = async (i: number) => {
-    if (!player || !isMyTurn || myPick !== null) return;
+    if (!player || !isMyTurn || myPick !== null || !isCaptain) return;
     setMyPick(i);
     unlockAudio();
     const res = await submitAnswer(matchCode, player.id, player.name, i);
@@ -109,6 +118,7 @@ export default function Play() {
   };
 
   const pickType = async (t: QuestionType) => {
+    if (!isCaptain) return;
     unlockAudio();
     const res = await chooseType(matchCode, t);
     if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
@@ -253,7 +263,15 @@ export default function Play() {
 
         {/* ═══ اختيار نوع السؤال ═══ */}
         {match.status === "playing" && st!.phase === "choose" && (
-          isMyChoose ? (
+          isMyChoose && !isCaptain ? (
+            <div className="text-center animate-fade-up">
+              <Crown className="w-10 h-10 text-gold-light mx-auto mb-3 animate-pulse" />
+              <p className="font-cairo text-lg">
+                القائد <strong className="text-gold-light">{captainName}</strong> يختار نوع السؤال…
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">تناقشوا معه وقلوا له وش تبون</p>
+            </div>
+          ) : isMyChoose ? (
             <div className="w-full flex flex-col gap-4 animate-fade-up">
               <div className="text-center">
                 <span className="inline-flex items-center gap-2 rounded-full px-5 py-2 border-2 font-cairo font-black animate-pulse-gold"
@@ -345,6 +363,17 @@ export default function Play() {
                 {/* بعد المعاينة أو سؤال عادي */}
                 {(!visual || !viewing) && (
                   <>
+                    {q.type === "acting" ? (
+                      <div className="glass-card !border-gold/60 p-6 flex flex-col items-center gap-3 text-center animate-fade-up">
+                        <Drama className="w-10 h-10 text-gold-light animate-pulse" />
+                        <p className="font-cairo font-black text-xl text-gold-light">
+                          الممثّل قدامكم يمثّل — خمّنوا المثل!
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          قولوا تخمينكم بصوت عالي والمقدم يحكم
+                        </p>
+                      </div>
+                    ) : (
                     <TimerRing
                       startedAt={st!.questionStartedAt ?? 0}
                       total={match.timer}
@@ -357,9 +386,11 @@ export default function Play() {
                         </h2>
                       </div>
                     </TimerRing>
+                    )}
 
-                    {/* الأعلام: شفهي أولاً أو مساعدة الخيارات */}
-                    {q.type === "flag" && !st!.assistUsed ? (
+                    {/* التمثيل: بلا خيارات — تخمين شفهي */}
+                    {q.type === "acting" ? null : /* الأعلام: شفهي أولاً أو مساعدة الخيارات */
+                    q.type === "flag" && !st!.assistUsed ? (
                       <div className="glass-card !border-gold/60 p-5 flex flex-col items-center gap-4 text-center">
                         <MessageSquare className="w-8 h-8 text-gold-light" />
                         <p className="font-cairo font-bold leading-relaxed">
@@ -372,22 +403,29 @@ export default function Play() {
                         </button>
                       </div>
                     ) : (
-                      <div className={`grid gap-3 ${q.options.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
-                        {q.options.map((opt, i) => (
-                          <button
-                            key={i}
-                            onClick={() => answer(i)}
-                            disabled={myPick !== null}
-                            className={`rounded-xl border-2 px-4 py-4 font-cairo font-bold text-base transition-all active:scale-[0.97] ${
-                              myPick === i
-                                ? "border-gold bg-gold/20 text-gold-light"
-                                : "border-gold-faint/40 bg-night-700/70 hover:border-gold/70 hover:bg-gold/10"
-                            } disabled:opacity-50`}
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
+                      <>
+                        {!isCaptain && (
+                          <p className="text-center text-sm font-cairo text-gold-light/90 animate-fade-up">
+                            تناقشوا مع بعض — القائد <strong>{captainName}</strong> هو اللي يثبّت الإجابة
+                          </p>
+                        )}
+                        <div className={`grid gap-3 ${q.options.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+                          {q.options.map((opt, i) => (
+                            <button
+                              key={i}
+                              onClick={() => answer(i)}
+                              disabled={myPick !== null || !isCaptain}
+                              className={`rounded-xl border-2 px-4 py-4 font-cairo font-bold text-base transition-all active:scale-[0.97] ${
+                                myPick === i
+                                  ? "border-gold bg-gold/20 text-gold-light"
+                                  : "border-gold-faint/40 bg-night-700/70 [@media(hover:hover)]:hover:border-gold/70 [@media(hover:hover)]:hover:bg-gold/10"
+                              } disabled:opacity-60`}
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      </>
                     )}
                   </>
                 )}
@@ -421,21 +459,58 @@ export default function Play() {
                     <p className={`font-cairo font-black text-2xl ${st!.isCorrect ? "text-emerald2-light" : "text-maroon-light"}`}>
                       {st!.isCorrect ? "إجابة صحيحة" : "إجابة خاطئة"}
                     </p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      الإجابة: <span className="text-emerald2-light font-bold">{q.options[q.answer]}</span>
+                    {/* الإجابة الصحيحة تظهر فقط إذا انتهى السؤال بإجابة صحيحة — عند الخطأ تبقى سرّية لأن السؤال ممكن ينتقل */}
+                    {st!.isCorrect && q.type !== "acting" && q.options.length > 0 && (
+                      <p className="text-sm text-muted-foreground mt-2">
+                        الإجابة: <span className="text-emerald2-light font-bold">{q.options[q.answer]}</span>
+                      </p>
+                    )}
+                  </div>
+                ) : q.type === "acting" ? (
+                  <div className="glass-card !border-gold/40 p-6 w-full text-center animate-fade-up">
+                    <Drama className="w-10 h-10 text-gold-light mx-auto mb-3 animate-pulse" />
+                    <p className="font-cairo font-bold text-lg">
+                      فريق{" "}
+                      <strong style={{ color: TEAM_COLORS[match.teams[st!.targetTeam!].color].light }}>
+                        {match.teams[st!.targetTeam!].name}
+                      </strong>{" "}
+                      يمثّل مثل ويخمّنونه…
                     </p>
+                    <p className="text-xs text-muted-foreground mt-1">المثل سرّي — ما يظهر إلا بجهاز الممثّل</p>
                   </div>
                 ) : (
-                  <>
-                    <Hourglass className="w-10 h-10 text-muted-foreground mx-auto mb-3 animate-pulse" />
-                    <p className="font-cairo text-lg text-muted-foreground">
+                  /* ═══ باقي الفرق تشوف السؤال (قراءة فقط) — جهزوا إجابتكم لو انسرق! ═══ */
+                  <div className="w-full flex flex-col gap-4 animate-fade-up">
+                    <p className="text-center text-sm font-cairo text-muted-foreground">
                       السؤال عند فريق{" "}
                       <strong style={{ color: TEAM_COLORS[match.teams[st!.targetTeam!].color].light }}>
                         {match.teams[st!.targetTeam!].name}
                       </strong>
+                      {" "}— لو غلطوا ممكن يجيكم!
                     </p>
-                    <p className="text-xs text-muted-foreground/70 mt-1">شاهدوا الشاشة الكبيرة</p>
-                  </>
+                    <div className="glass-card p-5 opacity-90">
+                      <QuestionMeta q={q} />
+                      {q.image && (!visual || viewing) && (
+                        <img src={q.image} alt="" className="mt-3 w-full rounded-xl object-cover aspect-[3/2] border border-gold-faint/40" />
+                      )}
+                      <h2 className="mt-4 text-center font-cairo font-extrabold text-lg leading-relaxed">
+                        {q.question}
+                      </h2>
+                    </div>
+                    {!(q.type === "flag" && !st!.assistUsed) && q.options.length > 0 && (
+                      <div className={`grid gap-3 ${q.options.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+                        {q.options.map((opt, i) => (
+                          <div
+                            key={i}
+                            className="rounded-xl border-2 border-gold-faint/25 bg-night-700/40 px-4 py-4 font-cairo font-bold text-base text-foreground/70 select-none"
+                          >
+                            {opt}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-center text-xs text-muted-foreground/70">قراءة فقط — ما تقدرون تجاوبون الحين</p>
+                  </div>
                 )}
               </div>
             )}

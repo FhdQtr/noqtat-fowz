@@ -11,7 +11,8 @@ export type BuiltinQuestionType =
   | "completion"
   | "ordering"
   | "riddle"
-  | "memory";
+  | "memory"
+  | "acting";
 
 export type QuestionType = string;
 
@@ -53,6 +54,7 @@ export interface Team {
   score: number;
   correctCount: number;
   wrongCount: number;
+  captainId?: string | null; // قائد الفريق — الوحيد اللي يختار النوع ويجاوب (فارغ = الكل يقدر)
 }
 
 export interface Player {
@@ -141,6 +143,7 @@ export const TYPE_LABEL: Record<string, string> = {
   ordering: "ترتيب",
   riddle: "لغز",
   memory: "اختبار الذاكرة",
+  acting: "مثّل المثل",
 };
 
 // أسماء الأنواع المخصصة — تُسجَّل تلقائياً من مزامنة البنك المخصص
@@ -205,5 +208,6 @@ export const CATEGORY_LABEL: Record<string, string> = {
   landmarks: "معالم العالم",
   flags: "أعلام",
   memory: "ذاكرة",
+  proverbs: "أمثال شعبية",
   custom: "أسئلة المقدم",
 };

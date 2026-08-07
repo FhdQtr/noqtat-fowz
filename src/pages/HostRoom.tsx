@@ -4,11 +4,11 @@ import {
   Tv, Play, Users, Crown, Eye, Repeat2, SkipForward,
   Trophy, Loader2, LogOut, Timer, CheckCircle2, XCircle, Share2, Trash2, WifiOff,
   Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
-  MessageSquare, EyeOff,
+  MessageSquare, EyeOff, Drama,
 } from "lucide-react";
 import {
   subscribeMatch, startMatch, chooseType, revealAnswer, judgeVerbal,
-  passToNextTeam, advanceTurn, endMatch, deleteMatch, typeProgress,
+  passToNextTeam, advanceTurn, endMatch, deleteMatch, typeProgress, setCaptain,
 } from "../lib/matchApi";
 import type { Match, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionPoints } from "../types/game";
@@ -28,6 +28,7 @@ const TYPE_ICON: Record<QuestionType, typeof Flag> = {
   completion: Quote,
   ordering: ListOrdered,
   riddle: Lightbulb,
+  acting: Drama,
 };
 
 export default function HostRoom() {
@@ -120,6 +121,9 @@ export default function HostRoom() {
   const showImage = !visual || viewing || st.phase === "revealed";
   const flagVerbal =
     st.question?.type === "flag" && st.phase === "question" && !st.assistUsed;
+  // مثّل المثل: حكم شفهي دائماً (الفريق يخمّن والمقدم يحكم)
+  const actingVerbal = st.question?.type === "acting" && st.phase === "question";
+  const verbalJudge = flagVerbal || actingVerbal;
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -229,16 +233,37 @@ export default function HostRoom() {
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
                     <Users className="w-3.5 h-3.5" />
                     <span>{members.length} لاعب</span>
+                    <span className="text-muted-foreground/60">— اضغط على الاسم لتعيينه قائداً</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 min-h-[28px]">
-                    {members.map((p) => (
-                      <span key={p.id} className="rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in"
-                        style={{ background: `${c.hex}33`, color: c.light, border: `1px solid ${c.hex}66` }}>
-                        {p.name}
-                      </span>
-                    ))}
+                    {members.map((p) => {
+                      const isCap = t.captainId === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => setCaptain(code, t.code, isCap ? null : p.id)}
+                          title={isCap ? "إلغاء القيادة" : "تعيين قائداً"}
+                          className={`rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in transition-all flex items-center gap-1 ${
+                            isCap ? "ring-2 ring-gold scale-105" : "hover:scale-105"
+                          }`}
+                          style={{
+                            background: isCap ? "#d4af3733" : `${c.hex}33`,
+                            color: isCap ? "#f3dd9a" : c.light,
+                            border: `1px solid ${isCap ? "#d4af37" : `${c.hex}66`}`,
+                          }}
+                        >
+                          {isCap && <Crown className="w-3 h-3" />}
+                          {p.name}
+                        </button>
+                      );
+                    })}
                     {members.length === 0 && <span className="text-xs text-muted-foreground/60">بانتظار اللاعبين…</span>}
                   </div>
+                  {t.captainId && (
+                    <p className="mt-1.5 text-[11px] text-gold-light/80 font-cairo">
+                      القائد هو الوحيد اللي يختار النوع ويجاوب — الباقي يشوفون ويتناقشون معه
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -391,8 +416,9 @@ export default function HostRoom() {
                 الإجابة الصحيحة: {st.question.options[st.question.answer]}
               </p>
             )}
-            {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة */}
-            {!(st.question.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
+            {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة — والتمثيل بلا خيارات أصلاً */}
+            {st.question.type !== "acting" &&
+              !(st.question.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
               <div className="mt-6">
                 <OptionsDisplay
                   q={st.question}
@@ -404,17 +430,19 @@ export default function HostRoom() {
           </div>
 
           {/* حالة الإجابة */}
-          {st.phase === "question" && !flagVerbal && (
+          {st.phase === "question" && !verbalJudge && (
             <div className="text-center text-muted-foreground animate-pulse font-cairo">
               بانتظار إجابة فريق {match.teams[st.targetTeam!]?.name}…
               {timeLeft === 0 && <span className="block text-maroon-light font-bold mt-1">انتهى الوقت — انقل السؤال أو اكشف الإجابة</span>}
             </div>
           )}
-          {flagVerbal && (
+          {verbalJudge && (
             <div className="glass-card !border-gold/60 p-5 flex flex-col items-center gap-4 animate-fade-up">
               <div className="flex items-center gap-2 font-cairo font-bold text-gold-light">
-                <MessageSquare className="w-5 h-5" />
-                اسمع إجابة الفريق الشفهية واحكم عليها — الدرجة كاملة
+                {actingVerbal ? <Drama className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
+                {actingVerbal
+                  ? "الممثل يمثّل والفريق يخمّن — اسمعهم واحكم"
+                  : "اسمع إجابة الفريق الشفهية واحكم عليها — الدرجة كاملة"}
               </div>
               <div className="flex gap-3 flex-wrap justify-center">
                 <button
@@ -434,7 +462,9 @@ export default function HostRoom() {
                   أجابوا خطأ
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground">أو عندهم خيار «اختيار من الإجابات» في أجهزتهم بربع النقاط</p>
+              {flagVerbal && (
+                <p className="text-xs text-muted-foreground">أو عندهم خيار «اختيار من الإجابات» في أجهزتهم بربع النقاط</p>
+              )}
             </div>
           )}
           {st.phase === "locked" && st.answer && (

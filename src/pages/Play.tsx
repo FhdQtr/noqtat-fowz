@@ -12,6 +12,7 @@ import type { Match, Player, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
+import TimerRing from "../components/TimerRing";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 
@@ -344,12 +345,18 @@ export default function Play() {
                 {/* بعد المعاينة أو سؤال عادي */}
                 {(!visual || !viewing) && (
                   <>
-                    <div className="glass-card p-5">
-                      <QuestionMeta q={q} />
-                      <h2 className="mt-4 text-center font-cairo font-extrabold text-lg leading-relaxed">
-                        {q.question}
-                      </h2>
-                    </div>
+                    <TimerRing
+                      startedAt={st!.questionStartedAt ?? 0}
+                      total={match.timer}
+                      active={st!.phase === "question" && match.timer > 0}
+                    >
+                      <div className="glass-card p-5">
+                        <QuestionMeta q={q} />
+                        <h2 className="mt-4 text-center font-cairo font-extrabold text-lg leading-relaxed">
+                          {q.question}
+                        </h2>
+                      </div>
+                    </TimerRing>
 
                     {/* الأعلام: شفهي أولاً أو مساعدة الخيارات */}
                     {q.type === "flag" && !st!.assistUsed ? (
@@ -409,7 +416,7 @@ export default function Play() {
                   </>
                 ) : st!.phase === "revealed" ? (
                   <div className={`glass-card p-6 w-full text-center animate-scale-in ${
-                    st!.isCorrect ? "!border-emerald2/60" : "!border-maroon/60"
+                    st!.isCorrect ? "!border-emerald2/60 animate-correct-glow" : "!border-maroon/60 animate-shake"
                   }`}>
                     <p className={`font-cairo font-black text-2xl ${st!.isCorrect ? "text-emerald2-light" : "text-maroon-light"}`}>
                       {st!.isCorrect ? "إجابة صحيحة" : "إجابة خاطئة"}

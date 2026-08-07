@@ -134,6 +134,10 @@ module.exports = {
           "0%,70%,100%": { opacity: "1" },
           "20%,50%": { opacity: "0" },
         },
+        "correct-glow": {
+          "0%": { boxShadow: "0 0 0 0 rgba(61,220,132,0.55)" },
+          "100%": { boxShadow: "0 0 0 26px rgba(61,220,132,0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -147,6 +151,7 @@ module.exports = {
         "float-slow": "float-slow 5s ease-in-out infinite",
         "spin-slow": "spin-slow 14s linear infinite",
         shake: "shake 0.45s ease-in-out",
+        "correct-glow": "correct-glow 0.9s ease-out 2",
       },
     },
   },

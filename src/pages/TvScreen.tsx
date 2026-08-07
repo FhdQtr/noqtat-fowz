@@ -9,6 +9,7 @@ import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
 import YouTubeClip from "../components/YouTubeClip";
 import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/QuestionCard";
+import TimerRing from "../components/TimerRing";
 import { sfx } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 
@@ -252,7 +253,20 @@ export default function TvScreen() {
                 </div>
               </div>
             ) : (
-              <div className="glass-card w-full p-6 sm:p-8">
+              <TimerRing
+                startedAt={st.questionStartedAt ?? 0}
+                total={match.timer}
+                active={st.phase === "question" && !viewing && match.timer > 0}
+              >
+              <div
+                className={`glass-card w-full p-6 sm:p-8 transition-shadow duration-500 ${
+                  st.phase === "revealed"
+                    ? st.isCorrect
+                      ? "animate-correct-glow"
+                      : "animate-shake !border-maroon-light/70"
+                    : ""
+                }`}
+              >
                 <QuestionBody q={q} big reveal={st.phase === "revealed"} showImage={showImage} />
                 {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة أو ينكشف الجواب */}
                 {!(q.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
@@ -271,6 +285,7 @@ export default function TvScreen() {
                   </p>
                 )}
               </div>
+              </TimerRing>
             )}
 
             {st.phase === "revealed" && (

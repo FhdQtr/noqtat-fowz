@@ -43,32 +43,34 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
   let unsubscribe: Unsubscribe = () => undefined;
   let cancelled = false;
   let received = false;
-  const timeout = window.setTimeout(() => {
-    if (!cancelled && !received) onError?.("timeout");
-  }, 12000);
+  let timeout: number | undefined;
 
   void ensureAuth().then(() => {
     if (cancelled) return;
+    timeout = window.setTimeout(() => {
+      if (!cancelled && !received) onError?.("timeout");
+    }, 30000);
     unsubscribe = onValue(
       ref(db, `matches/${code.toUpperCase()}`),
       (snapshot) => {
         received = true;
-        window.clearTimeout(timeout);
+        if (timeout !== undefined) window.clearTimeout(timeout);
+        onError?.("");
         cb(snapshot.exists() ? snapshot.val() as Match : null);
       },
       (error) => {
-        window.clearTimeout(timeout);
+        if (timeout !== undefined) window.clearTimeout(timeout);
         onError?.(error.message || "permission");
       },
     );
   }).catch((error: unknown) => {
-    window.clearTimeout(timeout);
+    if (timeout !== undefined) window.clearTimeout(timeout);
     onError?.(error instanceof Error ? error.message : "auth");
   });
 
   return () => {
     cancelled = true;
-    window.clearTimeout(timeout);
+    if (timeout !== undefined) window.clearTimeout(timeout);
     unsubscribe();
   };
 }

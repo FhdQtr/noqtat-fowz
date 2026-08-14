@@ -39,7 +39,7 @@ let ready: Promise<User> | null = null;
 export function ensureAuth(): Promise<User> {
   if (!ready) {
     ready = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("تعذّر تسجيل الدخول الآمن — تحقق من الاتصال")), 12000);
+      const timeout = setTimeout(() => reject(new Error("تعذّر تسجيل الدخول الآمن — تحقق من الاتصال")), 30000);
       const un = onAuthStateChanged(auth, (u) => {
         if (u) {
           clearTimeout(timeout);

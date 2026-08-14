@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Gamepad2, LogIn, Menu, MonitorPlay, Trophy } from "lucide-react";
+import { ArrowLeft, LogIn, Menu, MonitorPlay, Trophy } from "lucide-react";
 import BrandLogo from "../components/BrandLogo";
 import { unlockAudio, sfx } from "../lib/sounds";
 import { findMatchByTeamCode } from "../lib/matchApi";
@@ -68,12 +68,9 @@ export default function Home() {
         <section className="m-actions" aria-label="خيارات اللعب">
           <button type="button" onClick={openMatch} className="m-action m-action--primary">
             <span className="m-action-frame" aria-hidden="true" />
-            <span className="m-action-mark" aria-hidden="true"><Gamepad2 /></span>
             <span className="m-action-copy">
               <strong>ميدان جديد</strong>
-              <small>جهّز الفرق وابدأ التحدي</small>
             </span>
-            <ArrowLeft className="m-action-arrow" aria-hidden="true" />
           </button>
 
           <Link to="/challenge" className="m-challenge-link"><Trophy aria-hidden="true" /><span>تحدي فردي</span><ArrowLeft aria-hidden="true" /></Link>

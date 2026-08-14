@@ -768,12 +768,14 @@ body::before {
 .m-action--primary {
   position: relative;
   isolation: isolate;
-  width: min(100%, 31rem);
-  height: clamp(8.5rem, 30vw, 9.5rem);
+  display: grid;
+  width: min(88%, 27rem);
+  height: auto;
+  aspect-ratio: 3 / 1;
   min-height: 0;
   justify-self: center;
-  justify-content: center;
-  padding: 1rem clamp(4rem, 18vw, 5.25rem);
+  place-items: center;
+  padding: 1rem 2.5rem;
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -791,44 +793,17 @@ body::before {
   filter: drop-shadow(0 1.2rem 1.4rem color-mix(in oklch, black 42%, transparent));
 }
 
-.m-action--primary .m-action-mark {
-  position: absolute;
-  z-index: 1;
-  inset-inline-start: 1rem;
-  top: 50%;
-  width: clamp(3rem, 13vw, 3.75rem);
-  height: clamp(3rem, 13vw, 3.75rem);
-  transform: translateY(-50%);
-  background: linear-gradient(145deg, var(--m-gold), var(--m-gold-low));
-  color: var(--m-paper);
-}
-
 .m-action--primary .m-action-copy {
   position: relative;
   z-index: 1;
-  flex: none;
   width: 100%;
   text-align: center;
 }
 
 .m-action--primary .m-action-copy strong {
-  font-size: clamp(1.35rem, 5.5vw, 1.75rem);
+  font-size: clamp(1.3rem, 5vw, 1.7rem);
+  line-height: 1.2;
   white-space: nowrap;
-}
-
-.m-action--primary .m-action-copy small {
-  max-width: none;
-  font-size: clamp(.75rem, 3.4vw, .95rem);
-  line-height: 1.45;
-  white-space: nowrap;
-}
-
-.m-action--primary .m-action-arrow {
-  position: absolute;
-  z-index: 1;
-  inset-inline-end: 1.25rem;
-  top: 50%;
-  transform: translateY(-50%);
 }
 
 @media (hover: hover) and (pointer: fine) {

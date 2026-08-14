@@ -19,6 +19,8 @@ import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 import QuestionTypeIcon from "../components/QuestionTypeIcon";
 
+const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
+
 export default function HostRoom() {
   const { code = "" } = useParams();
   const nav = useNavigate();
@@ -128,7 +130,7 @@ export default function HostRoom() {
   };
 
   const shareTv = () => {
-    const url = `${location.origin}/tv/${code}`;
+    const url = `${PUBLIC_GAME_ORIGIN}/tv/${code}`;
     navigator.clipboard?.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -197,7 +199,7 @@ export default function HostRoom() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3 justify-center">
-          <button onClick={() => window.open(`/tv/${code}`, "_blank")} className="btn-gold flex items-center gap-2">
+          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}`, "_blank")} className="btn-gold flex items-center gap-2">
             <Tv className="w-5 h-5" />
             افتح شاشة العرض (التلفزيون)
           </button>
@@ -220,7 +222,7 @@ export default function HostRoom() {
                   <h3 className="font-cairo font-black text-xl" style={{ color: c.light }}>{t.name}</h3>
                 </div>
                 <p className="text-xs text-muted-foreground mb-3" dir="ltr">{t.code}</p>
-                <QrCode value={`${location.origin}/play/${t.code}`} size={130} label="امسح للدخول" />
+                <QrCode value={`${PUBLIC_GAME_ORIGIN}/play/${t.code}`} size={130} label="امسح للدخول" />
                 <div className="mt-4 w-full">
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
                     <Users className="w-3.5 h-3.5" />
@@ -288,7 +290,7 @@ export default function HostRoom() {
         </div>
         <ScoreBoard match={match} highlight={st.targetTeam} />
         <div className="flex gap-2">
-          <button onClick={() => window.open(`/tv/${code}`, "_blank")} className="btn-ghost-gold !p-2" title="شاشة العرض">
+          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}`, "_blank")} className="btn-ghost-gold !p-2" title="شاشة العرض">
             <Tv className="w-4 h-4" />
           </button>
           <button onClick={() => act(() => endMatch(code))} className="btn-ghost-gold !p-2 !border-maroon/50 !text-maroon-light" title="إنهاء">

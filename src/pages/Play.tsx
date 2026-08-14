@@ -449,7 +449,7 @@ export default function Play() {
                               key={i}
                               onClick={() => answer(i)}
                               disabled={myPick !== null || !isCaptain}
-                              className={`rounded-xl border-2 px-4 py-4 font-cairo font-bold text-base transition-all active:scale-[0.97] ${
+                              className={`m-answer-surface rounded-xl border-2 px-4 py-4 font-cairo font-bold text-base transition-all active:scale-[0.97] ${
                                 myPick === i
                                   ? "border-gold bg-gold/20 text-gold-light"
                                   : "border-gold-faint/40 bg-night-700/70 [@media(hover:hover)]:hover:border-gold/70 [@media(hover:hover)]:hover:bg-gold/10"
@@ -543,7 +543,7 @@ export default function Play() {
                         {q.options.map((opt, i) => (
                           <div
                             key={i}
-                            className="rounded-xl border-2 border-gold-faint/25 bg-night-700/40 px-4 py-4 font-cairo font-bold text-base text-foreground/70 select-none"
+                            className="m-answer-surface rounded-xl border-2 border-gold-faint/25 bg-night-700/40 px-4 py-4 font-cairo font-bold text-base text-foreground/70 select-none"
                           >
                             {opt}
                           </div>

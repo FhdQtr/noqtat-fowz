@@ -113,7 +113,7 @@ export function OptionsDisplay({
         return (
           <div
             key={i}
-            className={`relative flex items-center gap-3 rounded-xl border-2 px-4 transition-all duration-300 ${
+            className={`m-answer-surface relative flex items-center gap-3 rounded-xl border-2 px-4 transition-all duration-300 ${
               big ? "py-4 sm:py-5 text-lg sm:text-2xl" : "py-3 text-sm sm:text-base"
             } font-cairo font-bold ${
               isCorrect

@@ -657,25 +657,16 @@ body {
 
 /* Hallmark · Qatari Luxury Majlis system · gameplay states included */
 body {
-  background:
-    linear-gradient(180deg, color-mix(in oklch, var(--m-maroon) 16%, transparent), transparent 22rem),
-    radial-gradient(circle at 50% 0%, color-mix(in oklch, var(--m-gold) 7%, transparent), transparent 34rem),
-    var(--m-paper);
+  background-color: var(--m-paper);
+  background-image: url("/img/luxury-majlis/background.webp");
+  background-position: top center;
+  background-size: max(100%, 48rem) auto;
+  background-repeat: repeat-y;
   color: var(--m-ink);
 }
 
 body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  opacity: .23;
-  pointer-events: none;
-  background-image:
-    linear-gradient(45deg, transparent 47%, color-mix(in oklch, var(--m-gold-low) 17%, transparent) 48% 52%, transparent 53%),
-    linear-gradient(-45deg, transparent 47%, color-mix(in oklch, var(--m-maroon) 16%, transparent) 48% 52%, transparent 53%);
-  background-size: 4.5rem 4.5rem;
-  mask-image: linear-gradient(to bottom, black, transparent 24rem);
+  content: none;
 }
 
 .brand-logo-frame {
@@ -696,9 +687,7 @@ body::before {
 }
 
 .m-home::before {
-  background:
-    radial-gradient(circle at 50% 8%, color-mix(in oklch, var(--m-maroon) 24%, transparent), transparent 32rem),
-    linear-gradient(180deg, transparent 65%, color-mix(in oklch, var(--m-gold) 6%, transparent));
+  content: none;
 }
 
 .m-nav {
@@ -732,13 +721,13 @@ body::before {
 
 .m-sadu {
   width: 100%;
-  height: 2.25rem;
+  height: clamp(3rem, 12vw, 5rem);
   margin-bottom: 2rem;
-  border-block: 1px solid var(--m-rule);
-  opacity: .55;
-  background:
-    linear-gradient(45deg, transparent 42%, var(--m-maroon) 43% 57%, transparent 58%) 0 0 / 1.5rem 1.5rem,
-    linear-gradient(-45deg, transparent 42%, var(--m-gold-low) 43% 57%, transparent 58%) .75rem 0 / 1.5rem 1.5rem;
+  background-image: url("/img/luxury-majlis/sadu-band.webp");
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 .45rem .8rem color-mix(in oklch, black 32%, transparent));
 }
 
 .m-welcome {
@@ -778,9 +767,13 @@ body::before {
 
 .m-action--primary {
   min-height: 6.5rem;
-  border-color: var(--m-gold-low);
-  background:
-    linear-gradient(90deg, color-mix(in oklch, var(--m-maroon) 88%, var(--m-paper-2)), color-mix(in oklch, var(--m-paper-3) 92%, var(--m-maroon)));
+  border-color: transparent;
+  background-color: transparent;
+  background-image: url("/img/luxury-majlis/button-frame.webp");
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  box-shadow: 0 1.2rem 2.8rem color-mix(in oklch, black 42%, transparent);
 }
 
 .m-action-mark {
@@ -843,14 +836,18 @@ body::before {
   align-items: center;
   justify-content: center;
   gap: .35rem;
-  border: 2px solid var(--timer-color);
+  border: 0;
   border-radius: 999px;
   color: var(--timer-color);
   font-family: var(--m-font-display);
   font-size: 1.2rem;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 0 1.25rem color-mix(in oklch, var(--timer-color) 26%, transparent), inset 0 0 1rem color-mix(in oklch, var(--timer-color) 8%, transparent);
+  background-image: url("/img/luxury-majlis/timer-bezel.webp");
+  background-position: center;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 .8rem color-mix(in oklch, var(--timer-color) 42%, transparent));
 }
 .m-live-timer--big .m-live-timer__number { min-width: 5rem; min-height: 3.5rem; font-size: 1.55rem; }
 .m-live-timer__number svg { width: 1rem; }
@@ -858,6 +855,16 @@ body::before {
 .m-live-timer__fill { height: 100%; border-radius: inherit; background: var(--timer-color); box-shadow: 0 0 .8rem var(--timer-color); transition: width .1s linear, background .25s; }
 .m-live-timer__number--pulse { animation: m-danger-pulse .82s ease-in-out infinite; }
 @keyframes m-danger-pulse { 50% { transform: scale(1.06); box-shadow: 0 0 2rem color-mix(in oklch, var(--m-danger) 55%, transparent); } }
+
+.m-answer-surface:not(.border-emerald2-light):not(.border-maroon-light) {
+  background-color: transparent;
+  background-image: url("/img/luxury-majlis/button-frame.webp");
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  border-color: transparent;
+  box-shadow: 0 .7rem 1.4rem color-mix(in oklch, black 32%, transparent);
+}
 
 @media (min-width: 60rem) {
   .m-shell { grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); align-items: center; padding-block: 4rem; }

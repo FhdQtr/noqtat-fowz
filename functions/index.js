@@ -149,7 +149,9 @@ async function chooseType(uid, data) {
   const type = text(data.type, 50);
   const teamCode = match.state.targetTeam || match.teamOrder[match.turnIndex % match.teamOrder.length];
   if (!canChoose(match, uid, teamCode)) fail("permission-denied", "الاختيار للفريق صاحب الدور");
-  if (match.state.phase !== "choose" || match.state.question) return { status: "late" };
+  if (match.state.phase !== "choose" || match.state.question) {
+    return { status: "late", reason: "initial-state", phase: match.state.phase, hasQuestion: Boolean(match.state.question) };
+  }
   if (!match.enabledTypes.includes(type)) fail("invalid-argument", "نوع السؤال غير مفعّل");
   const usedCount = match.typeCounts?.[teamCode]?.[type] || 0;
   if (usedCount >= typeCap(match)) return { status: "cap" };
@@ -170,7 +172,9 @@ async function chooseType(uid, data) {
   // in one server-side multi-location update.
   await db.ref(`matchSecrets/${id}`).set({ questionId: question.id, answer: question.answer });
   const latestState = (await db.ref(`matches/${id}/state`).get()).val();
-  if (!latestState || latestState.phase !== "choose" || latestState.question || latestState.targetTeam !== teamCode) return { status: "late" };
+  if (!latestState || latestState.phase !== "choose" || latestState.question || latestState.targetTeam !== teamCode) {
+    return { status: "late", reason: "latest-state", phase: latestState?.phase || null, hasQuestion: Boolean(latestState?.question), targetTeam: latestState?.targetTeam || null, expectedTeam: teamCode };
+  }
   const nextState = { ...latestState, phase: "question", round: latestState.round + 1, targetTeam: teamCode, originalTeam: teamCode, passCount: 0, question: publicQuestion(question), answer: null, isCorrect: null, questionStartedAt: viewUntil || started, viewUntil, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, questionValue: pointsForPick(usedCount + 1), usedIds: [...(latestState.usedIds || []), question.id] };
   await db.ref(`matches/${id}`).update({ state: nextState, [`typeCounts/${teamCode}/${type}`]: usedCount + 1 });
   return { status: "accepted" };

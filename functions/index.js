@@ -166,15 +166,13 @@ async function chooseType(uid, data) {
   const started = now();
   const seconds = viewSeconds(question);
   const viewUntil = seconds ? started + seconds * 1000 : null;
-  // Store the private answer first, then atomically claim only the turn state.
-  // Transacting on the entire match can be aborted by unrelated player/score writes.
+  // Store the private answer first, then publish the question and its usage count
+  // in one server-side multi-location update.
   await db.ref(`matchSecrets/${id}`).set({ questionId: question.id, answer: question.answer });
-  const transaction = await db.ref(`matches/${id}/state`).transaction((state) => {
-    if (!state || state.phase !== "choose" || state.question || state.targetTeam !== teamCode) return;
-    return { ...state, phase: "question", round: state.round + 1, targetTeam: teamCode, originalTeam: teamCode, passCount: 0, question: publicQuestion(question), answer: null, isCorrect: null, questionStartedAt: viewUntil || started, viewUntil, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, questionValue: pointsForPick(usedCount + 1), usedIds: [...(state.usedIds || []), question.id] };
-  });
-  if (!transaction.committed) return { status: "late" };
-  await db.ref(`matches/${id}/typeCounts/${teamCode}/${type}`).set(usedCount + 1);
+  const latestState = (await db.ref(`matches/${id}/state`).get()).val();
+  if (!latestState || latestState.phase !== "choose" || latestState.question || latestState.targetTeam !== teamCode) return { status: "late" };
+  const nextState = { ...latestState, phase: "question", round: latestState.round + 1, targetTeam: teamCode, originalTeam: teamCode, passCount: 0, question: publicQuestion(question), answer: null, isCorrect: null, questionStartedAt: viewUntil || started, viewUntil, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, questionValue: pointsForPick(usedCount + 1), usedIds: [...(latestState.usedIds || []), question.id] };
+  await db.ref(`matches/${id}`).update({ state: nextState, [`typeCounts/${teamCode}/${type}`]: usedCount + 1 });
   return { status: "accepted" };
 }
 

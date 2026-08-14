@@ -17,7 +17,7 @@ type ActionName =
   | "createMatch" | "joinTeam" | "leaveMatch" | "startMatch" | "chooseType"
   | "submitAnswer" | "useAssist" | "judgeVerbal" | "revealAnswer"
   | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
-  | "startChallenge" | "answerChallenge" | "usePowerCard";
+  | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch";
 
 function levelForPick(n: number): QuestionLevel {
   return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
@@ -44,23 +44,57 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
   let cancelled = false;
   let received = false;
   let timeout: number | undefined;
+  let fallbackTimer: number | undefined;
+  let pollTimer: number | undefined;
+  let polling = false;
+
+  const stopPolling = () => {
+    if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
+    if (pollTimer !== undefined) window.clearTimeout(pollTimer);
+    fallbackTimer = undefined;
+    pollTimer = undefined;
+    polling = false;
+  };
+
+  const startPolling = () => {
+    if (cancelled || polling) return;
+    polling = true;
+    const poll = async () => {
+      if (cancelled || !polling) return;
+      try {
+        const result = await gameAction<{ match: Match }>("getMatch", { matchCode: code });
+        if (cancelled) return;
+        received = true;
+        if (timeout !== undefined) window.clearTimeout(timeout);
+        onError?.("");
+        cb(result.match);
+      } catch {
+        // Keep retrying until the overall connection timeout reports the error.
+      } finally {
+        if (!cancelled && polling) pollTimer = window.setTimeout(() => void poll(), 2500);
+      }
+    };
+    void poll();
+  };
 
   void ensureAuth().then(() => {
     if (cancelled) return;
     timeout = window.setTimeout(() => {
       if (!cancelled && !received) onError?.("timeout");
     }, 30000);
+    fallbackTimer = window.setTimeout(startPolling, 4000);
     unsubscribe = onValue(
       ref(db, `matches/${code.toUpperCase()}`),
       (snapshot) => {
         received = true;
+        stopPolling();
         if (timeout !== undefined) window.clearTimeout(timeout);
         onError?.("");
         cb(snapshot.exists() ? snapshot.val() as Match : null);
       },
       (error) => {
-        if (timeout !== undefined) window.clearTimeout(timeout);
-        onError?.(error.message || "permission");
+        void error;
+        startPolling();
       },
     );
   }).catch((error: unknown) => {
@@ -70,6 +104,7 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
 
   return () => {
     cancelled = true;
+    stopPolling();
     if (timeout !== undefined) window.clearTimeout(timeout);
     unsubscribe();
   };

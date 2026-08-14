@@ -251,6 +251,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "submitAnswer") return submitAnswer(uid, data);
 
   const { id, match } = await loadMatch(data.matchCode);
+  if (action === "getMatch") return { match };
   if (action === "leaveMatch") {
     const playerId = text(data.playerId, 80);
     if (!playerForUid(match, uid, playerId) && match.hostUid !== uid) fail("permission-denied", "لا يمكنك حذف لاعب آخر");

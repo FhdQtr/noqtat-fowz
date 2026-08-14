@@ -67,10 +67,11 @@ export default function Home() {
 
         <section className="m-actions" aria-label="خيارات اللعب">
           <button type="button" onClick={openMatch} className="m-action m-action--primary">
+            <span className="m-action-frame" aria-hidden="true" />
             <span className="m-action-mark" aria-hidden="true"><Gamepad2 /></span>
             <span className="m-action-copy">
               <strong>ميدان جديد</strong>
-              <small>أنشئ المسابقة، اختر الفرق والأسئلة، ثم ابدأ</small>
+              <small>جهّز الفرق وابدأ التحدي</small>
             </span>
             <ArrowLeft className="m-action-arrow" aria-hidden="true" />
           </button>

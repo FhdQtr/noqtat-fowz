@@ -766,34 +766,76 @@ body::before {
 }
 
 .m-action--primary {
-  width: min(100%, 33rem);
-  min-height: clamp(7.25rem, 25vw, 9.5rem);
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 31rem);
+  height: clamp(8.5rem, 30vw, 9.5rem);
+  min-height: 0;
   justify-self: center;
-  padding: clamp(1.15rem, 4vw, 1.75rem) clamp(1.35rem, 5vw, 2rem);
+  justify-content: center;
+  padding: 1rem clamp(4rem, 18vw, 5.25rem);
   border-color: transparent;
-  background-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.m-action-frame {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
   background-image: url("/img/luxury-majlis/button-frame.webp");
   background-position: center;
   background-size: 100% 100%;
   background-repeat: no-repeat;
-  box-shadow: 0 1.2rem 2.8rem color-mix(in oklch, black 42%, transparent);
+  filter: drop-shadow(0 1.2rem 1.4rem color-mix(in oklch, black 42%, transparent));
 }
 
-.m-action-mark {
-  width: clamp(3.25rem, 14vw, 4.25rem);
-  height: clamp(3.25rem, 14vw, 4.25rem);
+.m-action--primary .m-action-mark {
+  position: absolute;
+  z-index: 1;
+  inset-inline-start: 1rem;
+  top: 50%;
+  width: clamp(3rem, 13vw, 3.75rem);
+  height: clamp(3rem, 13vw, 3.75rem);
+  transform: translateY(-50%);
   background: linear-gradient(145deg, var(--m-gold), var(--m-gold-low));
   color: var(--m-paper);
 }
 
+.m-action--primary .m-action-copy {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 100%;
+  text-align: center;
+}
+
 .m-action--primary .m-action-copy strong {
-  font-size: clamp(1.5rem, 6vw, 2rem);
+  font-size: clamp(1.35rem, 5.5vw, 1.75rem);
+  white-space: nowrap;
 }
 
 .m-action--primary .m-action-copy small {
-  max-width: 25ch;
-  font-size: clamp(.84rem, 3.4vw, 1rem);
-  line-height: 1.55;
+  max-width: none;
+  font-size: clamp(.75rem, 3.4vw, .95rem);
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.m-action--primary .m-action-arrow {
+  position: absolute;
+  z-index: 1;
+  inset-inline-end: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .m-action--primary:hover {
+    border-color: transparent;
+    background: transparent;
+  }
 }
 
 .m-entry { padding: 1.15rem; }

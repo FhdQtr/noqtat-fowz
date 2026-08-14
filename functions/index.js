@@ -166,17 +166,15 @@ async function chooseType(uid, data) {
   const started = now();
   const seconds = viewSeconds(question);
   const viewUntil = seconds ? started + seconds * 1000 : null;
-  const transaction = await db.ref(`matches/${id}`).transaction((fresh) => {
-    if (!fresh || fresh.state.phase !== "choose" || fresh.state.question) return;
-    const freshTeam = fresh.state.targetTeam || fresh.teamOrder[fresh.turnIndex % fresh.teamOrder.length];
-    if (freshTeam !== teamCode) return;
-    const count = fresh.typeCounts?.[teamCode]?.[type] || 0;
-    fresh.typeCounts = { ...(fresh.typeCounts || {}), [teamCode]: { ...(fresh.typeCounts?.[teamCode] || {}), [type]: count + 1 } };
-    fresh.state = { ...fresh.state, phase: "question", round: fresh.state.round + 1, targetTeam: teamCode, originalTeam: teamCode, passCount: 0, question: publicQuestion(question), answer: null, isCorrect: null, questionStartedAt: viewUntil || started, viewUntil, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, questionValue: pointsForPick(count + 1), usedIds: [...(fresh.state.usedIds || []), question.id] };
-    return fresh;
+  // Store the private answer first, then atomically claim only the turn state.
+  // Transacting on the entire match can be aborted by unrelated player/score writes.
+  await db.ref(`matchSecrets/${id}`).set({ questionId: question.id, answer: question.answer });
+  const transaction = await db.ref(`matches/${id}/state`).transaction((state) => {
+    if (!state || state.phase !== "choose" || state.question || state.targetTeam !== teamCode) return;
+    return { ...state, phase: "question", round: state.round + 1, targetTeam: teamCode, originalTeam: teamCode, passCount: 0, question: publicQuestion(question), answer: null, isCorrect: null, questionStartedAt: viewUntil || started, viewUntil, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, questionValue: pointsForPick(usedCount + 1), usedIds: [...(state.usedIds || []), question.id] };
   });
   if (!transaction.committed) return { status: "late" };
-  await db.ref(`matchSecrets/${id}`).set({ questionId: question.id, answer: question.answer });
+  await db.ref(`matches/${id}/typeCounts/${teamCode}/${type}`).set(usedCount + 1);
   return { status: "accepted" };
 }
 

@@ -1,10 +1,9 @@
 // ═══════════════════════════════════════════════════════════
-// نقطة فوز — بنك أسئلة المقدم المخصص + إعدادات لوحة التحكم
+// الميدان — بنك أسئلة المقدم المخصص + إعدادات لوحة التحكم
 // يُخزَّن في Realtime Database ويُدمج مع البنك الأصلي في السحب
 // ═══════════════════════════════════════════════════════════
-import { ref, set, get, update, remove, onValue, type Unsubscribe } from "firebase/database";
+import { ref, set, update, remove, onValue, type Unsubscribe } from "firebase/database";
 import { db, ensureAuth } from "./firebase";
-import { setCustomQuestions } from "../data/questions";
 import { registerTypeLabels } from "../types/game";
 import type { Question, QuestionLevel, CustomType } from "../types/game";
 
@@ -16,7 +15,8 @@ export interface CustomQuestion extends Question {
 const FIRST_CUSTOM_ID = 900000; // أسئلة المقدم تبدأ من ٩٠٠٠٠٠ بعيداً عن أرقام البنك الأصلي
 
 // ─── المزامنة الحية: أي تغيير في Firebase ينعكس فوراً على اللعبة ───
-let started = false;
+let typesStarted = false;
+let questionsStarted = false;
 let latestTypes: CustomType[] = [];
 let latestQuestions: CustomQuestion[] = [];
 const typeListeners = new Set<(t: CustomType[]) => void>();
@@ -28,9 +28,9 @@ function emit() {
 }
 
 /** يشتغل مرة وحدة — يبقي نسخة محلية محدثة من البنك المخصص */
-export function startCustomBankSync() {
-  if (started) return;
-  started = true;
+function startTypeSync() {
+  if (typesStarted) return;
+  typesStarted = true;
   void ensureAuth().then(() => {
     onValue(ref(db, "customTypes"), (s) => {
       const v = (s.val() ?? {}) as Record<string, CustomType>;
@@ -38,10 +38,16 @@ export function startCustomBankSync() {
       registerTypeLabels(latestTypes);
       emit();
     });
+  });
+}
+
+function startQuestionSync() {
+  if (questionsStarted) return;
+  questionsStarted = true;
+  void ensureAuth().then(() => {
     onValue(ref(db, "customQuestions"), (s) => {
       const v = (s.val() ?? {}) as Record<string, CustomQuestion>;
       latestQuestions = Object.values(v).sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
-      setCustomQuestions(latestQuestions.filter((q) => !q.disabled));
       emit();
     });
   });
@@ -49,7 +55,7 @@ export function startCustomBankSync() {
 
 /** الاشتراك في قائمة الأنواع المخصصة */
 export function subscribeCustomTypes(cb: (t: CustomType[]) => void): Unsubscribe {
-  startCustomBankSync();
+  startTypeSync();
   typeListeners.add(cb);
   cb(latestTypes);
   return () => typeListeners.delete(cb);
@@ -57,14 +63,14 @@ export function subscribeCustomTypes(cb: (t: CustomType[]) => void): Unsubscribe
 
 /** الاشتراك في قائمة أسئلة المقدم (كلها — بما فيها المعطّلة، للوحة التحكم) */
 export function subscribeCustomQuestions(cb: (q: CustomQuestion[]) => void): Unsubscribe {
-  startCustomBankSync();
+  startQuestionSync();
   questionListeners.add(cb);
   cb(latestQuestions);
   return () => questionListeners.delete(cb);
 }
 
 export function getCustomTypes(): CustomType[] {
-  startCustomBankSync();
+  startTypeSync();
   return latestTypes;
 }
 
@@ -122,23 +128,6 @@ export async function deleteCustomQuestion(id: number) {
 export async function setQuestionDisabled(id: number, disabled: boolean) {
   await ensureAuth();
   await update(ref(db, `customQuestions/${id}`), { disabled });
-}
-
-// ─── كلمة سر لوحة التحكم (هاش SHA-256 — أول زيارة تنشئها) ───
-export async function sha256(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-export async function getAdminPassHash(): Promise<string | null> {
-  await ensureAuth();
-  const s = await get(ref(db, "admin/passHash"));
-  return s.exists() ? (s.val() as string) : null;
-}
-
-export async function setAdminPassHash(hash: string) {
-  await ensureAuth();
-  await set(ref(db, "admin/passHash"), hash);
 }
 
 // ─── أدوات الوسائط ───

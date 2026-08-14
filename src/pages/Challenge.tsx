@@ -3,11 +3,11 @@ import { useNavigate } from "react-router";
 import {
   ArrowRight, Heart, Timer, Crown, Loader2, RotateCcw, Home,
 } from "lucide-react";
-import { QUESTIONS } from "../data/questions";
-import type { Question, QuestionLevel } from "../types/game";
+import type { Question } from "../types/game";
 import { QuestionMeta, QuestionBody } from "../components/QuestionCard";
 import GoldConfetti from "../components/GoldConfetti";
 import { sfx, unlockAudio } from "../lib/sounds";
+import { answerSoloChallenge, startSoloChallenge } from "../lib/matchApi";
 
 const TOTAL = 100;
 const Q_TIME = 20;
@@ -25,23 +25,6 @@ function rankFor(n: number) {
   return RANKS.find((r) => n >= r.at)!;
 }
 
-function buildRun(): Question[] {
-  const levels: QuestionLevel[] = ["easy", "easy", "easy", "medium", "medium", "medium", "hard", "hard", "hard", "hard"];
-  const picked: Question[] = [];
-  const used = new Set<number>();
-  for (let block = 0; block < 10; block++) {
-    const lvl = levels[block];
-    const pool = QUESTIONS.filter((q) => q.level === lvl && !used.has(q.id) && q.type !== "flag" || (q.level === lvl && !used.has(q.id)));
-    for (let k = 0; k < 10 && pool.length; k++) {
-      const q = pool[Math.floor(Math.random() * pool.length)];
-      if (used.has(q.id)) continue;
-      used.add(q.id);
-      picked.push(q);
-    }
-  }
-  return picked;
-}
-
 export default function Challenge() {
   const nav = useNavigate();
   const [phase, setPhase] = useState<"intro" | "play" | "over">("intro");
@@ -53,22 +36,31 @@ export default function Challenge() {
   const [lastChance, setLastChance] = useState(true);
   const [extend, setExtend] = useState(true);
   const [reached, setReached] = useState(0);
+  const [sessionId, setSessionId] = useState("");
+  const [busy, setBusy] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const q = run[idx];
 
-  const start = () => {
+  const start = async () => {
     unlockAudio();
-    sfx.correct();
-    setRun(buildRun());
-    setIdx(0);
-    setReached(0);
-    setChosen(null);
-    setReveal(false);
-    setLastChance(true);
-    setExtend(true);
-    setTimeLeft(Q_TIME);
-    setPhase("play");
+    setBusy(true);
+    try {
+      const next = await startSoloChallenge();
+      sfx.correct();
+      setRun(next.questions);
+      setSessionId(next.sessionId);
+      setIdx(0);
+      setReached(0);
+      setChosen(null);
+      setReveal(false);
+      setLastChance(true);
+      setExtend(true);
+      setTimeLeft(Q_TIME);
+      setPhase("play");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const gameOver = (finalIdx: number) => {
@@ -97,13 +89,20 @@ export default function Challenge() {
     setTimeLeft(Q_TIME);
   };
 
-  const pick = (i: number) => {
+  const pick = async (i: number) => {
     if (chosen !== null || reveal) return;
     setChosen(i);
-    setReveal(true);
-    const correct = i === q.answer;
-    correct ? sfx.correct() : sfx.wrong();
-    setTimeout(() => next(!correct), 1600);
+    setBusy(true);
+    try {
+      const result = await answerSoloChallenge(sessionId, idx, i);
+      setRun((questions) => questions.map((question, questionIndex) => questionIndex === idx ? { ...question, answer: result.answer } : question));
+      setReveal(true);
+      if (result.correct) sfx.correct();
+      else sfx.wrong();
+      setTimeout(() => next(!result.correct), 1600);
+    } finally {
+      setBusy(false);
+    }
   };
 
   // المؤقت
@@ -111,20 +110,25 @@ export default function Challenge() {
     if (phase !== "play" || reveal) return;
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
-        if (t <= 1) {
-          clearInterval(timerRef.current!);
-          setReveal(true);
-          sfx.wrong();
-          setTimeout(() => next(true), 1600);
-          return 0;
-        }
+        if (t <= 1) return 0;
         if (t <= 6) sfx.tickFinal();
         return t - 1;
       });
     }, 1000);
     return () => clearInterval(timerRef.current!);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, idx, reveal]);
+
+  useEffect(() => {
+    if (phase !== "play" || timeLeft !== 0 || reveal || busy || !sessionId) return;
+    setBusy(true);
+    void answerSoloChallenge(sessionId, idx, -1).then((result) => {
+      setRun((questions) => questions.map((question, questionIndex) => questionIndex === idx ? { ...question, answer: result.answer } : question));
+      setReveal(true);
+      sfx.wrong();
+      setTimeout(() => next(true), 1600);
+    }).finally(() => setBusy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft, phase, reveal, busy, sessionId, idx]);
 
   const rank = rankFor(reached);
 
@@ -133,7 +137,7 @@ export default function Challenge() {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center px-4">
         <div className="fixed inset-0 -z-10">
-          <img src="/img/hero-bg.jpg" alt="" className="w-full h-full object-cover opacity-30" />
+          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
           <div className="absolute inset-0 bg-night/85" />
         </div>
         <button onClick={() => nav("/")} className="absolute top-6 right-6 flex items-center gap-2 text-muted-foreground hover:text-gold-light">
@@ -158,9 +162,9 @@ export default function Challenge() {
             </div>
           ))}
         </div>
-        <button onClick={start} className="btn-gold shine mt-8 text-xl px-12 py-4 flex items-center gap-2">
-          <Crown className="w-6 h-6" />
-          ابدأ التحدي
+        <button onClick={() => void start()} disabled={busy} className="btn-gold shine mt-8 text-xl px-12 py-4 flex items-center gap-2">
+          {busy ? <Loader2 className="w-6 h-6 animate-spin" /> : <Crown className="w-6 h-6" />}
+          {busy ? "جاري تجهيز الأسئلة…" : "ابدأ التحدي"}
         </button>
       </div>
     );
@@ -171,7 +175,7 @@ export default function Challenge() {
       <div className="min-h-dvh flex flex-col items-center justify-center px-4 text-center">
         {reached >= TOTAL && <GoldConfetti count={130} />}
         <div className="fixed inset-0 -z-10">
-          <img src="/img/stage-bg.jpg" alt="" className="w-full h-full object-cover opacity-30" />
+          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
           <div className="absolute inset-0 bg-night/85" />
         </div>
         <img src="/img/trophy.png" alt="" className={`w-40 h-40 object-contain ${reached >= 55 ? "animate-float-slow drop-shadow-[0_0_44px_rgba(212,175,55,0.6)]" : "opacity-50"}`} />
@@ -191,7 +195,7 @@ export default function Challenge() {
           ))}
         </div>
         <div className="mt-10 flex gap-3 flex-wrap justify-center">
-          <button onClick={start} className="btn-gold flex items-center gap-2">
+          <button onClick={() => void start()} disabled={busy} className="btn-gold flex items-center gap-2">
             <RotateCcw className="w-5 h-5" />
             تحدي جديد
           </button>
@@ -273,8 +277,8 @@ export default function Challenge() {
             return (
               <button
                 key={i}
-                onClick={() => pick(i)}
-                disabled={reveal}
+                onClick={() => void pick(i)}
+                disabled={reveal || busy}
                 className={`rounded-xl border-2 px-4 py-3.5 font-cairo font-bold text-right transition-all active:scale-[0.98] ${
                   isCorrect
                     ? "border-emerald2-light bg-emerald2/25 text-emerald2-light"

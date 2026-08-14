@@ -1,0 +1,11 @@
+{
+  "name": "al-midan-functions",
+  "private": true,
+  "main": "index.js",
+  "scripts": { "set-admin": "node set-admin.js" },
+  "engines": { "node": "22" },
+  "dependencies": {
+    "firebase-admin": "^14.2.0",
+    "firebase-functions": "^7.3.2"
+  }
+}

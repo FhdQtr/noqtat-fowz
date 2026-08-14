@@ -20,6 +20,11 @@ export default function TimerRing({
   const [progress, setProgress] = useState(1); // 1 → 0
   const fired = useRef(false);
   const raf = useRef(0);
+  const onTimeoutRef = useRef(onTimeout);
+
+  useEffect(() => {
+    onTimeoutRef.current = onTimeout;
+  }, [onTimeout]);
 
   useEffect(() => {
     fired.current = false;
@@ -33,7 +38,7 @@ export default function TimerRing({
       if (left <= 0) {
         if (!fired.current) {
           fired.current = true;
-          onTimeout?.();
+          onTimeoutRef.current?.();
         }
         return;
       }

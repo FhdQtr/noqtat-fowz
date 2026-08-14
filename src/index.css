@@ -42,6 +42,13 @@
     min-height: 100dvh;
     overflow-x: hidden;
   }
+  button, input, select {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid #e8c96a;
+    outline-offset: 3px;
+  }
   h1, h2, h3, h4 {
     @apply font-cairo;
   }
@@ -53,9 +60,36 @@
 @layer components {
   /* بطاقة زجاجية فاخرة */
   .glass-card {
-    @apply bg-night-800/80 backdrop-blur-md border border-gold-faint/40 rounded-2xl;
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(232, 201, 106, 0.08);
+    @apply bg-night-800/80 backdrop-blur-xl border border-gold-faint/40 rounded-2xl;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(232, 201, 106, 0.1);
   }
+  .arena-panel {
+    @apply rounded-2xl border border-white/10 bg-night-800/75 backdrop-blur-xl;
+    box-shadow: 0 18px 60px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .arena-primary {
+    @apply flex items-center gap-4 overflow-hidden rounded-2xl px-5 py-5 font-cairo text-night transition-all duration-300 active:scale-[.985] disabled:opacity-50;
+    background: linear-gradient(125deg, #f4dfa0 0%, #d9b747 52%, #aa8621 100%);
+    box-shadow: 0 16px 55px rgba(212,175,55,.3), inset 0 1px 0 rgba(255,255,255,.55);
+  }
+  .arena-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 65px rgba(212,175,55,.42), inset 0 1px 0 rgba(255,255,255,.6);
+  }
+  .arena-primary-icon, .icon-chip {
+    @apply inline-flex shrink-0 items-center justify-center rounded-xl;
+  }
+  .arena-primary-icon {
+    @apply h-14 w-14 bg-night/10;
+  }
+  .icon-chip {
+    @apply h-11 w-11 border border-white/10;
+  }
+  .type-gem {
+    @apply grid h-16 w-16 place-items-center rounded-2xl border border-gold/20 bg-night-800/70 backdrop-blur-md transition duration-300 sm:h-[72px] sm:w-[72px];
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 12px 30px rgba(0,0,0,.3);
+  }
+  .type-gem:hover { transform: translateY(-4px) rotate(-1deg); border-color: rgba(212,175,55,.55); }
   /* زر ذهبي رئيسي */
   .btn-gold {
     @apply relative overflow-hidden font-cairo rounded-xl px-6 py-3.5 text-night font-bold transition-all duration-200 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none;
@@ -100,6 +134,30 @@
     background-size: 250% 100%;
     animation: shimmer 2.8s linear infinite;
     pointer-events: none;
+  }
+}
+
+.arena-grid {
+  background-image: linear-gradient(rgba(212,175,55,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(212,175,55,.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(to bottom, transparent, black 28%, black 70%, transparent);
+}
+.brand-loader {
+  width: 54px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 3px solid rgba(212,175,55,.18);
+  border-top-color: #e8c96a;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
   }
 }
 

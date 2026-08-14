@@ -1,15 +1,18 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router";
-import Home from "./pages/Home";
-import HostSetup from "./pages/HostSetup";
-import HostRoom from "./pages/HostRoom";
-import TvScreen from "./pages/TvScreen";
-import Play from "./pages/Play";
-import ActView from "./pages/ActView";
-import Challenge from "./pages/Challenge";
-import Admin from "./pages/admin/Admin";
+
+const Home = lazy(() => import("./pages/Home"));
+const HostSetup = lazy(() => import("./pages/HostSetup"));
+const HostRoom = lazy(() => import("./pages/HostRoom"));
+const TvScreen = lazy(() => import("./pages/TvScreen"));
+const Play = lazy(() => import("./pages/Play"));
+const ActView = lazy(() => import("./pages/ActView"));
+const Challenge = lazy(() => import("./pages/Challenge"));
+const Admin = lazy(() => import("./pages/admin/Admin"));
 
 export default function App() {
   return (
+    <Suspense fallback={<div className="grid min-h-dvh place-items-center"><div className="brand-loader" aria-label="جاري فتح الميدان" /></div>}>
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/host" element={<HostSetup />} />
@@ -21,5 +24,6 @@ export default function App() {
       <Route path="/admin" element={<Admin />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }

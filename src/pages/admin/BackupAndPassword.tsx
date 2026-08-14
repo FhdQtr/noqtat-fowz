@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
-import { exportBackup, importBackup, sha256, getAdminPassHash, setAdminPassHash, type BankBackup } from "../../lib/customBank";
+import { exportBackup, importBackup, type BankBackup } from "../../lib/customBank";
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
+import { auth } from "../../lib/firebase";
 import { useCustomQuestions, useCustomTypes } from "../../lib/useCustomBank";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -29,7 +31,7 @@ function BackupSection() {
     const a = document.createElement("a");
     const d = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `noqtat-fowz-backup-${d}.json`;
+    a.download = `al-midan-backup-${d}.json`;
     a.click();
     URL.revokeObjectURL(url);
     setMsg("تم تنزيل النسخة الاحتياطية — احتفظ بالملف في مكان آمن");
@@ -85,20 +87,19 @@ function PasswordSection({ onPasswordChanged }: { onPasswordChanged?: () => void
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const change = async () => {
-    if (next.length < 4) return setMsg({ ok: false, text: "كلمة السر الجديدة يجب أن تكون 4 أحرف على الأقل" });
+    if (next.length < 8) return setMsg({ ok: false, text: "كلمة المرور الجديدة يجب أن تكون ٨ أحرف على الأقل" });
     if (next !== confirm) return setMsg({ ok: false, text: "تأكيد كلمة السر غير مطابق" });
     setBusy(true);
     setMsg(null);
     try {
-      const stored = await getAdminPassHash();
-      const currentHash = await sha256(current);
-      if (stored && stored !== currentHash) {
-        setMsg({ ok: false, text: "كلمة السر الحالية غير صحيحة" });
-        return;
-      }
-      await setAdminPassHash(await sha256(next));
-      setMsg({ ok: true, text: "تم تغيير كلمة السر — سجّل دخولك من جديد بالكلمة الجديدة" });
+      const user = auth.currentUser;
+      if (!user?.email) throw new Error("لا يوجد حساب مدير نشط");
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, current));
+      await updatePassword(user, next);
+      setMsg({ ok: true, text: "تم تغيير كلمة المرور — سجّل دخولك من جديد" });
       setTimeout(() => onPasswordChanged?.(), 1500);
+    } catch {
+      setMsg({ ok: false, text: "تعذّر التغيير — تحقق من كلمة المرور الحالية" });
     } finally {
       setBusy(false);
     }

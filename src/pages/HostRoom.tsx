@@ -3,14 +3,13 @@ import { useNavigate, useParams } from "react-router";
 import {
   Tv, Play, Users, Crown, Eye, Repeat2, SkipForward,
   Trophy, Loader2, LogOut, Timer, CheckCircle2, XCircle, Share2, Trash2, WifiOff,
-  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
-  MessageSquare, EyeOff, Drama,
+  HelpCircle, MessageSquare, EyeOff, Drama, Zap,
 } from "lucide-react";
 import {
   subscribeMatch, startMatch, chooseType, revealAnswer, judgeVerbal,
   passToNextTeam, advanceTurn, endMatch, deleteMatch, typeProgress, setCaptain,
 } from "../lib/matchApi";
-import type { Match, QuestionType } from "../types/game";
+import type { Match } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionPoints } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
@@ -18,18 +17,7 @@ import GoldConfetti from "../components/GoldConfetti";
 import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/QuestionCard";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
-
-const TYPE_ICON: Record<QuestionType, typeof Flag> = {
-  multiple_choice: HelpCircle,
-  true_false: Check,
-  image: ImageIcon,
-  memory: Brain,
-  flag: Flag,
-  completion: Quote,
-  ordering: ListOrdered,
-  riddle: Lightbulb,
-  acting: Drama,
-};
+import QuestionTypeIcon from "../components/QuestionTypeIcon";
 
 export default function HostRoom() {
   const { code = "" } = useParams();
@@ -59,7 +47,8 @@ export default function HostRoom() {
     }
     const tick = () => {
       const elapsed = Math.floor((Date.now() - match.state.questionStartedAt!) / 1000);
-      const left = Math.max(0, match.timer - elapsed);
+      const total = match.timer + (match.state.extraTimeUsed ? 15 : 0);
+      const left = Math.max(0, total - elapsed);
       setTimeLeft(left);
       if (left <= 5 && left > 0) sfx.tick();
     };
@@ -74,7 +63,10 @@ export default function HostRoom() {
     const ph = match.state.phase;
     if (prevPhase.current !== ph) {
       if (ph === "locked") sfx.lock();
-      if (ph === "revealed") match.state.isCorrect ? sfx.correct() : sfx.wrong();
+      if (ph === "revealed") {
+        if (match.state.isCorrect) sfx.correct();
+        else sfx.wrong();
+      }
       if (ph === "ended") sfx.fanfare();
       prevPhase.current = ph;
     }
@@ -149,7 +141,7 @@ export default function HostRoom() {
       <div className="min-h-dvh flex flex-col items-center justify-center px-4 relative">
         <GoldConfetti />
         <div className="fixed inset-0 -z-10">
-          <img src="/img/stage-bg.jpg" alt="" className="w-full h-full object-cover opacity-30" />
+          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
           <div className="absolute inset-0 bg-night/80" />
         </div>
         <img src="/img/trophy.png" alt="الكأس" className="w-44 h-44 object-contain animate-float-slow drop-shadow-[0_0_44px_rgba(212,175,55,0.6)]" />
@@ -192,7 +184,7 @@ export default function HostRoom() {
     return (
       <div className="min-h-dvh px-4 py-6 flex flex-col items-center">
         <div className="fixed inset-0 -z-10">
-          <img src="/img/hero-bg.jpg" alt="" className="w-full h-full object-cover opacity-25" />
+          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-25" />
           <div className="absolute inset-0 bg-night/85" />
         </div>
 
@@ -285,7 +277,7 @@ export default function HostRoom() {
   return (
     <div className="min-h-dvh px-4 py-5 flex flex-col max-w-3xl mx-auto w-full">
       <div className="fixed inset-0 -z-10">
-        <img src="/img/stage-bg.jpg" alt="" className="w-full h-full object-cover opacity-20" />
+        <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-20" />
         <div className="absolute inset-0 bg-night/88" />
       </div>
 
@@ -304,6 +296,13 @@ export default function HostRoom() {
           </button>
         </div>
       </div>
+
+      {match.tieBreaker?.active && (
+        <div className="mb-4 flex items-center justify-center gap-2 rounded-2xl border border-gold/60 bg-gold/15 px-4 py-3 font-cairo font-black text-gold-light animate-pulse-gold">
+          <Zap className="h-5 w-5" />
+          ساحة الحسم — جولة فاصلة رقم {match.tieBreaker.cycle}
+        </div>
+      )}
 
       {/* قادة الفرق — الحكم يقدر يغيّر القائد في أي وقت */}
       <details className="mb-4 glass-card !p-0 overflow-hidden">
@@ -372,7 +371,6 @@ export default function HostRoom() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
               {match.enabledTypes.map((t) => {
                 const pr = typeProgress(match, chooseTeam.code, t);
-                const Icon = TYPE_ICON[t] ?? HelpCircle;
                 return (
                   <button
                     key={t}
@@ -380,7 +378,7 @@ export default function HostRoom() {
                     disabled={busy || !pr.available}
                     className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35 disabled:cursor-not-allowed"
                   >
-                    <Icon className="w-7 h-7 text-gold-light" />
+                    {t.startsWith("ct_") ? <HelpCircle className="h-10 w-10 p-2 text-gold-light" /> : <QuestionTypeIcon type={t} className="h-12 w-12" />}
                     <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>
                     <span className="text-xs text-muted-foreground">
                       {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
@@ -426,6 +424,7 @@ export default function HostRoom() {
             <span className="text-xs text-muted-foreground">
               قيمة السؤال: {questionPoints(st)} نقطة
               {st.assistUsed ? " (ربع — استخدموا المساعدة)" : ""}
+              {st.pointMultiplier === 2 ? " (بطاقة المضاعفة ×٢)" : ""}
             </span>
           </div>
 

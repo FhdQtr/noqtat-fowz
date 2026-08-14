@@ -1,22 +1,21 @@
 // ═══════════════════════════════════════════════════════════
-// لوحة تحكم المقدم — إدارة بنك الأسئلة (محمية بكلمة سر)
-// أول زيارة: إنشاء كلمة سر — بعدها: تسجيل دخول
+// لوحة تحكم الميدان — محمية بحساب Firebase وصلاحية admin
 // ═══════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { getIdTokenResult, signInAnonymously, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import {
   ShieldCheck, Lock, Loader2, PlusCircle, Database, ClipboardList,
   Save, KeyRound, LogOut, ArrowRight,
 } from "lucide-react";
-import { getAdminPassHash, setAdminPassHash, sha256, type CustomQuestion } from "../../lib/customBank";
+import { type CustomQuestion } from "../../lib/customBank";
+import { auth } from "../../lib/firebase";
 import QuestionForm from "./QuestionForm";
 import ManageBank from "./ManageBank";
 import BulkImport from "./BulkImport";
 import BackupAndPassword from "./BackupAndPassword";
 
-const SESSION_KEY = "nf_admin_hash";
-
-type GateState = "loading" | "setup" | "login" | "authed";
+type GateState = "loading" | "login" | "authed";
 type Tab = "add" | "manage" | "bulk" | "backup" | "password";
 
 const TABS: { id: Tab; label: string; icon: typeof PlusCircle }[] = [
@@ -30,79 +29,49 @@ const TABS: { id: Tab; label: string; icon: typeof PlusCircle }[] = [
 export default function Admin() {
   const nav = useNavigate();
   const [gate, setGate] = useState<GateState>("loading");
-  const [storedHash, setStoredHash] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
-  const [pass2, setPass2] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("add");
   const [editTarget, setEditTarget] = useState<CustomQuestion | null>(null);
 
   useEffect(() => {
-    let done = false;
-    // مهلة أمان: لو الاتصال طوّل نظهر رسالة بدل تحميل أبدي
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      setErr("الاتصال أخذ وقتًا أطول من المعتاد — تأكد من الإنترنت ثم حدّث الصفحة");
+    const check = async () => {
+      const user = auth.currentUser;
+      if (user && !user.isAnonymous) {
+        const token = await getIdTokenResult(user, true);
+        if (token.claims.admin === true) return setGate("authed");
+      }
       setGate("login");
-    }, 15000);
-    getAdminPassHash()
-      .then((h) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        setStoredHash(h);
-        if (!h) setGate("setup");
-        else if (sessionStorage.getItem(SESSION_KEY) === h) setGate("authed");
-        else setGate("login");
-      })
-      .catch(() => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        setErr("تعذّر الاتصال — تأكد من الإنترنت ثم حدّث الصفحة");
-        setGate("login");
-      });
+    };
+    void check().catch(() => setGate("login"));
   }, []);
 
   const submit = async () => {
     setErr("");
-    if (gate === "setup") {
-      if (pass.trim().length < 4) return setErr("كلمة السر لازم ٤ أحرف على الأقل");
-      if (pass !== pass2) return setErr("كلمتا السر غير متطابقتين");
-      setBusy(true);
-      try {
-        const h = await sha256(pass);
-        await setAdminPassHash(h);
-        sessionStorage.setItem(SESSION_KEY, h);
-        setStoredHash(h);
-        setGate("authed");
-      } catch {
-        setErr("تعذّر الحفظ — حاول مرة ثانية");
-      } finally {
-        setBusy(false);
+    if (!email.trim() || pass.length < 6) return setErr("أدخل بريد المدير وكلمة المرور");
+    setBusy(true);
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email.trim(), pass);
+      const token = await getIdTokenResult(credential.user, true);
+      if (token.claims.admin !== true) {
+        await signOut(auth);
+        throw new Error("هذا الحساب لا يملك صلاحية الإدارة");
       }
-    } else {
-      setBusy(true);
-      try {
-        const h = await sha256(pass);
-        if (h === storedHash) {
-          sessionStorage.setItem(SESSION_KEY, h);
-          setGate("authed");
-        } else {
-          setErr("كلمة السر غير صحيحة");
-        }
-      } finally {
-        setBusy(false);
-      }
+      setGate("authed");
+    } catch (error) {
+      setErr(error instanceof Error && error.message.includes("صلاحية") ? error.message : "بيانات الدخول غير صحيحة أو الحساب غير مخوّل");
+    } finally {
+      setBusy(false);
     }
   };
 
-  const logout = () => {
-    sessionStorage.removeItem(SESSION_KEY);
+  const logout = async () => {
+    await signOut(auth);
+    await signInAnonymously(auth);
+    setEmail("");
     setPass("");
-    setPass2("");
     setGate("login");
   };
 
@@ -111,48 +80,44 @@ export default function Admin() {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center px-4">
         <div className="fixed inset-0 -z-10">
-          <img src="/img/hero-bg.jpg" alt="" className="w-full h-full object-cover opacity-25" />
+          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-25" />
           <div className="absolute inset-0 bg-night/88" />
         </div>
         <div className="glass-card w-full max-w-sm p-7 text-center animate-scale-in">
           <ShieldCheck className="w-14 h-14 text-gold-light mx-auto mb-4" />
           <h1 className="text-2xl font-black font-cairo text-gold-gradient mb-1">لوحة التحكم</h1>
           <p className="text-sm text-muted-foreground mb-6">
-            {gate === "loading"
-              ? "جاري التحميل…"
-              : gate === "setup"
-              ? "أول زيارة — أنشئ كلمة سر خاصة فيك"
-              : "أدخل كلمة السر للمتابعة"}
+            {gate === "loading" ? "جاري التحقق…" : "دخول المدير المصرّح له"}
           </p>
           {gate !== "loading" && (
             <>
               <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="البريد الإلكتروني"
+                className="input-night text-center mb-3"
+                autoComplete="username"
+                dir="ltr"
+                autoFocus
+              />
+              <input
                 type="password"
                 value={pass}
                 onChange={(e) => setPass(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && (gate === "login" || pass2) && submit()}
-                placeholder={gate === "setup" ? "كلمة السر الجديدة…" : "كلمة السر…"}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="كلمة المرور"
                 className="input-night text-center mb-3"
-                autoFocus
+                autoComplete="current-password"
               />
-              {gate === "setup" && (
-                <input
-                  type="password"
-                  value={pass2}
-                  onChange={(e) => setPass2(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="تأكيد كلمة السر…"
-                  className="input-night text-center mb-3"
-                />
-              )}
               {err && <p className="text-maroon-light text-sm font-bold mb-3">{err}</p>}
               <button
                 onClick={submit}
-                disabled={busy || !pass}
+                disabled={busy || !email || !pass}
                 className="btn-gold shine w-full flex items-center justify-center gap-2"
               >
                 {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
-                {gate === "setup" ? "أنشئ وادخل" : "دخول"}
+                دخول آمن
               </button>
             </>
           )}
@@ -169,7 +134,7 @@ export default function Admin() {
   return (
     <div className="min-h-dvh px-4 py-6">
       <div className="fixed inset-0 -z-10">
-        <img src="/img/hero-bg.jpg" alt="" className="w-full h-full object-cover opacity-20" />
+        <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-20" />
         <div className="absolute inset-0 bg-night/90" />
       </div>
 
@@ -181,7 +146,7 @@ export default function Admin() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => nav("/")} className="btn-ghost-gold !text-sm !px-4 !py-2">الرئيسية</button>
-            <button onClick={logout} className="btn-ghost-gold !text-sm !px-4 !py-2 !border-maroon/50 !text-maroon-light flex items-center gap-1.5">
+            <button onClick={() => void logout()} className="btn-ghost-gold !text-sm !px-4 !py-2 !border-maroon/50 !text-maroon-light flex items-center gap-1.5">
               <LogOut className="w-4 h-4" />
               خروج
             </button>
@@ -231,10 +196,7 @@ export default function Admin() {
         {tab === "password" && (
           <BackupAndPassword
             section="password"
-            onPasswordChanged={() => {
-              void getAdminPassHash().then((h) => setStoredHash(h));
-              logout();
-            }}
+            onPasswordChanged={() => void logout()}
           />
         )}
       </div>

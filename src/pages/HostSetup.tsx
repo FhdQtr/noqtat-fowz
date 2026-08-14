@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ArrowRight, Minus, Plus, Crown, Timer, TimerOff, Layers, Loader2,
-  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain, Drama,
+  HelpCircle,
 } from "lucide-react";
+import ArenaBackdrop from "../components/ArenaBackdrop";
+import BrandLogo from "../components/BrandLogo";
+import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import { createMatch } from "../lib/matchApi";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useCustomTypes } from "../lib/useCustomBank";
@@ -12,16 +15,16 @@ import { TEAM_COLORS } from "../types/game";
 
 const TEAM_COLOR_ORDER = ["maroon", "emerald", "royal", "gold"] as const;
 
-const TYPE_OPTIONS: { id: QuestionType; label: string; icon: typeof Flag }[] = [
-  { id: "multiple_choice", label: "اختيار من متعدد", icon: HelpCircle },
-  { id: "true_false", label: "صح أم خطأ", icon: Check },
-  { id: "image", label: "معالم بالصور", icon: ImageIcon },
-  { id: "memory", label: "اختبار الذاكرة", icon: Brain },
-  { id: "flag", label: "أعلام الدول", icon: Flag },
-  { id: "completion", label: "أكمل المثل", icon: Quote },
-  { id: "ordering", label: "ترتيب", icon: ListOrdered },
-  { id: "riddle", label: "ألغاز", icon: Lightbulb },
-  { id: "acting", label: "مثّل المثل", icon: Drama },
+const TYPE_OPTIONS: { id: QuestionType; label: string }[] = [
+  { id: "multiple_choice", label: "اختيار من متعدد" },
+  { id: "true_false", label: "صح أم خطأ" },
+  { id: "image", label: "معالم بالصور" },
+  { id: "memory", label: "اختبار الذاكرة" },
+  { id: "flag", label: "أعلام الدول" },
+  { id: "completion", label: "أكمل المثل" },
+  { id: "ordering", label: "ترتيب" },
+  { id: "riddle", label: "ألغاز" },
+  { id: "acting", label: "مثّل المثل" },
 ];
 
 const ROUND_OPTIONS = [8, 12, 16, 20];
@@ -42,7 +45,7 @@ export default function HostSetup() {
   // الأنواع المعروضة = الأساسية + أنواع المقدم المخصصة (تُفعَّل تلقائياً أول ما تظهر)
   const allTypeOptions = [
     ...TYPE_OPTIONS,
-    ...customTypes.map((t) => ({ id: t.id, label: t.name, icon: HelpCircle })),
+    ...customTypes.map((t) => ({ id: t.id, label: t.name })),
   ];
   const customIds = customTypes.map((t) => t.id);
   useEffect(() => {
@@ -98,21 +101,21 @@ export default function HostSetup() {
 
   return (
     <div className="min-h-dvh flex flex-col items-center px-4 py-8">
-      <div className="fixed inset-0 -z-10">
-        <img src="/img/hero-bg.jpg" alt="" className="w-full h-full object-cover opacity-25" />
-        <div className="absolute inset-0 bg-gradient-to-b from-night/80 via-night/90 to-night" />
-      </div>
+      <ArenaBackdrop strength="soft" />
 
       <div className="w-full max-w-xl">
-        <button onClick={() => nav("/")} className="flex items-center gap-2 text-muted-foreground hover:text-gold-light transition-colors mb-6">
+        <div className="mb-5 flex items-center justify-between gap-3">
+        <button onClick={() => nav("/")} className="flex items-center gap-2 text-muted-foreground hover:text-gold-light transition-colors">
           <ArrowRight className="w-4 h-4" />
           <span className="text-sm">رجوع</span>
         </button>
+        <BrandLogo compact className="max-w-[170px]" />
+        </div>
 
         <div className="glass-card p-6 sm:p-8 animate-fade-up">
           <div className="flex items-center gap-3 mb-6">
             <Crown className="w-7 h-7 text-gold-light" />
-            <h1 className="text-2xl font-black font-cairo text-gold-gradient">إعداد المسابقة</h1>
+            <div><h1 className="text-2xl font-black font-cairo text-gold-gradient">جهّز الميدان</h1><p className="mt-1 text-xs text-muted-foreground">دقائق بسيطة وتبدأ المواجهة</p></div>
           </div>
 
           {/* اسم المقدم */}
@@ -220,19 +223,19 @@ export default function HostSetup() {
             أنواع الأسئلة
           </label>
           <div className="flex flex-wrap gap-2 mb-2">
-            {allTypeOptions.map(({ id, label, icon: Icon }) => {
+            {allTypeOptions.map(({ id, label }) => {
               const on = types.includes(id);
               return (
                 <button
                   key={id}
                   onClick={() => toggleType(id)}
-                  className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-cairo font-bold border transition-all ${
+                  className={`flex min-w-[132px] flex-1 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-cairo font-bold border transition-all ${
                     on
                       ? "bg-gold/20 border-gold text-gold-light"
                       : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  {id.startsWith("ct_") ? <HelpCircle className="h-8 w-8 p-1.5" /> : <QuestionTypeIcon type={id} className="h-9 w-9" />}
                   {label}
                 </button>
               );
@@ -256,7 +259,7 @@ export default function HostSetup() {
 
           <button onClick={create} disabled={busy} className="btn-gold shine w-full text-lg flex items-center justify-center gap-2">
             {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crown className="w-5 h-5" />}
-            {busy ? "جاري الإنشاء…" : "أنشئ المسابقة"}
+            {busy ? "جاري فتح الميدان…" : "افتح الميدان"}
           </button>
         </div>
       </div>

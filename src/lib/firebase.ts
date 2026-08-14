@@ -1,10 +1,11 @@
 // ═══════════════════════════════════════════════════════════
-// نقطة فوز — إعداد Firebase (نفس مشروعك الحالي)
+// الميدان — إعداد Firebase
 // Realtime Database للعب المباشر + دخول ضيف تلقائي
 // ═══════════════════════════════════════════════════════════
 import { initializeApp } from "firebase/app";
 import { getDatabase, connectDatabaseEmulator } from "firebase/database";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged, type User } from "firebase/auth";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBnMTGZ2_YXNL5cjE4fzYyA3M_XD7ZXKck",
@@ -19,6 +20,7 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
 export const auth = getAuth(app);
+export const functions = getFunctions(app, "asia-southeast1");
 
 // محاكي محلي للتطوير والاختبار فقط — ما يشتغل على الدومين الحقيقي
 const USE_EMULATOR =
@@ -28,24 +30,28 @@ const USE_EMULATOR =
 
 if (USE_EMULATOR) {
   connectDatabaseEmulator(db, window.location.hostname, 9000);
+  connectFunctionsEmulator(functions, window.location.hostname, 5001);
 }
 
-let ready: Promise<void> | null = null;
+let ready: Promise<User> | null = null;
 
 /** دخول ضيف تلقائي — يشتغل مرة وحدة وننتظره قبل أي عملية */
-export function ensureAuth(): Promise<void> {
-  if (USE_EMULATOR) return Promise.resolve(); // المحاكي بقواعد مفتوحة
+export function ensureAuth(): Promise<User> {
   if (!ready) {
-    ready = new Promise((resolve) => {
+    ready = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("تعذّر تسجيل الدخول الآمن — تحقق من الاتصال")), 12000);
       const un = onAuthStateChanged(auth, (u) => {
         if (u) {
+          clearTimeout(timeout);
           un();
-          resolve();
+          resolve(u);
         }
       });
-      signInAnonymously(auth).catch(() => resolve());
-      // مهلة أمان: لو الدخول المجهول بطيء/محظور نكمل بدونه — القواعد المفتوحة تكفي
-      setTimeout(resolve, 6000);
+      signInAnonymously(auth).catch((error) => {
+        clearTimeout(timeout);
+        un();
+        reject(error);
+      });
     });
   }
   return ready;

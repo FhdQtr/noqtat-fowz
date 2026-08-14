@@ -1,0 +1,32 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "matches": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": false
+      }
+    },
+    "matchSecrets": {
+      ".read": false,
+      ".write": false
+    },
+    "challengeSecrets": {
+      ".read": false,
+      ".write": false
+    },
+    "customTypes": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin == true"
+    },
+    "customQuestions": {
+      ".read": "auth != null && auth.token.admin == true",
+      ".write": "auth != null && auth.token.admin == true"
+    },
+    "admin": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

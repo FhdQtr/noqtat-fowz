@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 const COLORS = ["#d4af37", "#e8c96a", "#f3dd9a", "#8a1538", "#b02047", "#ffffff"];
+const pseudo = (seed: number) => ((seed * 9301 + 49297) % 233280) / 233280;
 
 /** كونفيتي ذهبي احتفالي */
 export default function GoldConfetti({ count = 90 }: { count?: number }) {
@@ -8,12 +9,12 @@ export default function GoldConfetti({ count = 90 }: { count?: number }) {
     () =>
       Array.from({ length: count }, (_, i) => ({
         id: i,
-        right: Math.random() * 100,
-        size: 6 + Math.random() * 8,
-        delay: Math.random() * 2.4,
-        dur: 2.6 + Math.random() * 2.4,
+        right: pseudo(i + 1) * 100,
+        size: 6 + pseudo(i + 17) * 8,
+        delay: pseudo(i + 31) * 2.4,
+        dur: 2.6 + pseudo(i + 47) * 2.4,
         color: COLORS[i % COLORS.length],
-        round: Math.random() > 0.6,
+        round: pseudo(i + 63) > 0.6,
       })),
     [count]
   );

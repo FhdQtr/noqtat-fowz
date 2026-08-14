@@ -2,11 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
-  Flag, Image as ImageIcon, Check, ListOrdered, Lightbulb, Quote, HelpCircle, Brain,
-  MessageSquare, ListChecks, Eye, Drama,
+  HelpCircle, MessageSquare, ListChecks, Eye, Drama, Zap, Clock3,
 } from "lucide-react";
 import {
-  subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist, typeProgress,
+  subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
 } from "../lib/matchApi";
 import type { Match, Player, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor } from "../types/game";
@@ -15,20 +14,9 @@ import { QuestionMeta } from "../components/QuestionCard";
 import LinearTimer from "../components/LinearTimer";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
+import QuestionTypeIcon from "../components/QuestionTypeIcon";
 
-const STORAGE_KEY = "nf_player";
-
-const TYPE_ICON: Record<QuestionType, typeof Flag> = {
-  multiple_choice: HelpCircle,
-  true_false: Check,
-  image: ImageIcon,
-  memory: Brain,
-  flag: Flag,
-  completion: Quote,
-  ordering: ListOrdered,
-  riddle: Lightbulb,
-  acting: Drama,
-};
+const STORAGE_KEY = "al_midan_player";
 
 export default function Play() {
   const { teamCode = "" } = useParams();
@@ -49,6 +37,7 @@ export default function Play() {
   const [myPick, setMyPick] = useState<number | null>(null);
   const [status, setStatus] = useState<"" | "accepted" | "late">("");
   const [chooseMsg, setChooseMsg] = useState("");
+  const [cardMsg, setCardMsg] = useState("");
   const [connErr, setConnErr] = useState("");
   const prevPhase = useRef("");
   const prevQid = useRef<number | null>(null);
@@ -84,7 +73,10 @@ export default function Play() {
         if (st.targetTeam === teamCode) sfx.questionIn();
       }
       if (st.phase === "choose") setChooseMsg("");
-      if (st.phase === "revealed") st.isCorrect ? sfx.correct() : sfx.wrong();
+      if (st.phase === "revealed") {
+        if (st.isCorrect) sfx.correct();
+        else sfx.wrong();
+      }
       if (st.phase === "ended") sfx.fanfare();
       prevPhase.current = st.phase;
       prevQid.current = qid;
@@ -128,8 +120,18 @@ export default function Play() {
 
   const askAssist = async () => {
     unlockAudio();
-    const ok = await useAssist(matchCode, teamCode);
+    const ok = await requestAssist(matchCode, teamCode);
     if (ok) sfx.questionIn();
+  };
+
+  const activateCard = async (card: "doublePoints" | "extraTime") => {
+    setCardMsg("");
+    unlockAudio();
+    const ok = await requestPowerCard(matchCode, teamCode, card);
+    if (ok) {
+      sfx.correct();
+      setCardMsg(card === "doublePoints" ? "تم تفعيل مضاعفة النقاط ×٢" : "تمت إضافة ١٥ ثانية");
+    } else setCardMsg("تعذّر استخدام البطاقة الآن");
   };
 
   if (connErr)
@@ -166,7 +168,7 @@ export default function Play() {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center px-4">
         <div className="fixed inset-0 -z-10">
-          <img src="/img/hero-bg.jpg" alt="" className="w-full h-full object-cover opacity-30" />
+          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
           <div className="absolute inset-0 bg-night/85" />
         </div>
         <div className="glass-card w-full max-w-sm p-7 text-center animate-scale-in" style={{ borderColor: `${c.hex}88` }}>
@@ -200,7 +202,7 @@ export default function Play() {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center px-4 text-center">
         <div className="fixed inset-0 -z-10">
-          <img src="/img/stage-bg.jpg" alt="" className="w-full h-full object-cover opacity-30" />
+          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
           <div className="absolute inset-0 bg-night/85" />
         </div>
         <img src="/img/trophy.png" alt="" className={`w-36 h-36 object-contain ${won ? "animate-float-slow drop-shadow-[0_0_40px_rgba(212,175,55,0.6)]" : "opacity-40 grayscale"}`} />
@@ -237,6 +239,11 @@ export default function Play() {
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center px-4 py-6 gap-5 max-w-lg mx-auto w-full">
+        {match.tieBreaker?.active && (
+          <div className="flex w-full items-center justify-center gap-2 rounded-2xl border border-gold/60 bg-gold/15 px-4 py-3 font-cairo font-black text-gold-light animate-pulse-gold">
+            <Zap className="h-5 w-5" /> ساحة الحسم — كل نقطة تصنع الفارق
+          </div>
+        )}
         {/* هوية اللاعب */}
         <div className="flex items-center gap-2 text-sm">
           <span className="w-3 h-3 rounded-full" style={{ background: c.light }} />
@@ -284,7 +291,6 @@ export default function Play() {
               <div className="grid grid-cols-2 gap-3">
                 {match.enabledTypes.map((t) => {
                   const pr = typeProgress(match, teamCode, t);
-                  const Icon = TYPE_ICON[t] ?? HelpCircle;
                   return (
                     <button
                       key={t}
@@ -293,7 +299,7 @@ export default function Play() {
                       className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35"
                       style={{ borderColor: `${c.hex}66` }}
                     >
-                      <Icon className="w-7 h-7 text-gold-light" />
+                      {t.startsWith("ct_") ? <HelpCircle className="h-10 w-10 p-2 text-gold-light" /> : <QuestionTypeIcon type={t} className="h-12 w-12" />}
                       <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>
                       <span className="text-xs text-muted-foreground">
                         {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
@@ -337,6 +343,23 @@ export default function Play() {
                   </span>
                 </div>
 
+                {(team.powerCards?.doublePoints || (team.powerCards?.extraTime && match.timer > 0)) && st!.phase === "question" && !st!.answer && (
+                  <div className="arena-panel flex flex-wrap items-center justify-center gap-2 p-3">
+                    <span className="w-full text-center text-xs font-bold text-stone-400">بطاقاتكم التكتيكية — كل بطاقة مرة واحدة في المباراة</span>
+                    {team.powerCards?.doublePoints && (
+                      <button onClick={() => void activateCard("doublePoints")} className="btn-ghost-gold !px-3 !py-2 text-xs flex items-center gap-1.5">
+                        <Zap className="h-4 w-4" /> ضاعف النقاط ×٢
+                      </button>
+                    )}
+                    {team.powerCards?.extraTime && match.timer > 0 && (
+                      <button onClick={() => void activateCard("extraTime")} className="btn-ghost-gold !px-3 !py-2 text-xs flex items-center gap-1.5">
+                        <Clock3 className="h-4 w-4" /> +١٥ ثانية
+                      </button>
+                    )}
+                    {cardMsg && <span className="w-full text-center text-xs font-bold text-gold-light">{cardMsg}</span>}
+                  </div>
+                )}
+
                 {/* معاينة الصورة (ذاكرة/أعلام) */}
                 {visual && viewing && q.image && (
                   <div className="glass-card p-4 flex flex-col items-center gap-3">
@@ -379,7 +402,7 @@ export default function Play() {
                     {match.timer > 0 && (
                       <LinearTimer
                         startedAt={st!.questionStartedAt ?? 0}
-                        total={match.timer}
+                        total={match.timer + (st!.extraTimeUsed ? 15 : 0)}
                         active={st!.phase === "question"}
                         big
                       />
@@ -495,7 +518,7 @@ export default function Play() {
                     {match.timer > 0 && st!.phase === "question" && (
                       <LinearTimer
                         startedAt={st!.questionStartedAt ?? 0}
-                        total={match.timer}
+                        total={match.timer + (st!.extraTimeUsed ? 15 : 0)}
                         active
                       />
                     )}

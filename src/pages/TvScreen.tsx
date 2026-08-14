@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
-import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama } from "lucide-react";
+import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap } from "lucide-react";
 import { subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints } from "../types/game";
@@ -44,7 +44,8 @@ export default function TvScreen() {
       return;
     }
     const tick = () => {
-      const left = Math.max(0, match.timer - Math.floor((Date.now() - match.state.questionStartedAt!) / 1000));
+      const total = match.timer + (match.state.extraTimeUsed ? 15 : 0);
+      const left = Math.max(0, total - Math.floor((Date.now() - match.state.questionStartedAt!) / 1000));
       setTimeLeft(left);
       if (left <= 5 && left > 0) sfx.tickFinal();
     };
@@ -59,7 +60,10 @@ export default function TvScreen() {
     if (prevPhase.current !== ph) {
       if (ph === "question") sfx.questionIn();
       if (ph === "locked") sfx.lock();
-      if (ph === "revealed") match.state.isCorrect ? sfx.correct() : sfx.wrong();
+      if (ph === "revealed") {
+        if (match.state.isCorrect) sfx.correct();
+        else sfx.wrong();
+      }
       if (ph === "ended") sfx.fanfare();
       prevPhase.current = ph;
     }
@@ -110,7 +114,7 @@ export default function TvScreen() {
     <div className="relative min-h-dvh overflow-hidden flex flex-col select-none">
       {/* خلفية المسرح */}
       <div className="fixed inset-0 -z-10">
-        <img src="/img/stage-bg.jpg" alt="" className="w-full h-full object-cover" />
+        <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-b from-night/60 via-night/55 to-night/80" />
       </div>
 
@@ -124,8 +128,7 @@ export default function TvScreen() {
       {/* الترويسة */}
       <header className="flex items-center justify-between gap-4 px-6 pt-4">
         <div className="flex items-center gap-3">
-          <img src="/img/logo.png" alt="" className="w-12 h-12 drop-shadow-[0_0_14px_rgba(212,175,55,0.5)]" />
-          <span className="font-black font-cairo text-2xl text-gold-gradient hidden sm:block">نقطة فوز</span>
+          <img src="/brand/al-midan-logo.webp" alt="الميدان" className="h-12 w-32 object-contain drop-shadow-[0_0_14px_rgba(212,175,55,0.35)]" />
         </div>
         <ScoreBoard match={match} highlight={st.targetTeam} />
         <div className="w-28 text-left">
@@ -139,6 +142,11 @@ export default function TvScreen() {
 
       {/* المحتوى */}
       <main className="flex-1 flex flex-col items-center justify-center px-8 pb-8">
+        {match.tieBreaker?.active && st.phase !== "ended" && (
+          <div className="mb-5 flex items-center gap-3 rounded-full border border-gold/60 bg-night/80 px-7 py-2 font-cairo font-black text-gold-light animate-pulse-gold">
+            <Zap className="h-5 w-5" /> ساحة الحسم · الجولة الفاصلة {match.tieBreaker.cycle}
+          </div>
+        )}
         {/* ═══ اللوبي ═══ */}
         {match.status === "lobby" && (
           <div className="flex flex-col items-center gap-6 animate-fade-up w-full">
@@ -205,6 +213,7 @@ export default function TvScreen() {
                 {questionPoints(st)} نقطة
                 {st.passCount > 0 && " · سؤال مسروق"}
                 {st.assistUsed && " · مساعدة الخيارات"}
+                {st.pointMultiplier === 2 && " · مضاعفة ×٢"}
               </span>
               {timeLeft !== null && !viewing && (
                 <span className={`inline-flex items-center gap-2 rounded-full px-5 py-1.5 border-2 font-cairo font-black text-2xl ${
@@ -272,7 +281,7 @@ export default function TvScreen() {
             ) : (
               <TimerRing
                 startedAt={st.questionStartedAt ?? 0}
-                total={match.timer}
+                total={match.timer + (st.extraTimeUsed ? 15 : 0)}
                 active={st.phase === "question" && !viewing && match.timer > 0}
               >
               <div

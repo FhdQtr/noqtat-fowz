@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { QUESTIONS } from "../../data/questions";
+import { BUILTIN_QUESTION_COUNT, BUILTIN_QUESTION_STATS } from "../../data/questionStats";
 import { useCustomQuestions, useCustomTypes } from "../../lib/useCustomBank";
 import { deleteCustomQuestion, setQuestionDisabled, type CustomQuestion } from "../../lib/customBank";
 import { LEVEL_LABEL, typeLabel } from "../../types/game";
@@ -17,7 +17,7 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
 
   const typeOptions = useMemo(() => {
     const ids = new Set<string>();
-    QUESTIONS.forEach((q) => ids.add(q.type));
+    Object.keys(BUILTIN_QUESTION_STATS).forEach((type) => ids.add(type));
     customQs.forEach((q) => ids.add(q.type));
     customTypes.forEach((t) => ids.add(t.id));
     return Array.from(ids);
@@ -32,7 +32,10 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
       if (isCustom) s.custom++;
       m.set(type, s);
     };
-    QUESTIONS.forEach((q) => bump(q.type, q.level, false));
+    Object.entries(BUILTIN_QUESTION_STATS).forEach(([type, levels]) => {
+      const base = m.get(type) ?? { easy: 0, medium: 0, hard: 0, custom: 0 };
+      m.set(type, { ...base, ...levels });
+    });
     customQs.forEach((q) => bump(q.type, q.level, true));
     return Array.from(m.entries()).sort((a, b) => typeLabel(a[0]).localeCompare(typeLabel(b[0]), "ar"));
   }, [typeOptions, customQs]);
@@ -92,7 +95,7 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
         <h3 className="font-black text-sm flex items-center gap-2">
           <Database className="w-4 h-4 text-gold" /> أسئلتك المضافة ({customQs.length})
-          <span className="text-white/40 font-normal text-xs">— بنك الموقع الأساسي ({QUESTIONS.length}) محمي ولا يمكن تعديله من هنا</span>
+          <span className="text-white/40 font-normal text-xs">— بنك الموقع الأساسي ({BUILTIN_QUESTION_COUNT}) محمي ولا يمكن تعديله من هنا</span>
         </h3>
         <div className="grid gap-2 sm:grid-cols-3">
           <div className="relative">

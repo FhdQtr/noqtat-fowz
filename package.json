@@ -1,5 +1,5 @@
 {
-  "name": "my-app",
+  "name": "al-midan",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,6 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "validate:questions": "node scripts/validate-questions.mjs",
+    "prepare:functions": "node scripts/prepare-functions.mjs",
+    "check:functions": "npm run prepare:functions && node --check functions/index.js",
+    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {

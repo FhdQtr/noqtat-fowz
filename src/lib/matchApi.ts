@@ -1,419 +1,203 @@
-// ═══════════════════════════════════════════════════════════
-// نقطة فوز — منطق المسابقة الجماعية على Firebase
-// ═══════════════════════════════════════════════════════════
-import {
-  ref, set, get, update, runTransaction, onValue, remove, type Unsubscribe,
-} from "firebase/database";
-import { db, ensureAuth } from "./firebase";
-import {
-  pickQuestionOfType, shuffleQuestion, levelForPick, pointsForPick,
-} from "../data/questions";
-import type {
-  Match, GameState, Question, QuestionType, QuestionLevel, TeamColor, Player,
-} from "../types/game";
-import { TEAM_COLORS, viewSecondsFor, questionPoints } from "../types/game";
-
-const CODE_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ"; // بدون I/L/O عشان ما تلتبس
-const CODE_DIGITS = "23456789"; // بدون 0 و1 عشان ما تلتبس مع الحروف
-
-/** كود مسابقة سهل وسريع: حرف كبير واحد + ٣ أرقام (مثل A482) */
-function genMatchCode(): string {
-  const l = CODE_LETTERS[Math.floor(Math.random() * CODE_LETTERS.length)];
-  let d = "";
-  for (let i = 0; i < 3; i++) d += CODE_DIGITS[Math.floor(Math.random() * CODE_DIGITS.length)];
-  return l + d;
-}
-
-const TEAM_COLOR_ORDER: TeamColor[] = ["maroon", "emerald", "royal", "gold"];
+// الميدان — واجهة اللعب الآمنة. جميع التغييرات الحساسة تُنفّذ في Cloud Functions.
+import { get, onValue, ref, type Unsubscribe } from "firebase/database";
+import { httpsCallable } from "firebase/functions";
+import { db, ensureAuth, functions } from "./firebase";
+import type { Match, Player, QuestionLevel, QuestionType, TeamColor } from "../types/game";
+import { TEAM_COLORS } from "../types/game";
 
 export interface CreateMatchOptions {
   hostName: string;
-  teamNames: string[]; // 2 إلى 4
+  teamNames: string[];
   totalRounds: number;
-  timer: number; // 0 = بدون مؤقت
+  timer: number;
   enabledTypes: QuestionType[];
 }
 
-/** المقدم ينشئ مسابقة → يرجع كود المسابقة وأكواد الفرق */
-export async function createMatch(opts: CreateMatchOptions): Promise<string> {
-  await ensureAuth();
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const code = genMatchCode();
-    const snap = await get(ref(db, `matches/${code}`));
-    if (snap.exists()) continue;
+type ActionName =
+  | "createMatch" | "joinTeam" | "leaveMatch" | "startMatch" | "chooseType"
+  | "submitAnswer" | "useAssist" | "judgeVerbal" | "revealAnswer"
+  | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
+  | "startChallenge" | "answerChallenge" | "usePowerCard";
 
-    const teams: Match["teams"] = {};
-    const teamOrder: string[] = [];
-    opts.teamNames.forEach((name, i) => {
-      const tcode = `${code}-${i + 1}`; // كود فريق بسيط: A482-1
-      teamOrder.push(tcode);
-      teams[tcode] = {
-        code: tcode,
-        name: name.trim() || `فريق ${i + 1}`,
-        color: TEAM_COLOR_ORDER[i],
-        score: 0,
-        correctCount: 0,
-        wrongCount: 0,
-      };
-    });
-
-    const state: GameState = {
-      phase: "lobby",
-      round: 0,
-      targetTeam: null,
-      originalTeam: null,
-      passCount: 0,
-      question: null,
-      answer: null,
-      isCorrect: null,
-      timer: opts.timer,
-      questionStartedAt: null,
-      usedIds: [],
-      questionValue: 0,
-      viewUntil: null,
-      assistUsed: false,
-    };
-
-    const match: Omit<Match, "players"> = {
-      hostName: opts.hostName.trim() || "المقدم",
-      createdAt: Date.now(),
-      status: "lobby",
-      teamOrder,
-      turnIndex: 0,
-      totalRounds: opts.totalRounds,
-      timer: opts.timer,
-      enabledTypes: opts.enabledTypes,
-      state,
-      teams,
-    };
-
-    await set(ref(db, `matches/${code}`), match);
-    return code;
-  }
-  throw new Error("تعذر إنشاء كود، حاول مرة ثانية");
+function levelForPick(n: number): QuestionLevel {
+  return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
 }
 
-/** الاشتراك في تحديثات المسابقة (بعد التأكد من الدخول) — onError عند فشل الاتصال أو الصلاحيات */
-export function subscribeMatch(
-  code: string,
-  cb: (m: Match | null) => void,
-  onError?: (reason: string) => void
-): Unsubscribe {
-  let un: Unsubscribe = () => {};
+function pointsForPick(n: number): number {
+  return Math.min(250, Math.max(50, n * 50));
+}
+
+async function gameAction<T>(action: ActionName, payload: Record<string, unknown>): Promise<T> {
+  await ensureAuth();
+  const call = httpsCallable<Record<string, unknown>, T>(functions, "gameAction");
+  const result = await call({ action, ...payload });
+  return result.data;
+}
+
+export async function createMatch(opts: CreateMatchOptions): Promise<string> {
+  const result = await gameAction<{ code: string }>("createMatch", { options: opts });
+  return result.code;
+}
+
+export function subscribeMatch(code: string, cb: (m: Match | null) => void, onError?: (reason: string) => void): Unsubscribe {
+  let unsubscribe: Unsubscribe = () => undefined;
   let cancelled = false;
-  let gotData = false;
-  // مهلة: لو ما وصلنا شي خلال ١٢ ثانية نظهر خطأ بدل تحميل أبدي
-  const timeout = setTimeout(() => {
-    if (!cancelled && !gotData) onError?.("timeout");
+  let received = false;
+  const timeout = window.setTimeout(() => {
+    if (!cancelled && !received) onError?.("timeout");
   }, 12000);
+
   void ensureAuth().then(() => {
     if (cancelled) return;
-    un = onValue(
-      ref(db, `matches/${code}`),
-      (s) => {
-        gotData = true;
-        clearTimeout(timeout);
-        cb(s.exists() ? (s.val() as Match) : null);
+    unsubscribe = onValue(
+      ref(db, `matches/${code.toUpperCase()}`),
+      (snapshot) => {
+        received = true;
+        window.clearTimeout(timeout);
+        cb(snapshot.exists() ? snapshot.val() as Match : null);
       },
-      (err) => {
-        clearTimeout(timeout);
-        onError?.(err?.message ?? "permission");
-      }
+      (error) => {
+        window.clearTimeout(timeout);
+        onError?.(error.message || "permission");
+      },
     );
+  }).catch((error: unknown) => {
+    window.clearTimeout(timeout);
+    onError?.(error instanceof Error ? error.message : "auth");
   });
+
   return () => {
     cancelled = true;
-    clearTimeout(timeout);
-    un();
+    window.clearTimeout(timeout);
+    unsubscribe();
   };
 }
 
-/** البحث عن مسابقة عبر كود فريق */
 export async function findMatchByTeamCode(teamCode: string): Promise<string | null> {
   await ensureAuth();
-  const matchCode = teamCode.split("-")[0]?.toUpperCase();
+  const normalized = teamCode.trim().toUpperCase();
+  const matchCode = normalized.split("-")[0];
   if (!matchCode) return null;
-  const snap = await get(ref(db, `matches/${matchCode}/teams/${teamCode.toUpperCase()}`));
-  return snap.exists() ? matchCode : null;
+  const snapshot = await get(ref(db, `matches/${matchCode}/teams/${normalized}`));
+  return snapshot.exists() ? matchCode : null;
 }
 
-/** انضمام لاعب لفريق */
 export async function joinTeam(matchCode: string, teamCode: string, name: string): Promise<Player> {
-  await ensureAuth();
-  const player: Player = {
-    id: `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    name: name.trim().slice(0, 20) || "لاعب",
-    teamCode,
-    joinedAt: Date.now(),
-  };
-  await set(ref(db, `matches/${matchCode}/players/${player.id}`), player);
-  return player;
+  const result = await gameAction<{ player: Player }>("joinTeam", { matchCode, teamCode, name });
+  return result.player;
 }
 
-/** المقدم يبدأ المسابقة — أول فريق يختار نوع سؤاله */
-export async function startMatch(code: string, firstTeamCode: string) {
-  await ensureAuth();
-  await update(ref(db, `matches/${code}`), {
-    status: "playing",
-    "state/phase": "choose",
-    "state/targetTeam": firstTeamCode,
-  });
+export async function leaveMatch(matchCode: string, playerId: string) {
+  await gameAction("leaveMatch", { matchCode, playerId });
 }
 
-/** سقف تكرار نفس النوع لكل فريق — يكبر كل ما زاد عدد الأسئلة */
-export function typeCap(
-  match: Pick<Match, "totalRounds" | "teamOrder" | "enabledTypes">
-): number {
-  if (match.enabledTypes.length <= 1) return 99; // نوع واحد = بلا سقف
+export async function startMatch(matchCode: string, firstTeamCode: string) {
+  await gameAction("startMatch", { matchCode, firstTeamCode });
+}
+
+export function typeCap(match: Pick<Match, "totalRounds" | "teamOrder" | "enabledTypes">): number {
+  if (match.enabledTypes.length <= 1) return 99;
   const perTeam = Math.ceil(match.totalRounds / Math.max(1, match.teamOrder.length));
   return Math.max(3, Math.ceil(perTeam / 2));
 }
 
 export interface TypeProgress {
-  used: number; // كم مرة الفريق اختار النوع
-  cap: number; // السقف
-  left: number; // المتبقي
-  nextLevel: QuestionLevel; // مستوى السؤال الجاي لو اختاروه
-  nextPoints: number; // نقاطه
+  used: number;
+  cap: number;
+  left: number;
+  nextLevel: QuestionLevel;
+  nextPoints: number;
   available: boolean;
 }
 
-/** تقدّم فريق في نوع معيّن — لواجهة أزرار الاختيار */
 export function typeProgress(match: Match, teamCode: string, type: QuestionType): TypeProgress {
   const used = match.typeCounts?.[teamCode]?.[type] ?? 0;
   const cap = typeCap(match);
-  const left = Math.max(0, cap - used);
-  const nextN = used + 1;
   return {
     used,
     cap,
-    left,
-    nextLevel: levelForPick(nextN),
-    nextPoints: pointsForPick(nextN),
-    available: left > 0,
+    left: Math.max(0, cap - used),
+    nextLevel: levelForPick(used + 1),
+    nextPoints: pointsForPick(used + 1),
+    available: used < cap,
   };
 }
 
-/**
- * الفريق (أو المقدم) يختار نوع السؤال — معاملة ذرّية: أول اختيار يفوز.
- * المستوى يتصاعد مع كل اختيار لنفس النوع (سهل ← متوسط ← صعب) والنقاط ٥٠×رقم الاختيار.
- */
-export async function chooseType(
-  code: string,
-  type: QuestionType
-): Promise<"accepted" | "late" | "cap" | "empty" | "error"> {
-  await ensureAuth();
-  let reason: "cap" | "empty" | null = null;
+export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "error"> {
   try {
-    const res = await runTransaction(ref(db, `matches/${code}`), (m: Match | null) => {
-      if (!m || m.state.phase !== "choose" || m.state.question) return; // سبقك أحد
-      if (!m.enabledTypes.includes(type)) return;
-      const teamCode =
-        m.state.targetTeam ?? m.teamOrder[m.turnIndex % m.teamOrder.length];
-      const counts = m.typeCounts?.[teamCode] ?? {};
-      const used = counts[type] ?? 0;
-      if (used >= typeCap(m)) {
-        reason = "cap";
-        return;
-      }
-      const n = used + 1;
-      const usedIds = m.state.usedIds ?? [];
-      const picked = pickQuestionOfType(usedIds, type, levelForPick(n));
-      if (!picked) {
-        reason = "empty";
-        return;
-      }
-      const q: Question = shuffleQuestion(picked);
-      const now = Date.now();
-      const vsec = viewSecondsFor(q); // ذاكرة/أعلام/فيديو = مشاهدة أولاً
-      const viewUntil = vsec ? now + vsec * 1000 : null;
-      return {
-        ...m,
-        typeCounts: { ...m.typeCounts, [teamCode]: { ...counts, [type]: n } },
-        state: {
-          ...m.state,
-          phase: "question",
-          round: m.state.round + 1,
-          targetTeam: teamCode,
-          originalTeam: teamCode,
-          passCount: 0,
-          question: q,
-          answer: null,
-          isCorrect: null,
-          questionStartedAt: viewUntil ?? now,
-          viewUntil,
-          assistUsed: false,
-          questionValue: pointsForPick(n),
-          usedIds: [...usedIds, q.id],
-        },
-      };
-    });
-    if (res.committed) return "accepted";
-    return reason ?? "late";
+    const result = await gameAction<{ status: "accepted" | "late" | "cap" | "empty" }>("chooseType", { matchCode, type });
+    return result.status;
   } catch {
     return "error";
   }
 }
 
-/** اللاعب يجاوب — أول إجابة فقط تقفل السؤال (معاملة ذرّية) */
-export async function submitAnswer(
-  code: string,
-  playerId: string,
-  playerName: string,
-  choice: number
-): Promise<"accepted" | "late" | "error"> {
-  await ensureAuth();
+export async function submitAnswer(matchCode: string, playerId: string, playerName: string, choice: number): Promise<"accepted" | "late" | "error"> {
   try {
-    const res = await runTransaction(
-      ref(db, `matches/${code}/state`),
-      (state: GameState | null) => {
-        if (!state || state.phase !== "question" || state.answer) return; // إلغاء — سبقك أحد
-        return {
-          ...state,
-          phase: "locked",
-          answer: { playerId, playerName, choice, at: Date.now() },
-        };
-      }
-    );
-    return res.committed ? "accepted" : "late";
+    const result = await gameAction<{ status: "accepted" | "late" }>("submitAnswer", { matchCode, playerId, playerName, choice });
+    return result.status;
   } catch {
     return "error";
   }
 }
 
-/** الأعلام: الفريق يطلب "اختيار من الإجابات" — الإجابة الصحيحة تصير بربع النقاط */
-export async function useAssist(code: string, teamCode: string): Promise<boolean> {
-  await ensureAuth();
+export async function useAssist(matchCode: string, teamCode: string): Promise<boolean> {
   try {
-    const res = await runTransaction(
-      ref(db, `matches/${code}/state`),
-      (s: GameState | null) => {
-        if (
-          !s ||
-          s.phase !== "question" ||
-          s.question?.type !== "flag" ||
-          s.assistUsed ||
-          s.targetTeam !== teamCode
-        )
-          return;
-        return { ...s, assistUsed: true };
-      }
-    );
-    return res.committed;
+    const result = await gameAction<{ accepted: boolean }>("useAssist", { matchCode, teamCode });
+    return result.accepted;
   } catch {
     return false;
   }
 }
 
-/** الأعلام: المقدم يحكم على الإجابة الشفهية (درجة كاملة عند الصح) */
-export async function judgeVerbal(code: string, match: Match, correct: boolean) {
-  await ensureAuth();
-  const st = match.state;
-  if (!st.question || st.phase !== "question" || !st.targetTeam) return;
-  const team = match.teams[st.targetTeam];
-  const points = questionPoints(st);
-  const updates: Record<string, unknown> = {
-    "state/phase": "revealed",
-    "state/isCorrect": correct,
-    [`teams/${st.targetTeam}/correctCount`]: team.correctCount + (correct ? 1 : 0),
-    [`teams/${st.targetTeam}/wrongCount`]: team.wrongCount + (correct ? 0 : 1),
-  };
-  if (correct) updates[`teams/${st.targetTeam}/score`] = team.score + points;
-  await update(ref(db, `matches/${code}`), updates);
-}
-
-/** المقدم يكشف النتيجة ويحتسب النقاط */
-export async function revealAnswer(code: string, match: Match) {
-  await ensureAuth();
-  const st = match.state;
-  if (!st.question || !st.answer) return;
-  const correct = st.answer.choice === st.question.answer;
-  const teamCode = st.targetTeam!;
-  const team = match.teams[teamCode];
-  // المسروق = نصف النقاط، وبمساعدة "اختيار من الإجابات" = ربعها
-  const points = questionPoints(st);
-
-  const updates: Record<string, unknown> = {
-    "state/phase": "revealed",
-    "state/isCorrect": correct,
-    [`teams/${teamCode}/correctCount`]: team.correctCount + (correct ? 1 : 0),
-    [`teams/${teamCode}/wrongCount`]: team.wrongCount + (correct ? 0 : 1),
-  };
-  if (correct) updates[`teams/${teamCode}/score`] = team.score + points;
-  await update(ref(db, `matches/${code}`), updates);
-}
-
-/** المقدم ينقل السؤال للفريق التالي (سرقة) — الصور/الأعلام تُعرض من جديد للفريق الجديد */
-export async function passToNextTeam(code: string, match: Match) {
-  await ensureAuth();
-  const st = match.state;
-  const currentIdx = match.teamOrder.indexOf(st.targetTeam!);
-  const nextTeam = match.teamOrder[(currentIdx + 1) % match.teamOrder.length];
-  const vsec = st.question ? viewSecondsFor(st.question) : null;
-  const viewUntil = vsec ? Date.now() + vsec * 1000 : null;
-  await update(ref(db, `matches/${code}`), {
-    state: {
-      ...st,
-      phase: "question",
-      targetTeam: nextTeam,
-      passCount: st.passCount + 1,
-      answer: null,
-      isCorrect: null,
-      questionStartedAt: viewUntil ?? Date.now(),
-      viewUntil,
-      assistUsed: false,
-    },
-  });
-}
-
-/** الانتقال للسؤال التالي — الفريق الجاي يختار نوع سؤاله */
-export async function advanceTurn(code: string, match: Match) {
-  await ensureAuth();
-  const ended = match.state.round >= match.totalRounds;
-  if (ended) {
-    await update(ref(db, `matches/${code}`), {
-      status: "ended",
-      "state/phase": "ended",
-      turnIndex: match.turnIndex + 1,
-    });
-  } else {
-    const nextTeam = match.teamOrder[(match.turnIndex + 1) % match.teamOrder.length];
-    await update(ref(db, `matches/${code}`), {
-      turnIndex: match.turnIndex + 1,
-      "state/phase": "choose",
-      "state/question": null,
-      "state/answer": null,
-      "state/isCorrect": null,
-      "state/targetTeam": nextTeam,
-      "state/viewUntil": null,
-      "state/assistUsed": false,
-      "state/questionValue": null,
-    });
+export async function usePowerCard(matchCode: string, teamCode: string, card: "doublePoints" | "extraTime"): Promise<boolean> {
+  try {
+    const result = await gameAction<{ accepted: boolean }>("usePowerCard", { matchCode, teamCode, card });
+    return result.accepted;
+  } catch {
+    return false;
   }
 }
 
-/** إنهاء المسابقة فوراً */
-export async function endMatch(code: string) {
-  await ensureAuth();
-  await update(ref(db, `matches/${code}`), { status: "ended", "state/phase": "ended" });
+export async function judgeVerbal(matchCode: string, _match: Match, correct: boolean) {
+  void _match;
+  await gameAction("judgeVerbal", { matchCode, correct });
 }
 
-/** حذف مسابقة (تنظيف) */
-export async function deleteMatch(code: string) {
-  await ensureAuth();
-  await remove(ref(db, `matches/${code}`));
+export async function revealAnswer(matchCode: string, _match: Match) {
+  void _match;
+  await gameAction("revealAnswer", { matchCode });
 }
 
-/** لاعب يغادر */
-export async function leaveMatch(code: string, playerId: string) {
-  await ensureAuth();
-  await remove(ref(db, `matches/${code}/players/${playerId}`));
+export async function passToNextTeam(matchCode: string, _match: Match) {
+  void _match;
+  await gameAction("passToNextTeam", { matchCode });
 }
 
-/** المقدم يعيّن قائد الفريق (أو يلغيه بـ null) — القائد هو الوحيد اللي يختار النوع ويجاوب */
-export async function setCaptain(code: string, teamCode: string, playerId: string | null) {
-  await ensureAuth();
-  await set(ref(db, `matches/${code}/teams/${teamCode}/captainId`), playerId);
+export async function advanceTurn(matchCode: string, _match: Match) {
+  void _match;
+  await gameAction("advanceTurn", { matchCode });
+}
+
+export async function endMatch(matchCode: string) {
+  await gameAction("endMatch", { matchCode });
+}
+
+export async function deleteMatch(matchCode: string) {
+  await gameAction("deleteMatch", { matchCode });
+}
+
+export async function setCaptain(matchCode: string, teamCode: string, playerId: string | null) {
+  await gameAction("setCaptain", { matchCode, teamCode, playerId });
+}
+
+export async function startSoloChallenge(): Promise<{ sessionId: string; questions: import("../types/game").Question[] }> {
+  return gameAction("startChallenge", {});
+}
+
+export async function answerSoloChallenge(sessionId: string, index: number, choice: number): Promise<{ correct: boolean; answer: number }> {
+  return gameAction("answerChallenge", { sessionId, index, choice });
 }
 
 export { TEAM_COLORS };
+export type { TeamColor };

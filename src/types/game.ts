@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// نقطة فوز — الأنواع الأساسية للمسابقة الجماعية
+// الميدان — الأنواع الأساسية للمسابقة الجماعية
 // ═══════════════════════════════════════════════════════════
 
 /** الأنواع الأساسية — والمقدم يقدر يضيف أنواعاً مخصصة بأسمائه (سلسلة نصية حرة) */
@@ -55,6 +55,10 @@ export interface Team {
   correctCount: number;
   wrongCount: number;
   captainId?: string | null; // قائد الفريق — الوحيد اللي يختار النوع ويجاوب (فارغ = الكل يقدر)
+  powerCards?: {
+    doublePoints: boolean;
+    extraTime: boolean;
+  };
 }
 
 export interface Player {
@@ -62,6 +66,7 @@ export interface Player {
   name: string;
   teamCode: string;
   joinedAt: number;
+  authUid?: string;
 }
 
 export type MatchPhase =
@@ -94,9 +99,12 @@ export interface GameState {
   questionValue?: number; // قيمة السؤال الأساسية (٥٠ × رقم اختيار النوع)
   viewUntil?: number | null; // للصور/الأعلام: وقت إخفاء الصورة (مللي ثانية)
   assistUsed?: boolean; // الأعلام: الفريق طلب "اختيار من الإجابات" (ربع النقاط)
+  pointMultiplier?: number; // بطاقة مضاعفة النقاط
+  extraTimeUsed?: boolean; // بطاقة +١٥ ثانية
 }
 
 export interface Match {
+  hostUid?: string;
   hostName: string;
   createdAt: number;
   status: "lobby" | "playing" | "ended";
@@ -110,6 +118,12 @@ export interface Match {
   players: Record<string, Player>;
   // كم مرة كل فريق اختار كل نوع (للتصعيد والسقف) — Firebase يحذف الكائنات الفارغة
   typeCounts?: Record<string, Partial<Record<QuestionType, number>>>;
+  tieBreaker?: {
+    active: boolean;
+    teams: string[];
+    cursor: number;
+    cycle: number;
+  };
 }
 
 export const TEAM_COLORS: Record<
@@ -187,11 +201,13 @@ export function questionPoints(st: {
   questionValue?: number;
   passCount: number;
   assistUsed?: boolean;
+  pointMultiplier?: number;
 }): number {
   const base = st.questionValue ?? (st.question ? LEVEL_POINTS[st.question.level] : 0);
-  if (st.assistUsed) return Math.max(1, Math.round(base / 4));
-  if (st.passCount > 0) return Math.max(1, Math.round(base / 2));
-  return base;
+  let result = base;
+  if (st.assistUsed) result = Math.max(1, Math.round(result / 4));
+  else if (st.passCount > 0) result = Math.max(1, Math.round(result / 2));
+  return result * (st.pointMultiplier ?? 1);
 }
 
 export const CATEGORY_LABEL: Record<string, string> = {

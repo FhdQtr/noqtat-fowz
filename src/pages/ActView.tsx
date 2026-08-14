@@ -46,7 +46,7 @@ export default function ActView() {
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-5 text-center">
       <div className="fixed inset-0 -z-10">
-        <img src="/img/stage-bg.jpg" alt="" className="w-full h-full object-cover opacity-25" />
+        <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-25" />
         <div className="absolute inset-0 bg-night/90" />
       </div>
 

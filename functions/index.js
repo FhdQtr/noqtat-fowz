@@ -187,13 +187,10 @@ async function submitAnswer(uid, data) {
   const captainId = match.teams[player.teamCode]?.captainId;
   if (captainId && captainId !== player.id) fail("permission-denied", "الإجابة لقائد الفريق");
   const choice = Number(data.choice);
-  const transaction = await db.ref(`matches/${id}/state`).transaction((state) => {
-    if (!state || state.phase !== "question" || state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (state.question?.options?.length || 0)) return;
-    state.phase = "locked";
-    state.answer = { playerId: player.id, playerName: player.name, choice, at: now() };
-    return state;
-  });
-  return { status: transaction.committed ? "accepted" : "late" };
+  const latestState = (await db.ref(`matches/${id}/state`).get()).val();
+  if (!latestState || latestState.phase !== "question" || latestState.answer || !Number.isInteger(choice) || choice < 0 || choice >= (latestState.question?.options?.length || 0)) return { status: "late" };
+  await db.ref(`matches/${id}/state`).update({ phase: "locked", answer: { playerId: player.id, playerName: player.name, choice, at: now() } });
+  return { status: "accepted" };
 }
 
 async function reveal(id, match, correctOverride) {
@@ -263,12 +260,10 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "useAssist") {
     const teamCode = code(data.teamCode);
     if (!canPlayFor(match, uid, teamCode) || match.state.targetTeam !== teamCode) fail("permission-denied", "المساعدة للفريق صاحب السؤال");
-    const result = await db.ref(`matches/${id}/state`).transaction((state) => {
-      if (!state || state.phase !== "question" || state.question?.type !== "flag" || state.assistUsed || state.targetTeam !== teamCode) return;
-      state.assistUsed = true;
-      return state;
-    });
-    return { accepted: result.committed };
+    const latestState = (await db.ref(`matches/${id}/state`).get()).val();
+    if (!latestState || latestState.phase !== "question" || latestState.question?.type !== "flag" || latestState.assistUsed || latestState.targetTeam !== teamCode) return { accepted: false };
+    await db.ref(`matches/${id}/state/assistUsed`).set(true);
+    return { accepted: true };
   }
   if (action === "usePowerCard") {
     const teamCode = code(data.teamCode);

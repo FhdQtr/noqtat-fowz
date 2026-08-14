@@ -142,6 +142,9 @@ export default function Play() {
         <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
           جرّب فتح الرابط في متصفح كروم أو سفاري <span className="text-gold">العادي</span> — مو المتصفح الخاص (المتخفي) أو متصفح داخل تطبيق — وتأكد من الإنترنت
         </p>
+        <p className="max-w-sm break-all rounded-lg border border-gold/20 bg-black/25 px-3 py-2 text-[11px] text-gold-light/80" dir="ltr">
+          {connErr || "unknown-connection-error"}
+        </p>
         <button onClick={() => window.location.reload()} className="btn-gold">إعادة المحاولة</button>
         <button onClick={() => nav("/")} className="btn-ghost-gold">العودة للرئيسية</button>
       </div>

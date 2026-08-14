@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Timer } from "lucide-react";
+import { sfx } from "../lib/sounds";
 
 /**
  * مؤقت خط مستقيم + عدّاد تنازلي رقمي واضح — لشاشات المتسابقين
@@ -18,6 +19,7 @@ export default function LinearTimer({
 }) {
   const [left, setLeft] = useState(total);
   const raf = useRef(0);
+  const lastSecond = useRef<number | null>(null);
 
   useEffect(() => {
     if (!active || total <= 0) {
@@ -27,6 +29,12 @@ export default function LinearTimer({
     const tick = () => {
       const l = Math.max(0, total - (Date.now() - startedAt) / 1000);
       setLeft(l);
+      const second = Math.ceil(l);
+      if (second !== lastSecond.current) {
+        if (second > 0 && second <= 5) sfx.tickFinal();
+        if (second === 0 && lastSecond.current !== null) sfx.timeout();
+        lastSecond.current = second;
+      }
       if (l > 0) raf.current = requestAnimationFrame(tick);
     };
     raf.current = requestAnimationFrame(tick);
@@ -37,27 +45,21 @@ export default function LinearTimer({
 
   const secs = Math.ceil(left);
   const pct = (left / total) * 100;
-  const color = secs <= 5 ? "#e05260" : secs <= 10 ? "#d4af37" : "#3ddc84";
+  const state = secs <= 5 ? "danger" : secs <= 10 ? "warning" : "safe";
 
   return (
-    <div className={`w-full flex items-center gap-3 ${active ? "" : "opacity-40"}`} dir="ltr">
+    <div className={`m-live-timer m-live-timer--${state} ${big ? "m-live-timer--big" : ""} ${active ? "" : "opacity-40"}`} dir="ltr">
       <span
-        className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border-2 font-cairo font-black tabular-nums ${
-          big ? "text-2xl px-4 py-1" : "text-lg px-3 py-0.5"
-        } ${active && secs <= 5 ? "animate-pulse" : ""}`}
-        style={{ borderColor: color, color, minWidth: big ? 76 : 62, justifyContent: "center" }}
+        className={`m-live-timer__number ${active && secs <= 5 ? "m-live-timer__number--pulse" : ""}`}
       >
         <Timer className={big ? "w-5 h-5" : "w-4 h-4"} />
         {secs}
       </span>
-      <div className="flex-1 h-2.5 rounded-full bg-white/10 overflow-hidden">
+      <div className="m-live-timer__track">
         <div
-          className="h-full rounded-full"
+          className="m-live-timer__fill"
           style={{
             width: `${pct}%`,
-            background: color,
-            boxShadow: `0 0 8px ${color}`,
-            transition: "width 0.1s linear, background 0.3s",
           }}
         />
       </div>

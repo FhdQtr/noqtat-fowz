@@ -1,0 +1,39 @@
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5 · genre: atmospheric · macrostructure: Index-First · theme: custom (Qatari night) · nav: N9 · footer: Ft2 · visual QA: concept pass, browser render pending */
+:root {
+  --m-paper: oklch(15% 0.012 58);
+  --m-paper-2: oklch(19% 0.016 48);
+  --m-paper-3: oklch(23% 0.022 38);
+  --m-paper-4: oklch(27% 0.028 30);
+  --m-ink: oklch(94% 0.012 82);
+  --m-ink-soft: oklch(80% 0.012 72);
+  --m-muted: oklch(68% 0.012 55);
+  --m-rule: oklch(38% 0.035 48);
+  --m-rule-soft: oklch(27% 0.024 45);
+  --m-maroon: oklch(39% 0.135 12);
+  --m-maroon-high: oklch(51% 0.16 12);
+  --m-gold: oklch(80% 0.105 79);
+  --m-gold-low: oklch(62% 0.075 76);
+  --m-safe: oklch(69% 0.16 148);
+  --m-warning: oklch(78% 0.14 78);
+  --m-accent-ink: oklch(11% 0.014 350);
+  --m-danger: oklch(72% 0.17 22);
+  --m-focus: oklch(84% 0.14 88);
+  --m-font-display: "Cairo", "Tajawal", sans-serif;
+  --m-font-body: "Tajawal", "Cairo", sans-serif;
+  --m-space-3xs: 0.125rem;
+  --m-space-2xs: 0.25rem;
+  --m-space-xs: 0.5rem;
+  --m-space-sm: 0.75rem;
+  --m-space-md: 1rem;
+  --m-space-lg: 1.5rem;
+  --m-space-xl: 2.5rem;
+  --m-space-2xl: 4rem;
+  --m-space-3xl: 6rem;
+  --m-radius-sm: 0.75rem;
+  --m-radius-md: 1.125rem;
+  --m-radius-lg: 1.5rem;
+  --m-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --m-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --m-duration-micro: 120ms;
+  --m-duration-short: 220ms;
+}

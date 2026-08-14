@@ -161,6 +161,487 @@
   }
 }
 
+/* الصفحة الرئيسية — فهرس إجراءات هادئ بهوية قطرية */
+html,
+body {
+  overflow-x: clip;
+}
+
+.brand-logo-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1376 / 465;
+  overflow: hidden;
+}
+
+.brand-logo-image {
+  position: absolute;
+  inset-block-start: -10.323%;
+  inset-inline-start: -3.488%;
+  width: 106.977%;
+  height: 120.645%;
+  max-width: none;
+  object-fit: fill;
+  user-select: none;
+}
+
+.m-home {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: var(--m-paper);
+  color: var(--m-ink);
+  font-family: var(--m-font-body);
+}
+
+.m-home::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 78% -8%, color-mix(in oklch, var(--m-maroon) 18%, transparent) 0%, transparent 34%),
+    radial-gradient(circle at 6% 96%, color-mix(in oklch, var(--m-gold) 8%, transparent) 0%, transparent 30%);
+}
+
+.m-nav,
+.m-shell,
+.m-footer {
+  width: min(100% - 2rem, 72rem);
+  margin-inline: auto;
+}
+
+.m-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--m-space-lg);
+  padding-block: var(--m-space-md) var(--m-space-sm);
+}
+
+.m-wordmark-link {
+  display: block;
+  flex: 0 0 auto;
+  width: clamp(8.75rem, 38vw, 11.5rem);
+}
+
+.m-nav-action {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: var(--m-space-xs);
+  border: 1px solid var(--m-rule);
+  border-radius: 999px;
+  padding-inline: var(--m-space-md);
+  color: var(--m-ink-soft);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color var(--m-duration-short) var(--m-ease-out), color var(--m-duration-short) var(--m-ease-out), transform var(--m-duration-micro) var(--m-ease-out);
+}
+
+.m-nav-action svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--m-gold);
+}
+
+.m-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--m-space-xl);
+  padding-block: var(--m-space-xl) var(--m-space-2xl);
+}
+
+.m-intro {
+  min-width: 0;
+}
+
+.m-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--m-space-sm);
+  color: var(--m-ink-soft);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.m-kicker span {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  rotate: 45deg;
+  background: var(--m-gold);
+}
+
+.m-intro h1 {
+  min-width: 0;
+  margin-block: var(--m-space-lg) 0;
+  max-width: 15ch;
+  color: var(--m-ink);
+  font-family: var(--m-font-display);
+  font-size: clamp(2rem, 8vw, 3.65rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+}
+
+.m-intro h1 strong {
+  color: var(--m-gold);
+  font-weight: 800;
+}
+
+.m-lede {
+  max-width: 39rem;
+  margin-block-start: var(--m-space-lg);
+  color: var(--m-ink-soft);
+  font-size: clamp(1rem, 1.5vw, 1.125rem);
+  line-height: 1.9;
+}
+
+.m-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-space-md) var(--m-space-lg);
+  margin-block-start: var(--m-space-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-facts div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--m-space-xs);
+}
+
+.m-facts dt {
+  color: var(--m-ink);
+  font-family: var(--m-font-display);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.m-facts dd {
+  color: var(--m-muted);
+  font-size: 0.875rem;
+}
+
+.m-actions {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--m-space-sm);
+}
+
+.m-action,
+.m-entry {
+  container-type: inline-size;
+  border-radius: var(--m-radius-lg);
+  background: var(--m-paper-2);
+  color: var(--m-ink);
+}
+
+.m-action {
+  display: flex;
+  width: 100%;
+  min-height: 7.25rem;
+  align-items: center;
+  gap: var(--m-space-md);
+  border: 1px solid var(--m-rule);
+  padding: var(--m-space-lg);
+  text-align: start;
+  transition: background-color var(--m-duration-short) var(--m-ease-out), border-color var(--m-duration-short) var(--m-ease-out), transform var(--m-duration-micro) var(--m-ease-out);
+}
+
+.m-action--primary {
+  background: var(--m-paper-3);
+  border-color: color-mix(in oklch, var(--m-gold-low) 55%, var(--m-rule));
+}
+
+.m-action-mark {
+  display: grid;
+  width: 3.25rem;
+  height: 3.25rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--m-radius-sm);
+  background: var(--m-maroon);
+  color: var(--m-ink);
+}
+
+.m-action-mark svg {
+  width: 1.55rem;
+  height: 1.55rem;
+}
+
+.m-action-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.m-action-copy strong {
+  display: block;
+  font-family: var(--m-font-display);
+  font-size: clamp(1.35rem, 5cqi, 1.8rem);
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.m-action-copy small {
+  display: block;
+  margin-block-start: var(--m-space-2xs);
+  color: var(--m-ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.m-action-arrow {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+  color: var(--m-gold);
+}
+
+.m-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--m-space-lg);
+  padding: var(--m-space-lg);
+}
+
+.m-entry-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--m-space-sm);
+}
+
+.m-entry-icon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--m-gold);
+}
+
+.m-entry-icon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.m-entry h2 {
+  color: var(--m-ink);
+  font-family: var(--m-font-display);
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.m-entry-heading p {
+  margin-block-start: var(--m-space-2xs);
+  color: var(--m-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.m-code-form {
+  min-width: 0;
+}
+
+.m-code-form label {
+  display: block;
+  margin-block-end: var(--m-space-xs);
+  color: var(--m-ink-soft);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.m-code-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3rem;
+  gap: var(--m-space-xs);
+}
+
+.m-code-controls input,
+.m-code-controls button {
+  min-height: 3rem;
+  border: 1px solid var(--m-rule);
+  border-radius: var(--m-radius-sm);
+}
+
+.m-code-controls input {
+  min-width: 0;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+  background: var(--m-paper);
+  color: var(--m-ink);
+  padding-inline: var(--m-space-md);
+  font-family: var(--m-font-body);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+  transition: background-color var(--m-duration-short) var(--m-ease-out), border-color var(--m-duration-short) var(--m-ease-out);
+}
+
+.m-code-controls input::placeholder {
+  color: var(--m-muted);
+}
+
+.m-code-controls button {
+  display: grid;
+  place-items: center;
+  background: var(--m-paper-4);
+  color: var(--m-gold);
+  transition: background-color var(--m-duration-short) var(--m-ease-out), transform var(--m-duration-micro) var(--m-ease-out);
+}
+
+.m-code-controls button svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.m-code-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  color: var(--m-muted);
+}
+
+.m-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--m-rule);
+  border-block-start-color: var(--m-gold);
+  border-radius: 50%;
+  animation: m-spin 800ms linear infinite;
+}
+
+.m-error {
+  min-height: 2.75rem;
+  border-radius: var(--m-radius-sm);
+  background: color-mix(in oklch, var(--m-danger) 12%, var(--m-paper-2));
+  color: var(--m-danger);
+  padding: var(--m-space-sm) var(--m-space-md);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.m-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--m-space-sm) var(--m-space-lg);
+  border-block-start: 1px solid var(--m-rule-soft);
+  padding-block: var(--m-space-lg) calc(var(--m-space-lg) + env(safe-area-inset-bottom));
+  color: var(--m-muted);
+  font-size: 0.8125rem;
+}
+
+.m-footer a {
+  color: var(--m-ink-soft);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.m-nav-action:focus-visible,
+.m-wordmark-link:focus-visible,
+.m-action:focus-visible,
+.m-code-controls input:focus-visible,
+.m-code-controls button:focus-visible,
+.m-footer a:focus-visible {
+  outline: 2px solid var(--m-focus);
+  outline-offset: 3px;
+}
+
+.m-action:active,
+.m-code-controls button:active,
+.m-nav-action:active {
+  transform: translateY(1px);
+}
+
+@keyframes m-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .m-nav-action:hover,
+  .m-footer a:hover {
+    color: var(--m-gold);
+  }
+
+  .m-nav-action:hover {
+    border-color: var(--m-gold-low);
+  }
+
+  .m-action:hover {
+    background: var(--m-paper-4);
+    border-color: var(--m-gold-low);
+  }
+
+  .m-code-controls input:hover {
+    background: var(--m-paper-3);
+  }
+
+  .m-code-controls button:not(:disabled):hover {
+    background: var(--m-maroon);
+    color: var(--m-ink);
+  }
+}
+
+@media (min-width: 40rem) {
+  .m-nav,
+  .m-shell,
+  .m-footer {
+    width: min(100% - 4rem, 72rem);
+  }
+
+  .m-shell {
+    padding-block-start: var(--m-space-2xl);
+  }
+
+  .m-entry {
+    grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.9fr);
+    align-items: end;
+  }
+}
+
+@media (min-width: 60rem) {
+  .m-nav {
+    padding-block-start: var(--m-space-lg);
+  }
+
+  .m-wordmark-link {
+    width: 12.5rem;
+  }
+
+  .m-shell {
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    gap: var(--m-space-3xl);
+    align-items: start;
+    padding-block: var(--m-space-3xl);
+  }
+
+  .m-intro {
+    position: sticky;
+    top: var(--m-space-xl);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-spinner {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
 /* شريط تمرير مخصص */
 ::-webkit-scrollbar {
   width: 8px;
@@ -172,6 +653,216 @@
 ::-webkit-scrollbar-thumb {
   background: #6b5a2a;
   border-radius: 8px;
+}
+
+/* Hallmark · Qatari Luxury Majlis system · gameplay states included */
+body {
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--m-maroon) 16%, transparent), transparent 22rem),
+    radial-gradient(circle at 50% 0%, color-mix(in oklch, var(--m-gold) 7%, transparent), transparent 34rem),
+    var(--m-paper);
+  color: var(--m-ink);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: .23;
+  pointer-events: none;
+  background-image:
+    linear-gradient(45deg, transparent 47%, color-mix(in oklch, var(--m-gold-low) 17%, transparent) 48% 52%, transparent 53%),
+    linear-gradient(-45deg, transparent 47%, color-mix(in oklch, var(--m-maroon) 16%, transparent) 48% 52%, transparent 53%);
+  background-size: 4.5rem 4.5rem;
+  mask-image: linear-gradient(to bottom, black, transparent 24rem);
+}
+
+.brand-logo-frame {
+  aspect-ratio: 1472 / 561;
+  overflow: visible;
+}
+
+.brand-logo-image {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.m-home {
+  min-height: 100dvh;
+  background: transparent;
+}
+
+.m-home::before {
+  background:
+    radial-gradient(circle at 50% 8%, color-mix(in oklch, var(--m-maroon) 24%, transparent), transparent 32rem),
+    linear-gradient(180deg, transparent 65%, color-mix(in oklch, var(--m-gold) 6%, transparent));
+}
+
+.m-nav {
+  min-height: 6rem;
+  padding-block: 1rem;
+  border-bottom: 1px solid var(--m-rule-soft);
+}
+
+.m-menu {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 1px solid var(--m-rule);
+  border-radius: var(--m-radius-sm);
+  color: var(--m-gold);
+  background: color-mix(in oklch, var(--m-paper-2) 88%, transparent);
+}
+
+.m-menu svg { width: 1.25rem; }
+.m-wordmark-link { width: clamp(7.5rem, 34vw, 10rem); }
+
+.m-shell {
+  gap: 1.25rem;
+  padding-block: 1rem 3rem;
+}
+
+.m-intro {
+  text-align: center;
+}
+
+.m-sadu {
+  width: 100%;
+  height: 2.25rem;
+  margin-bottom: 2rem;
+  border-block: 1px solid var(--m-rule);
+  opacity: .55;
+  background:
+    linear-gradient(45deg, transparent 42%, var(--m-maroon) 43% 57%, transparent 58%) 0 0 / 1.5rem 1.5rem,
+    linear-gradient(-45deg, transparent 42%, var(--m-gold-low) 43% 57%, transparent 58%) .75rem 0 / 1.5rem 1.5rem;
+}
+
+.m-welcome {
+  color: var(--m-ink-soft);
+  font-family: var(--m-font-display);
+  font-size: clamp(1.15rem, 4vw, 1.45rem);
+  font-weight: 700;
+}
+
+.m-intro h1 {
+  max-width: none;
+  margin-top: .65rem;
+  color: var(--m-gold);
+  font-size: clamp(1.8rem, 7vw, 2.8rem);
+  letter-spacing: 0;
+}
+
+.m-lede {
+  margin-inline: auto;
+  margin-block-start: .75rem;
+  max-width: 35rem;
+  font-size: .95rem;
+  line-height: 1.85;
+}
+
+.m-actions { gap: .85rem; }
+
+.m-action,
+.m-entry,
+.glass-card,
+.arena-panel {
+  border: 1px solid var(--m-rule);
+  background:
+    linear-gradient(145deg, color-mix(in oklch, var(--m-paper-4) 72%, transparent), color-mix(in oklch, var(--m-paper-2) 94%, transparent));
+  box-shadow: 0 1.2rem 3rem color-mix(in oklch, black 44%, transparent), inset 0 1px color-mix(in oklch, white 6%, transparent);
+}
+
+.m-action--primary {
+  min-height: 6.5rem;
+  border-color: var(--m-gold-low);
+  background:
+    linear-gradient(90deg, color-mix(in oklch, var(--m-maroon) 88%, var(--m-paper-2)), color-mix(in oklch, var(--m-paper-3) 92%, var(--m-maroon)));
+}
+
+.m-action-mark {
+  background: linear-gradient(145deg, var(--m-gold), var(--m-gold-low));
+  color: var(--m-paper);
+}
+
+.m-entry { padding: 1.15rem; }
+.m-entry:first-of-type { border-inline-start: .2rem solid var(--m-maroon-high); }
+.m-code-controls input { background: color-mix(in oklch, var(--m-paper) 82%, transparent); }
+.m-code-controls button { background: var(--m-maroon); color: var(--m-ink); }
+
+.m-challenge-link {
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: .75rem;
+  border: 1px solid var(--m-rule);
+  border-radius: var(--m-radius-md);
+  padding-inline: 1rem;
+  color: var(--m-ink-soft);
+  background: color-mix(in oklch, var(--m-paper-2) 82%, transparent);
+  text-decoration: none;
+}
+.m-challenge-link svg { width: 1rem; color: var(--m-gold); }
+.m-challenge-link span { flex: 1; font-weight: 800; }
+
+.m-sound-toggle {
+  position: fixed;
+  z-index: 80;
+  inset-inline-end: max(1rem, env(safe-area-inset-right));
+  inset-block-end: max(1rem, env(safe-area-inset-bottom));
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  border: 1px solid var(--m-gold-low);
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--m-paper-2) 92%, transparent);
+  color: var(--m-gold);
+  box-shadow: 0 .75rem 2rem color-mix(in oklch, black 40%, transparent);
+  backdrop-filter: blur(.75rem);
+}
+.m-sound-toggle svg { width: 1.15rem; }
+
+.m-live-timer {
+  --timer-color: var(--m-safe);
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: .8rem;
+}
+.m-live-timer--warning { --timer-color: var(--m-warning); }
+.m-live-timer--danger { --timer-color: var(--m-danger); }
+.m-live-timer__number {
+  display: inline-flex;
+  min-width: 4rem;
+  min-height: 3rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  border: 2px solid var(--timer-color);
+  border-radius: 999px;
+  color: var(--timer-color);
+  font-family: var(--m-font-display);
+  font-size: 1.2rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 1.25rem color-mix(in oklch, var(--timer-color) 26%, transparent), inset 0 0 1rem color-mix(in oklch, var(--timer-color) 8%, transparent);
+}
+.m-live-timer--big .m-live-timer__number { min-width: 5rem; min-height: 3.5rem; font-size: 1.55rem; }
+.m-live-timer__number svg { width: 1rem; }
+.m-live-timer__track { flex: 1; height: .65rem; overflow: hidden; border-radius: 999px; background: color-mix(in oklch, white 9%, transparent); }
+.m-live-timer__fill { height: 100%; border-radius: inherit; background: var(--timer-color); box-shadow: 0 0 .8rem var(--timer-color); transition: width .1s linear, background .25s; }
+.m-live-timer__number--pulse { animation: m-danger-pulse .82s ease-in-out infinite; }
+@keyframes m-danger-pulse { 50% { transform: scale(1.06); box-shadow: 0 0 2rem color-mix(in oklch, var(--m-danger) 55%, transparent); } }
+
+@media (min-width: 60rem) {
+  .m-shell { grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); align-items: center; padding-block: 4rem; }
+  .m-intro { text-align: start; }
+  .m-intro h1, .m-lede { margin-inline: 0; }
 }
 
 /* كونفيتي ذهبي */

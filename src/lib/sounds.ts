@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 let ctx: AudioContext | null = null;
+let muted = localStorage.getItem("al_midan_muted") === "1";
 
 function ac(): AudioContext {
   if (!ctx) ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -18,6 +19,7 @@ function tone(
   vol = 0.18,
   slideTo?: number
 ) {
+  if (muted) return;
   const c = ac();
   const o = c.createOscillator();
   const g = c.createGain();
@@ -69,6 +71,11 @@ export const sfx = {
   tickFinal() {
     tone(1320, 0, 0.09, "square", 0.09);
   },
+  /** انتهاء وقت السؤال */
+  timeout() {
+    tone(330, 0, 0.16, "triangle", 0.14, 220);
+    tone(196, 0.14, 0.42, "sine", 0.16, 110);
+  },
   /** ظهور سؤال جديد */
   questionIn() {
     tone(392, 0, 0.12, "sine", 0.1);
@@ -96,5 +103,18 @@ export function unlockAudio() {
     ac();
   } catch {
     /* تجاهل */
+  }
+}
+
+export function isAudioMuted() {
+  return muted;
+}
+
+export function setAudioMuted(value: boolean) {
+  muted = value;
+  localStorage.setItem("al_midan_muted", value ? "1" : "0");
+  if (!value) {
+    unlockAudio();
+    sfx.click();
   }
 }

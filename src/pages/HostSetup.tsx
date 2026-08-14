@@ -259,7 +259,7 @@ export default function HostSetup() {
 
           <button onClick={create} disabled={busy} className="btn-gold shine w-full text-lg flex items-center justify-center gap-2">
             {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crown className="w-5 h-5" />}
-            {busy ? "جاري فتح الميدان…" : "افتح الميدان"}
+            {busy ? "جاري تجهيز الميدان…" : "ابدأ الميدان"}
           </button>
         </div>
       </div>

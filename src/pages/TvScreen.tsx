@@ -20,6 +20,7 @@ export default function TvScreen() {
   const [portrait, setPortrait] = useState(false);
   const [connErr, setConnErr] = useState("");
   const prevPhase = useRef("");
+  const lastTickSecond = useRef<number | null>(null);
 
   useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
 
@@ -47,7 +48,11 @@ export default function TvScreen() {
       const total = match.timer + (match.state.extraTimeUsed ? 15 : 0);
       const left = Math.max(0, total - Math.floor((Date.now() - match.state.questionStartedAt!) / 1000));
       setTimeLeft(left);
-      if (left <= 5 && left > 0) sfx.tickFinal();
+      if (left !== lastTickSecond.current) {
+        if (left <= 5 && left > 0) sfx.tickFinal();
+        if (left === 0 && lastTickSecond.current !== null) sfx.timeout();
+        lastTickSecond.current = left;
+      }
     };
     tick();
     const iv = setInterval(tick, 500);

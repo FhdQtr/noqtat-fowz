@@ -112,6 +112,7 @@ export default function Home() {
       </main>
 
       <footer className="m-footer">
+        <span>فكرة وتصميم: <strong>فهد القحطاني</strong></span>
         <span>الميدان يا حميدان · قطر</span>
         <Link to="/admin">إدارة بنك الأسئلة</Link>
       </footer>

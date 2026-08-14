@@ -39,6 +39,31 @@ export async function createMatch(opts: CreateMatchOptions): Promise<string> {
   return result.code;
 }
 
+async function fetchMatchDirect(code: string): Promise<Match | null> {
+  const user = await ensureAuth();
+  const databaseURL = db.app.options.databaseURL;
+  if (!databaseURL) throw new Error("database-url");
+
+  const request = async (forceRefresh = false) => {
+    const token = await user.getIdToken(forceRefresh);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 7000);
+    try {
+      return await fetch(
+        `${databaseURL.replace(/\/$/, "")}/matches/${encodeURIComponent(code.toUpperCase())}.json?auth=${encodeURIComponent(token)}`,
+        { cache: "no-store", signal: controller.signal },
+      );
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+
+  let response = await request();
+  if (response.status === 401 || response.status === 403) response = await request(true);
+  if (!response.ok) throw new Error(`database-${response.status}`);
+  return await response.json() as Match | null;
+}
+
 export function subscribeMatch(code: string, cb: (m: Match | null) => void, onError?: (reason: string) => void): Unsubscribe {
   let unsubscribe: Unsubscribe = () => undefined;
   let cancelled = false;
@@ -62,16 +87,22 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
     const poll = async () => {
       if (cancelled || !polling) return;
       try {
-        const result = await gameAction<{ match: Match }>("getMatch", { matchCode: code });
+        let match: Match | null;
+        try {
+          match = await fetchMatchDirect(code);
+        } catch {
+          const result = await gameAction<{ match: Match }>("getMatch", { matchCode: code });
+          match = result.match;
+        }
         if (cancelled) return;
         received = true;
         if (timeout !== undefined) window.clearTimeout(timeout);
         onError?.("");
-        cb(result.match);
+        cb(match);
       } catch {
         // Keep retrying until the overall connection timeout reports the error.
       } finally {
-        if (!cancelled && polling) pollTimer = window.setTimeout(() => void poll(), 2500);
+        if (!cancelled && polling) pollTimer = window.setTimeout(() => void poll(), 1000);
       }
     };
     void poll();
@@ -82,7 +113,7 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
     timeout = window.setTimeout(() => {
       if (!cancelled && !received) onError?.("timeout");
     }, 30000);
-    fallbackTimer = window.setTimeout(startPolling, 4000);
+    fallbackTimer = window.setTimeout(startPolling, 1200);
     unsubscribe = onValue(
       ref(db, `matches/${code.toUpperCase()}`),
       (snapshot) => {

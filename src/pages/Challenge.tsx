@@ -32,6 +32,7 @@ export default function Challenge() {
   const [idx, setIdx] = useState(0);
   const [timeLeft, setTimeLeft] = useState(Q_TIME);
   const [chosen, setChosen] = useState<number | null>(null);
+  const [revealedAnswer, setRevealedAnswer] = useState<number | null>(null);
   const [reveal, setReveal] = useState(false);
   const [lastChance, setLastChance] = useState(true);
   const [extend, setExtend] = useState(true);
@@ -48,11 +49,14 @@ export default function Challenge() {
     try {
       const next = await startSoloChallenge();
       sfx.correct();
-      setRun(next.questions);
+      // لا نحتفظ بالإجابة الصحيحة داخل السؤال المعروض في المتصفح.
+      // تُستقبل الإجابة فقط بعد تثبيت اختيار اللاعب أو انتهاء الوقت.
+      setRun(next.questions.map((question) => ({ ...question, answer: -1 })));
       setSessionId(next.sessionId);
       setIdx(0);
       setReached(0);
       setChosen(null);
+      setRevealedAnswer(null);
       setReveal(false);
       setLastChance(true);
       setExtend(true);
@@ -85,6 +89,7 @@ export default function Challenge() {
     }
     setIdx(idx + 1);
     setChosen(null);
+    setRevealedAnswer(null);
     setReveal(false);
     setTimeLeft(Q_TIME);
   };
@@ -95,7 +100,7 @@ export default function Challenge() {
     setBusy(true);
     try {
       const result = await answerSoloChallenge(sessionId, idx, i);
-      setRun((questions) => questions.map((question, questionIndex) => questionIndex === idx ? { ...question, answer: result.answer } : question));
+      setRevealedAnswer(result.answer);
       setReveal(true);
       if (result.correct) sfx.correct();
       else sfx.wrong();
@@ -122,7 +127,7 @@ export default function Challenge() {
     if (phase !== "play" || timeLeft !== 0 || reveal || busy || !sessionId) return;
     setBusy(true);
     void answerSoloChallenge(sessionId, idx, -1).then((result) => {
-      setRun((questions) => questions.map((question, questionIndex) => questionIndex === idx ? { ...question, answer: result.answer } : question));
+      setRevealedAnswer(result.answer);
       setReveal(true);
       sfx.wrong();
       setTimeout(() => next(true), 1600);
@@ -272,8 +277,8 @@ export default function Challenge() {
         </div>
         <div className="mt-6 grid gap-3">
           {q.options.map((opt, i) => {
-            const isCorrect = reveal && i === q.answer;
-            const isWrong = reveal && chosen === i && i !== q.answer;
+            const isCorrect = reveal && revealedAnswer !== null && i === revealedAnswer;
+            const isWrong = reveal && revealedAnswer !== null && chosen === i && i !== revealedAnswer;
             return (
               <button
                 key={i}
@@ -296,7 +301,7 @@ export default function Challenge() {
         </div>
       </div>
 
-      {reveal && chosen !== q.answer && lastChance && (
+      {reveal && revealedAnswer !== null && chosen !== revealedAnswer && lastChance && (
         <p className="text-center mt-4 text-maroon-light font-cairo font-bold animate-scale-in">
           استُخدمت الفرصة الأخيرة — أي غلطة جاية تنهي التحدي
         </p>

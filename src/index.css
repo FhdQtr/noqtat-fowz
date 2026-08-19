@@ -40,7 +40,7 @@
       radial-gradient(ellipse 60% 50% at 50% 110%, rgba(138, 21, 56, 0.08), transparent);
     background-attachment: fixed;
     min-height: 100dvh;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
   button, input, select {
     -webkit-tap-highlight-color: transparent;
@@ -896,26 +896,6 @@ body::before {
 }
 .m-live-timer__number--pulse { animation: m-danger-pulse .82s ease-in-out infinite; }
 @keyframes m-danger-pulse { 50% { transform: scale(1.06); box-shadow: 0 0 2rem color-mix(in oklch, var(--m-danger) 55%, transparent); } }
-
-.m-answer-surface:not(.border-emerald2-light):not(.border-maroon-light) {
-  background-color: transparent;
-  background-image: url("/img/luxury-majlis/button-frame.webp");
-  background-position: center;
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  border-color: transparent;
-  box-shadow: 0 .7rem 1.4rem color-mix(in oklch, black 32%, transparent);
-}
-
-.m-answer-surface {
-  width: min(92%, 32rem);
-  min-height: clamp(4.75rem, 25vw, 6.25rem);
-  justify-self: center;
-  padding: 1rem clamp(1.5rem, 7vw, 2.75rem) !important;
-  font-size: clamp(1.125rem, 4.8vw, 1.35rem) !important;
-  line-height: 1.45;
-  text-align: center;
-}
 
 .m-footer strong {
   color: var(--m-gold);

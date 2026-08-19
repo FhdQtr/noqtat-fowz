@@ -19,6 +19,7 @@ export default function LinearTimer({
   const [secs, setSecs] = useState(Math.ceil(total));
   const raf = useRef(0);
   const fill = useRef<HTMLDivElement>(null);
+  const timer = useRef<HTMLDivElement>(null);
   const lastSecond = useRef<number | null>(null);
 
   useEffect(() => {
@@ -37,6 +38,9 @@ export default function LinearTimer({
       const second = Math.ceil(l);
       if (second !== lastSecond.current) {
         setSecs(second);
+        if (timer.current) {
+          timer.current.dataset.tone = second <= 5 ? "danger" : second <= 10 ? "warning" : "safe";
+        }
         if (second > 0 && second <= 5) sfx.tickFinal();
         if (second === 0 && lastSecond.current !== null) sfx.timeout();
         lastSecond.current = second;
@@ -52,12 +56,20 @@ export default function LinearTimer({
   const state = secs <= 5 ? "danger" : secs <= 10 ? "warning" : "safe";
 
   return (
-    <div className={`m-live-timer m-live-timer--${state} ${big ? "m-live-timer--big" : ""} ${active ? "" : "opacity-40"}`} dir="ltr">
+    <div
+      ref={timer}
+      className={`m-live-timer m-live-timer--${state} ${big ? "m-live-timer--big" : ""}`}
+      data-active={active ? "true" : "false"}
+      data-tone={state}
+      dir="ltr"
+      role="timer"
+      aria-label={`باقي ${secs} ثانية`}
+    >
       <span
         className={`m-live-timer__number ${active && secs <= 5 ? "m-live-timer__number--pulse" : ""}`}
-        aria-label={`باقي ${secs} ثانية`}
+        aria-hidden="true"
       >
-        {secs}
+        <span className="m-live-timer__digits">{secs}</span>
       </span>
       <div className="m-live-timer__track">
         <div

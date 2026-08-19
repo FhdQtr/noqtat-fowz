@@ -25,6 +25,12 @@
   --m-accent-ink: oklch(11% 0.014 350);
   --m-danger: oklch(72% 0.17 22);
   --m-danger-deep: oklch(32% 0.09 22);
+  --m-answer: oklch(24% 0.042 35);
+  --m-answer-hover: oklch(28% 0.06 28);
+  --m-answer-selected: oklch(34% 0.105 16);
+  --m-answer-readonly: oklch(20% 0.018 46);
+  --m-timer-track: oklch(31% 0.018 52);
+  --m-shadow: oklch(5% 0.01 45 / 0.52);
   --m-focus: oklch(84% 0.14 88);
   --m-focus-inner: oklch(17% 0.02 52);
   --m-focus-outer: var(--m-ivory);
@@ -53,6 +59,7 @@
   --m-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --m-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --m-duration-micro: 120ms;
+  --m-duration-press: 100ms;
   --m-duration-short: 220ms;
   --m-duration-long: 420ms;
   --m-z-base: 1;

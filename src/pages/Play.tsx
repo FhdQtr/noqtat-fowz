@@ -14,6 +14,7 @@ import { QuestionMeta } from "../components/QuestionCard";
 import LinearTimer from "../components/LinearTimer";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
+import { ANSWER_LETTERS } from "../lib/answers";
 import QuestionTypeIcon from "../components/QuestionTypeIcon";
 
 const STORAGE_KEY = "al_midan_player";
@@ -446,19 +447,18 @@ export default function Play() {
                             تناقشوا مع بعض — القائد <strong>{captainName}</strong> هو اللي يثبّت الإجابة
                           </p>
                         )}
-                        <div className={`grid gap-3 ${q.options.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+                        <div className="m-answer-grid" data-count={q.options.length} data-size="regular">
                           {q.options.map((opt, i) => (
                             <button
                               key={i}
                               onClick={() => answer(i)}
                               disabled={myPick !== null || !isCaptain}
-                              className={`m-answer-surface rounded-xl border-2 px-4 py-4 font-cairo font-bold text-base transition-all active:scale-[0.97] ${
-                                myPick === i
-                                  ? "border-gold bg-gold/20 text-gold-light"
-                                  : "border-gold-faint/40 bg-night-700/70 [@media(hover:hover)]:hover:border-gold/70 [@media(hover:hover)]:hover:bg-gold/10"
-                              } disabled:opacity-60`}
+                              className="m-answer-option m-answer-option--interactive"
+                              data-state={myPick === i ? "selected" : "default"}
+                              aria-pressed={myPick === i}
                             >
-                              {opt}
+                              <span className="m-answer-option__label" aria-hidden="true">{ANSWER_LETTERS[i]}</span>
+                              <span className="m-answer-option__text">{opt}</span>
                             </button>
                           ))}
                         </div>
@@ -542,13 +542,15 @@ export default function Play() {
                       </h2>
                     </div>
                     {!(q.type === "flag" && !st!.assistUsed) && q.options.length > 0 && (
-                      <div className={`grid gap-3 ${q.options.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+                      <div className="m-answer-grid" data-count={q.options.length} data-size="regular">
                         {q.options.map((opt, i) => (
                           <div
                             key={i}
-                            className="m-answer-surface rounded-xl border-2 border-gold-faint/25 bg-night-700/40 px-4 py-4 font-cairo font-bold text-base text-foreground/70 select-none"
+                            className="m-answer-option"
+                            data-state="readonly"
                           >
-                            {opt}
+                            <span className="m-answer-option__label" aria-hidden="true">{ANSWER_LETTERS[i]}</span>
+                            <span className="m-answer-option__text">{opt}</span>
                           </div>
                         ))}
                       </div>

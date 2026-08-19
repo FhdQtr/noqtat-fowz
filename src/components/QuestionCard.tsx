@@ -1,6 +1,7 @@
 import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle, Brain, Clapperboard, Drama } from "lucide-react";
 import type { Question } from "../types/game";
 import { typeLabel, LEVEL_LABEL, CATEGORY_LABEL } from "../types/game";
+import { ANSWER_LETTERS } from "../lib/answers";
 
 const TYPE_ICON: Record<string, typeof Flag> = {
   flag: Flag,
@@ -13,8 +14,6 @@ const TYPE_ICON: Record<string, typeof Flag> = {
   memory: Brain,
   acting: Drama,
 };
-
-const LETTERS = ["أ", "ب", "ج", "د"];
 
 export function QuestionMeta({ q }: { q: Question }) {
   const Icon = q.video ? Clapperboard : TYPE_ICON[q.type] ?? HelpCircle;
@@ -105,42 +104,24 @@ export function OptionsDisplay({
   showCorrect?: boolean; // false = ما نعلّم الإجابة الصحيحة (عشان السؤال ينتقل لفريق ثاني)
 }) {
   return (
-    <div className={`grid gap-3 w-full ${q.options.length === 2 ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2"}`}>
+    <div className="m-answer-grid" data-count={q.options.length} data-size={big ? "large" : "regular"}>
       {q.options.map((opt, i) => {
         const isCorrect = reveal && showCorrect && i === q.answer;
         const isWrongChoice = reveal && chosen === i && i !== q.answer;
         const isChosen = chosen === i;
+        const state = isCorrect ? "correct" : isWrongChoice ? "wrong" : isChosen ? "selected" : "default";
         return (
           <div
             key={i}
-            className={`m-answer-surface relative flex items-center gap-3 rounded-xl border-2 px-4 transition-all duration-300 ${
-              big ? "py-4 sm:py-5 text-lg sm:text-2xl" : "py-3 text-sm sm:text-base"
-            } font-cairo font-bold ${
-              isCorrect
-                ? "border-emerald2-light bg-emerald2/25 text-emerald2-light scale-[1.02]"
-                : isWrongChoice
-                ? "border-maroon-light bg-maroon/30 text-white animate-shake"
-                : isChosen
-                ? "border-gold bg-gold/15 text-gold-light"
-                : "border-gold-faint/40 bg-night-700/60 text-foreground"
-            }`}
+            className="m-answer-option"
+            data-state={state}
           >
-            <span
-              className={`shrink-0 inline-flex items-center justify-center rounded-lg font-black ${
-                big ? "w-10 h-10 text-xl" : "w-7 h-7 text-sm"
-              } ${
-                isCorrect
-                  ? "bg-emerald2 text-white"
-                  : isWrongChoice
-                  ? "bg-maroon text-white"
-                  : "bg-night-600 text-gold-light border border-gold-faint/50"
-              }`}
-            >
-              {q.type === "true_false" || q.format === "tf" ? (i === 0 ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />) : LETTERS[i]}
+            <span className="m-answer-option__label" aria-hidden="true">
+              {q.type === "true_false" || q.format === "tf" ? (i === 0 ? <Check /> : <X />) : ANSWER_LETTERS[i]}
             </span>
-            <span className="flex-1">{opt}</span>
-            {isCorrect && <Check className="w-6 h-6 shrink-0" />}
-            {isWrongChoice && <X className="w-6 h-6 shrink-0" />}
+            <span className="m-answer-option__text">{opt}</span>
+            {isCorrect && <Check className="m-answer-option__status" aria-hidden="true" />}
+            {isWrongChoice && <X className="m-answer-option__status" aria-hidden="true" />}
           </div>
         );
       })}

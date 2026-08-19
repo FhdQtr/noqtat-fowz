@@ -47,15 +47,15 @@ export default function TvScreen() {
     const tick = () => {
       const total = match.timer + (match.state.extraTimeUsed ? 15 : 0);
       const left = Math.max(0, total - Math.floor((Date.now() - match.state.questionStartedAt!) / 1000));
-      setTimeLeft(left);
       if (left !== lastTickSecond.current) {
+        setTimeLeft(left);
         if (left <= 5 && left > 0) sfx.tickFinal();
         if (left === 0 && lastTickSecond.current !== null) sfx.timeout();
         lastTickSecond.current = left;
       }
     };
     tick();
-    const iv = setInterval(tick, 500);
+    const iv = setInterval(tick, 250);
     return () => clearInterval(iv);
   }, [match]);
 

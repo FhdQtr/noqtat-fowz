@@ -1,0 +1,34 @@
+[
+  {
+    "date": "2026-08-19",
+    "scope": "app",
+    "macrostructure": "stage + controls",
+    "theme": "studied-DNA",
+    "theme_axes": "dark / Arabic geometric-sans / warm",
+    "vibe": "luxury Qatari majlis, responsive and restrained",
+    "enrichment": "custom answer surfaces and physical timer bezel",
+    "brief": "Unify gameplay answers, smooth timers, and preserve the approved compact homepage"
+  },
+  {
+    "date": "2026-08-16",
+    "macrostructure": "Bento Grid",
+    "theme": "studied-DNA",
+    "theme_axes": "dark / geometric-sans / warm",
+    "vibe": "luxury Qatari majlis, ivory logo and warm gold",
+    "enrichment": "approved image reference",
+    "nav": "N9",
+    "footer": "Ft1",
+    "brief": "Al Midan compact mobile action hub"
+  },
+  {
+    "date": "2026-08-14",
+    "macrostructure": "Index-First",
+    "theme": "custom",
+    "theme_axes": "dark / geometric-sans / warm",
+    "vibe": "quiet Qatari night, restrained maroon and gold",
+    "enrichment": "none",
+    "nav": "N9",
+    "footer": "Ft2",
+    "brief": "Al Midan mobile homepage refinement"
+  }
+]

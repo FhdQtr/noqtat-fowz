@@ -30,6 +30,7 @@ export default function HostRoom() {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [connErr, setConnErr] = useState("");
   const prevPhase = useRef<string>("");
+  const lastTimerSecond = useRef<number | null>(null);
 
   useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
 
@@ -43,6 +44,7 @@ export default function HostRoom() {
 
   // مؤقت السؤال (اختياري)
   useEffect(() => {
+    lastTimerSecond.current = null;
     if (!match || match.timer === 0 || match.state.phase !== "question" || !match.state.questionStartedAt) {
       setTimeLeft(null);
       return;
@@ -51,11 +53,14 @@ export default function HostRoom() {
       const elapsed = Math.floor((Date.now() - match.state.questionStartedAt!) / 1000);
       const total = match.timer + (match.state.extraTimeUsed ? 15 : 0);
       const left = Math.max(0, total - elapsed);
-      setTimeLeft(left);
-      if (left <= 5 && left > 0) sfx.tick();
+      if (left !== lastTimerSecond.current) {
+        setTimeLeft(left);
+        if (left <= 5 && left > 0) sfx.tick();
+        lastTimerSecond.current = left;
+      }
     };
     tick();
-    const iv = setInterval(tick, 500);
+    const iv = setInterval(tick, 250);
     return () => clearInterval(iv);
   }, [match]);
 

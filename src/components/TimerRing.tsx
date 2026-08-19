@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 /**
- * إطار مؤقّت حول بطاقة السؤال — خط يتناقص بسلاسة مع الوقت
- * أخضر → ذهبي (آخر 10 ثوانٍ) → أحمر (آخر 5 ثوانٍ)
+ * إطار وقت خفيف حول بطاقة السؤال.
+ * الحركة تُرسم مباشرة على SVG ولا تعيد تصيير شجرة السؤال كل إطار.
  */
 export default function TimerRing({
   startedAt,
@@ -11,15 +11,17 @@ export default function TimerRing({
   onTimeout,
   children,
 }: {
-  startedAt: number; // طابع بدء السؤال (ms)
-  total: number; // إجمالي الثواني
-  active: boolean; // يشتغل فقط أثناء phase السؤال
+  startedAt: number;
+  total: number;
+  active: boolean;
   onTimeout?: () => void;
   children: ReactNode;
 }) {
-  const [progress, setProgress] = useState(1); // 1 → 0
+  const wrapper = useRef<HTMLDivElement>(null);
+  const progress = useRef<SVGRectElement>(null);
   const fired = useRef(false);
   const raf = useRef(0);
+  const lastSecond = useRef<number | null>(null);
   const onTimeoutRef = useRef(onTimeout);
 
   useEffect(() => {
@@ -28,13 +30,25 @@ export default function TimerRing({
 
   useEffect(() => {
     fired.current = false;
+    lastSecond.current = null;
+
+    const setVisual = (ratio: number, seconds: number) => {
+      progress.current?.style.setProperty("stroke-dashoffset", String((1 - ratio) * 100));
+      if (wrapper.current && seconds !== lastSecond.current) {
+        wrapper.current.dataset.tone = seconds <= 5 ? "danger" : seconds <= 10 ? "warning" : "safe";
+        lastSecond.current = seconds;
+      }
+    };
+
     if (!active || total <= 0) {
-      setProgress(1);
+      setVisual(1, Math.ceil(total));
       return;
     }
+
     const tick = () => {
       const left = Math.max(0, total - (Date.now() - startedAt) / 1000);
-      setProgress(left / total);
+      const ratio = Math.min(1, Math.max(0, left / total));
+      setVisual(ratio, Math.ceil(left));
       if (left <= 0) {
         if (!fired.current) {
           fired.current = true;
@@ -44,40 +58,46 @@ export default function TimerRing({
       }
       raf.current = requestAnimationFrame(tick);
     };
+
     raf.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf.current);
   }, [active, startedAt, total]);
 
-  const left = progress * total;
-  const color = left <= 5 ? "#e05260" : left <= 10 ? "#d4af37" : "#3ddc84";
-  const show = active && total > 0;
-
   return (
-    <div className="relative w-full">
-      {show && (
-        <svg
-          className="absolute -inset-2.5 w-[calc(100%+20px)] h-[calc(100%+20px)] pointer-events-none z-10"
-          preserveAspectRatio="none"
-          viewBox="0 0 100 100"
-        >
-          <rect
-            x="1" y="1" width="98" height="98" rx="7"
-            fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="1.4"
-            vectorEffect="non-scaling-stroke" pathLength={100}
-          />
-          <rect
-            x="1" y="1" width="98" height="98" rx="7"
-            fill="none" stroke={color} strokeWidth={left <= 5 ? 2.4 : 1.8}
-            vectorEffect="non-scaling-stroke" pathLength={100}
-            strokeDasharray="100" strokeDashoffset={(1 - progress) * 100}
-            strokeLinecap="round"
-            style={{
-              transition: "stroke 0.3s",
-              filter: `drop-shadow(0 0 6px ${color})`,
-            }}
-          />
-        </svg>
-      )}
+    <div
+      ref={wrapper}
+      className="m-timer-ring"
+      data-active={active && total > 0 ? "true" : "false"}
+      data-tone="safe"
+    >
+      <svg
+        className="m-timer-ring__svg"
+        preserveAspectRatio="none"
+        viewBox="0 0 100 100"
+        aria-hidden="true"
+      >
+        <rect
+          className="m-timer-ring__track"
+          x="1"
+          y="1"
+          width="98"
+          height="98"
+          rx="7"
+          pathLength={100}
+          vectorEffect="non-scaling-stroke"
+        />
+        <rect
+          ref={progress}
+          className="m-timer-ring__progress"
+          x="1"
+          y="1"
+          width="98"
+          height="98"
+          rx="7"
+          pathLength={100}
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
       {children}
     </div>
   );

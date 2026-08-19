@@ -1,6 +1,18 @@
 [
   {
     "date": "2026-08-19",
+    "scope": "homepage prototype",
+    "macrostructure": "Split Studio + Single Arena",
+    "theme": "Live Electric",
+    "theme_axes": "dark / Arabic system sans / cool",
+    "vibe": "live, focused, technical and energetic",
+    "enrichment": "interactive match preview and requestAnimationFrame timer",
+    "nav": "N9",
+    "footer": "Ft2",
+    "brief": "A real three-question interactive prototype with no Qatar-derived decoration and no repeated card map"
+  },
+  {
+    "date": "2026-08-19",
     "scope": "app",
     "macrostructure": "Map / Diagram + Workbench + Component Playground",
     "theme": "Cobalt",

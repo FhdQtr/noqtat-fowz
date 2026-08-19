@@ -1,4 +1,4 @@
-/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 · genre: modern-minimal · macrostructure: Map / Diagram + Workbench + Component Playground · theme: Cobalt · design-system: design.md · Apple interaction foundations */
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5 · genre: atmospheric · macrostructure: Split Studio + Single Arena · theme: Live Electric · nav: N9 · footer: Ft2 · contrast: pass (40–41) · slop: pass (42–49) · mobile: pass (34, 49–57) */
 :root {
   color-scheme: light;
 
@@ -26,8 +26,8 @@
   --color-shadow: oklch(28% 0.06 264 / 0.14);
   --color-focus: oklch(62% 0.23 264);
 
-  --font-display: system-ui, -apple-system, BlinkMacSystemFont, "SF Arabic", "Segoe UI", "Noto Sans Arabic", sans-serif;
-  --font-body: system-ui, -apple-system, BlinkMacSystemFont, "SF Arabic", "Segoe UI", "Noto Sans Arabic", sans-serif;
+  --font-display: "Cairo", "SF Arabic", "Segoe UI", sans-serif;
+  --font-body: "Tajawal", "SF Arabic", "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 
   --space-3xs: 0.25rem;
@@ -183,4 +183,27 @@
   --input: 87% 0.025 255;
   --ring: 62% 0.23 264;
   --radius: 0.75rem;
+
+  /* الميدان الحي — نظام المعاينة الداكن المستقل. */
+  --live-canvas: oklch(16% 0.018 265);
+  --live-canvas-raised: oklch(20% 0.022 265);
+  --live-surface: oklch(23% 0.024 265);
+  --live-surface-high: oklch(28% 0.028 265);
+  --live-ink: oklch(96% 0.012 90);
+  --live-ink-soft: oklch(75% 0.018 265);
+  --live-rule: oklch(38% 0.026 265);
+  --live-rule-soft: oklch(31% 0.024 265);
+  --live-blue: oklch(66% 0.21 258);
+  --live-blue-high: oklch(72% 0.18 252);
+  --live-blue-soft: oklch(25% 0.07 258);
+  --live-coral: oklch(69% 0.18 28);
+  --live-green: oklch(72% 0.17 151);
+  --live-orange: oklch(78% 0.15 72);
+  --live-red: oklch(65% 0.22 25);
+  --live-shadow: oklch(6% 0.02 265 / 0.48);
+  --live-focus: oklch(78% 0.15 252);
+  --live-radius-control: 1rem;
+  --live-radius-panel: 1.75rem;
+  --live-radius-stage: 2.5rem;
+  --live-max: 74rem;
 }

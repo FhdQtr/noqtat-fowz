@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router";
 import SoundToggle from "./components/SoundToggle";
 
-const Home = lazy(() => import("./pages/Home"));
+const Home = lazy(() => import("./pages/MidanLiveDemo"));
 const HostSetup = lazy(() => import("./pages/HostSetup"));
 const HostRoom = lazy(() => import("./pages/HostRoom"));
 const TvScreen = lazy(() => import("./pages/TvScreen"));
@@ -33,7 +33,7 @@ export default function App() {
 
   return (
     <div className="midan-app" data-route={route}>
-      <SoundToggle />
+      {route !== "home" && <SoundToggle />}
       <Suspense fallback={<div className="midan-loading"><div className="brand-loader" aria-label="جاري فتح الميدان" /></div>}>
         <Routes>
           <Route path="/" element={<Home />} />

@@ -151,7 +151,7 @@ export default function HostRoom() {
           <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
           <div className="absolute inset-0 bg-night/80" />
         </div>
-        <img src="/img/trophy.png" alt="الكأس" className="w-44 h-44 object-contain animate-float-slow drop-shadow-[0_0_44px_rgba(212,175,55,0.6)]" />
+        <Trophy className="next-award-mark" aria-label="كأس الفائز" />
         <h1 className="mt-4 text-3xl sm:text-5xl font-black font-cairo text-gold-gradient text-center">
           {isTie ? "تعادل مثير!" : `الفائز: ${winners[0]?.name}`}
         </h1>

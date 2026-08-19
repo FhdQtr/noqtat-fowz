@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 
-const COLORS = ["#d4af37", "#e8c96a", "#f3dd9a", "#8a1538", "#b02047", "#ffffff"];
+const COLORS = ["#4f63f5", "#7890ff", "#95a5ff", "#22a979", "#ff6b61", "#ffffff"];
 const pseudo = (seed: number) => ((seed * 9301 + 49297) % 233280) / 233280;
 
-/** كونفيتي ذهبي احتفالي */
+/** قصاصات احتفال متوافقة مع هوية Cobalt الجديدة. */
 export default function GoldConfetti({ count = 90 }: { count?: number }) {
   const pieces = useMemo(
     () =>

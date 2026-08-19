@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
-import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap } from "lucide-react";
+import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap, Trophy } from "lucide-react";
 import { subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints } from "../types/game";
@@ -10,6 +10,7 @@ import GoldConfetti from "../components/GoldConfetti";
 import YouTubeClip from "../components/YouTubeClip";
 import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/QuestionCard";
 import TimerRing from "../components/TimerRing";
+import BrandLogo from "../components/BrandLogo";
 import { sfx } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 
@@ -133,7 +134,7 @@ export default function TvScreen() {
       {/* الترويسة */}
       <header className="flex items-center justify-between gap-4 px-6 pt-4">
         <div className="flex items-center gap-3">
-          <img src="/brand/al-midan-logo.webp" alt="الميدان" className="h-12 w-32 object-contain drop-shadow-[0_0_14px_rgba(212,175,55,0.35)]" />
+          <BrandLogo compact />
         </div>
         <ScoreBoard match={match} highlight={st.targetTeam} />
         <div className="w-28 text-left">
@@ -349,7 +350,7 @@ function TvEnding({ match }: { match: Match }) {
   return (
     <div className="flex flex-col items-center gap-5 animate-fade-up">
       <GoldConfetti count={130} />
-      <img src="/img/trophy.png" alt="" className="w-52 h-52 object-contain animate-float-slow drop-shadow-[0_0_60px_rgba(212,175,55,0.7)]" />
+      <Trophy className="next-award-mark next-award-mark--large" aria-hidden="true" />
       <h1 className="text-4xl sm:text-6xl font-black font-cairo text-gold-gradient drop-shadow-lg text-center">
         {isTie ? "تعادل مثير!" : `${teams[0]?.name} بطل المسابقة`}
       </h1>

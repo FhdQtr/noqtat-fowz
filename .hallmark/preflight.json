@@ -1,0 +1,36 @@
+{
+  "date": "2026-08-19",
+  "page": "application",
+  "request": "Replace the full Qatar-derived visual identity with an Apple-informed modern product system across every route.",
+  "context": {
+    "audience": "Arabic-speaking families, gatherings, and competing teams",
+    "primary_use": "Create a new match, join a team, or open the audience screen",
+    "tone": "modern, direct, spatial and playfully restrained",
+    "brand_locked": false,
+    "brand_colours": ["cobalt", "cool white", "dark ink"]
+  },
+  "existing_system": {
+    "framework": "React 19 + Vite + Tailwind CSS 3",
+    "fonts": ["system-ui", "SF Arabic", "Segoe UI", "Noto Sans Arabic"],
+    "icons": "Lucide React",
+    "logo_asset": "src/components/BrandLogo.tsx",
+    "logo_intrinsic_box": "responsive vector",
+    "logo_visible_box": "44x44 geometric mark plus typographic wordmark"
+  },
+  "decision": {
+    "genre": "modern-minimal with restrained playful layer",
+    "macrostructure": "Map / Diagram + Workbench + Component Playground",
+    "navigation": "N5 floating pill",
+    "footer": "Ft5 statement",
+    "motion": "interruptible physical feedback, compositor-only progress, reduced-motion safe",
+    "primary_action": "ميدان جديد"
+  },
+  "preserve": [
+    "/host navigation",
+    "/play/:teamCode lookup flow",
+    "/tv/:matchCode flow",
+    "/challenge route",
+    "/admin route",
+    "existing error handling and audio unlock"
+  ]
+}

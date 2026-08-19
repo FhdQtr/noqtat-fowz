@@ -130,10 +130,10 @@ export const TEAM_COLORS: Record<
   TeamColor,
   { label: string; hex: string; light: string; dark: string; text: string }
 > = {
-  maroon: { label: "عنابي", hex: "#8a1538", light: "#b02047", dark: "#5d0e26", text: "#ffffff" },
-  emerald: { label: "أخضر", hex: "#0e7c5b", light: "#12a174", dark: "#095a42", text: "#ffffff" },
-  royal: { label: "أزرق", hex: "#1d4ed8", light: "#3b82f6", dark: "#16347a", text: "#ffffff" },
-  gold: { label: "ذهبي", hex: "#b8860b", light: "#d4af37", dark: "#7a5a08", text: "#1a1208" },
+  maroon: { label: "مرجاني", hex: "#e45850", light: "#ff746b", dark: "#a73b36", text: "#ffffff" },
+  emerald: { label: "نعناعي", hex: "#168b67", light: "#22aa7d", dark: "#0e644a", text: "#ffffff" },
+  royal: { label: "كوبالت", hex: "#4f63f5", light: "#7890ff", dark: "#3444b8", text: "#ffffff" },
+  gold: { label: "كهرماني", hex: "#c47c18", light: "#e29a35", dark: "#89520b", text: "#ffffff" },
 };
 
 export const LEVEL_POINTS: Record<QuestionLevel, number> = {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
-  HelpCircle, MessageSquare, ListChecks, Eye, Drama, Zap, Clock3,
+  HelpCircle, MessageSquare, ListChecks, Eye, Drama, Zap, Clock3, Trophy,
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
@@ -209,7 +209,7 @@ export default function Play() {
           <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
           <div className="absolute inset-0 bg-night/85" />
         </div>
-        <img src="/img/trophy.png" alt="" className={`w-36 h-36 object-contain ${won ? "animate-float-slow drop-shadow-[0_0_40px_rgba(212,175,55,0.6)]" : "opacity-40 grayscale"}`} />
+        <Trophy className={`next-award-mark ${won ? "" : "opacity-40"}`} aria-hidden="true" />
         <h1 className={`mt-4 text-3xl font-black font-cairo ${won ? "text-gold-gradient" : "text-foreground"}`}>
           {won ? "مبروك! فريقكم البطل" : `فريقكم بالمركز ${myRank}`}
         </h1>

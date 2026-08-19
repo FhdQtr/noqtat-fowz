@@ -5,6 +5,7 @@ import '../tokens.css'
 import './index.css'
 import './styles/gameplay.css'
 import './styles/apple-midan.css'
+import './styles/midan-next.css'
 import App from './App.tsx'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  ArrowRight, Heart, Timer, Crown, Loader2, RotateCcw, Home,
+  ArrowRight, Heart, Timer, Crown, Loader2, RotateCcw, Home, Trophy,
 } from "lucide-react";
 import type { Question } from "../types/game";
 import { QuestionMeta, QuestionBody } from "../components/QuestionCard";
@@ -155,7 +155,7 @@ export default function Challenge() {
         <button onClick={() => nav("/")} className="absolute top-6 right-6 flex items-center gap-2 text-muted-foreground hover:text-gold-light">
           <ArrowRight className="w-4 h-4" /> رجوع
         </button>
-        <img src="/img/trophy.png" alt="" className="w-36 h-36 object-contain animate-float-slow drop-shadow-[0_0_36px_rgba(212,175,55,0.5)]" />
+        <Trophy className="next-award-mark" aria-hidden="true" />
         <h1 className="mt-4 text-4xl font-black font-cairo text-gold-gradient">تحدي المعرفة</h1>
         <p className="mt-2 font-ruqaa text-gold-light/80 text-xl">١٠٠ سؤال… فرصة وحدة تنجيك</p>
         <div className="glass-card mt-8 p-6 w-full max-w-md space-y-3 text-sm">
@@ -190,7 +190,7 @@ export default function Challenge() {
           <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
           <div className="absolute inset-0 bg-night/85" />
         </div>
-        <img src="/img/trophy.png" alt="" className={`w-40 h-40 object-contain ${reached >= 55 ? "animate-float-slow drop-shadow-[0_0_44px_rgba(212,175,55,0.6)]" : "opacity-50"}`} />
+        <Trophy className={`next-award-mark ${reached >= 55 ? "" : "opacity-50"}`} aria-hidden="true" />
         <h1 className="mt-4 text-3xl sm:text-5xl font-black font-cairo" style={{ color: rank.color }}>
           {reached >= TOTAL ? "أسطورة ألماسية!" : `وصلت للسؤال ${reached}`}
         </h1>

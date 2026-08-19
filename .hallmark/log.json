@@ -2,6 +2,18 @@
   {
     "date": "2026-08-19",
     "scope": "app",
+    "macrostructure": "Map / Diagram + Workbench + Component Playground",
+    "theme": "Cobalt",
+    "theme_axes": "light / Arabic system sans / cool",
+    "vibe": "modern, direct, playful and spatial",
+    "enrichment": "CSS/SVG play map with live gameplay states",
+    "nav": "N5",
+    "footer": "Ft5",
+    "brief": "Complete visual reset with Apple interaction foundations and no Qatar-derived decoration"
+  },
+  {
+    "date": "2026-08-19",
+    "scope": "app",
     "macrostructure": "stage + controls",
     "theme": "studied-DNA",
     "theme_axes": "dark / Arabic geometric-sans / warm",

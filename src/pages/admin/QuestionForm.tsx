@@ -161,7 +161,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
             <button
               key={t.id}
               onClick={() => setTypeId(t.id)}
-              className={`rounded-full px-4 py-2 text-sm font-cairo font-bold border transition-all ${
+              className={`rounded-full px-4 py-2 text-sm font-cairo font-bold border transition-colors ${
                 typeId === t.id
                   ? "bg-gold/20 border-gold text-gold-light"
                   : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
@@ -172,7 +172,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
           ))}
           <button
             onClick={() => setTypeId("__new__")}
-            className={`rounded-full px-4 py-2 text-sm font-cairo font-bold border transition-all flex items-center gap-1.5 ${
+            className={`rounded-full px-4 py-2 text-sm font-cairo font-bold border transition-colors flex items-center gap-1.5 ${
               typeId === "__new__"
                 ? "bg-gold/20 border-gold text-gold-light"
                 : "border-dashed border-gold/60 text-gold-light hover:bg-gold/10"
@@ -205,7 +205,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
             <button
               key={id}
               onClick={() => setMedia(id)}
-              className={`flex items-center justify-center gap-2 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
+              className={`flex items-center justify-center gap-2 rounded-xl py-2.5 font-cairo font-bold border transition-colors ${
                 media === id
                   ? "bg-gold/20 border-gold text-gold-light"
                   : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
@@ -305,7 +305,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setAnswerFormat("mc")}
-              className={`rounded-xl py-2.5 font-cairo font-bold border transition-all ${
+              className={`rounded-xl py-2.5 font-cairo font-bold border transition-colors ${
                 answerFormat === "mc" ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground"
               }`}
             >
@@ -316,7 +316,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
                 setAnswerFormat("tf");
                 setCorrectIdx(0);
               }}
-              className={`rounded-xl py-2.5 font-cairo font-bold border transition-all ${
+              className={`rounded-xl py-2.5 font-cairo font-bold border transition-colors ${
                 answerFormat === "tf" ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground"
               }`}
             >
@@ -331,7 +331,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
               <button
                 key={l}
                 onClick={() => setLevel(l)}
-                className={`rounded-xl py-2.5 font-cairo font-bold border transition-all ${
+                className={`rounded-xl py-2.5 font-cairo font-bold border transition-colors ${
                   level === l ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground"
                 }`}
               >
@@ -362,7 +362,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
                 <div key={i} className="flex items-center gap-3">
                   <button
                     onClick={() => setCorrectIdx(i)}
-                    className={`shrink-0 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
+                    className={`shrink-0 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
                       correctIdx === i
                         ? "border-emerald2-light bg-emerald2 text-white"
                         : "border-gold-faint/50 hover:border-gold"
@@ -390,7 +390,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
                 <button
                   key={o}
                   onClick={() => setCorrectIdx(i)}
-                  className={`rounded-xl py-2.5 font-cairo font-bold border transition-all ${
+                  className={`rounded-xl py-2.5 font-cairo font-bold border transition-colors ${
                     correctIdx === i
                       ? "bg-emerald2/20 border-emerald2-light text-emerald2-light"
                       : "border-gold-faint/40 text-muted-foreground"

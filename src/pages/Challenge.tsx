@@ -8,6 +8,7 @@ import { QuestionMeta, QuestionBody } from "../components/QuestionCard";
 import GoldConfetti from "../components/GoldConfetti";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { answerSoloChallenge, startSoloChallenge } from "../lib/matchApi";
+import { haptic } from "../lib/haptics";
 
 const TOTAL = 100;
 const Q_TIME = 20;
@@ -102,8 +103,13 @@ export default function Challenge() {
       const result = await answerSoloChallenge(sessionId, idx, i);
       setRevealedAnswer(result.answer);
       setReveal(true);
-      if (result.correct) sfx.correct();
-      else sfx.wrong();
+      if (result.correct) {
+        haptic("success");
+        sfx.correct();
+      } else {
+        haptic("error");
+        sfx.wrong();
+      }
       setTimeout(() => next(!result.correct), 1600);
     } finally {
       setBusy(false);
@@ -129,6 +135,7 @@ export default function Challenge() {
     void answerSoloChallenge(sessionId, idx, -1).then((result) => {
       setRevealedAnswer(result.answer);
       setReveal(true);
+      haptic("error");
       sfx.wrong();
       setTimeout(() => next(true), 1600);
     }).finally(() => setBusy(false));
@@ -253,7 +260,7 @@ export default function Challenge() {
       {/* شريط التقدم */}
       <div className="h-2 rounded-full bg-night-700 overflow-hidden mb-5">
         <div
-          className="h-full rounded-full transition-all duration-500"
+          className="h-full rounded-full transition-transform duration-500"
           style={{
             width: `${(idx / TOTAL) * 100}%`,
             background: "linear-gradient(90deg, #a8862a, #e8c96a)",
@@ -284,7 +291,7 @@ export default function Challenge() {
                 key={i}
                 onClick={() => void pick(i)}
                 disabled={reveal || busy}
-                className={`rounded-xl border-2 px-4 py-3.5 font-cairo font-bold text-right transition-all active:scale-[0.98] ${
+                className={`rounded-xl border-2 px-4 py-3.5 font-cairo font-bold text-right transition-colors active:scale-[0.98] ${
                   isCorrect
                     ? "border-emerald2-light bg-emerald2/25 text-emerald2-light"
                     : isWrong

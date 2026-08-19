@@ -242,7 +242,7 @@ export default function HostRoom() {
                           key={p.id}
                           onClick={() => setCaptain(code, t.code, isCap ? null : p.id)}
                           title={isCap ? "إلغاء القيادة" : "تعيين قائداً"}
-                          className={`rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in transition-all flex items-center gap-1 ${
+                          className={`rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in transition-colors flex items-center gap-1 ${
                             isCap ? "ring-2 ring-gold scale-105" : "hover:scale-105"
                           }`}
                           style={{
@@ -333,7 +333,7 @@ export default function HostRoom() {
                     <button
                       key={p.id}
                       onClick={() => act(() => setCaptain(code, t.code, isCap ? null : p.id))}
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold font-cairo transition-all flex items-center gap-1 ${
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold font-cairo transition-colors flex items-center gap-1 ${
                         isCap ? "ring-1 ring-gold" : "opacity-75 hover:opacity-100"
                       }`}
                       style={{
@@ -383,7 +383,7 @@ export default function HostRoom() {
                     key={t}
                     onClick={() => act(() => chooseType(code, t))}
                     disabled={busy || !pr.available}
-                    className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35 disabled:cursor-not-allowed"
+                    className="glass-card p-4 flex flex-col items-center gap-1.5 transition-colors hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35 disabled:cursor-not-allowed"
                   >
                     {t.startsWith("ct_") ? <HelpCircle className="h-10 w-10 p-2 text-gold-light" /> : <QuestionTypeIcon type={t} className="h-12 w-12" />}
                     <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>

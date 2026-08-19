@@ -162,7 +162,7 @@ export default function Admin() {
                 setTab(id);
                 if (id !== "add") setEditTarget(null);
               }}
-              className={`shrink-0 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-cairo font-bold border transition-all ${
+              className={`shrink-0 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-cairo font-bold border transition-colors ${
                 tab === id
                   ? "bg-gold/20 border-gold text-gold-light"
                   : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"

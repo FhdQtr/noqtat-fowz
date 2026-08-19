@@ -172,7 +172,7 @@ export default function HostSetup() {
               <button
                 key={n}
                 onClick={() => setTotalRounds(n)}
-                className={`flex-1 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
+                className={`flex-1 rounded-xl py-2.5 font-cairo font-bold border transition-colors ${
                   totalRounds === n
                     ? "bg-gold/20 border-gold text-gold-light"
                     : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
@@ -188,7 +188,7 @@ export default function HostSetup() {
           <div className="flex gap-2 mb-6">
             <button
               onClick={() => setTimer(0)}
-              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 font-cairo font-bold border transition-colors ${
                 timer === 0 ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
               }`}
             >
@@ -196,7 +196,7 @@ export default function HostSetup() {
               بدون وقت
             </button>
             <div
-              className={`flex-1 flex items-center gap-2 rounded-xl border px-3 transition-all ${
+              className={`flex-1 flex items-center gap-2 rounded-xl border px-3 transition-colors ${
                 timer > 0 ? "bg-gold/20 border-gold" : "border-gold-faint/40"
               }`}
             >
@@ -229,7 +229,7 @@ export default function HostSetup() {
                 <button
                   key={id}
                   onClick={() => toggleType(id)}
-                  className={`flex min-w-[132px] flex-1 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-cairo font-bold border transition-all ${
+                  className={`flex min-w-[132px] flex-1 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-cairo font-bold border transition-colors ${
                     on
                       ? "bg-gold/20 border-gold text-gold-light"
                       : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"

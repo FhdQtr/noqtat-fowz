@@ -300,7 +300,7 @@ export default function Play() {
                       key={t}
                       onClick={() => pickType(t)}
                       disabled={!pr.available}
-                      className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35"
+                      className="glass-card p-4 flex flex-col items-center gap-1.5 transition-colors hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35"
                       style={{ borderColor: `${c.hex}66` }}
                     >
                       {t.startsWith("ct_") ? <HelpCircle className="h-10 w-10 p-2 text-gold-light" /> : <QuestionTypeIcon type={t} className="h-12 w-12" />}

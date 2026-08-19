@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route, Navigate } from "react-router";
+import { Routes, Route, Navigate, useLocation } from "react-router";
 import SoundToggle from "./components/SoundToggle";
 
 const Home = lazy(() => import("./pages/Home"));
@@ -12,22 +12,41 @@ const Challenge = lazy(() => import("./pages/Challenge"));
 const Admin = lazy(() => import("./pages/admin/Admin"));
 
 export default function App() {
+  const { pathname } = useLocation();
+  const route = pathname === "/"
+    ? "home"
+    : pathname.startsWith("/host/")
+      ? "host-room"
+      : pathname === "/host"
+        ? "host-setup"
+        : pathname.startsWith("/play/")
+          ? "player"
+          : pathname.startsWith("/tv/")
+            ? "audience"
+            : pathname.startsWith("/act/")
+              ? "acting"
+              : pathname === "/challenge"
+                ? "challenge"
+                : pathname === "/admin"
+                  ? "admin"
+                  : "unknown";
+
   return (
-    <>
-    <SoundToggle />
-    <Suspense fallback={<div className="grid min-h-dvh place-items-center"><div className="brand-loader" aria-label="جاري فتح الميدان" /></div>}>
-      <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="/host" element={<HostSetup />} />
-      <Route path="/host/:code" element={<HostRoom />} />
-      <Route path="/tv/:code" element={<TvScreen />} />
-      <Route path="/play/:teamCode" element={<Play />} />
-      <Route path="/act/:code" element={<ActView />} />
-      <Route path="/challenge" element={<Challenge />} />
-      <Route path="/admin" element={<Admin />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
-    </>
+    <div className="midan-app" data-route={route}>
+      <SoundToggle />
+      <Suspense fallback={<div className="midan-loading"><div className="brand-loader" aria-label="جاري فتح الميدان" /></div>}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/host" element={<HostSetup />} />
+          <Route path="/host/:code" element={<HostRoom />} />
+          <Route path="/tv/:code" element={<TvScreen />} />
+          <Route path="/play/:teamCode" element={<Play />} />
+          <Route path="/act/:code" element={<ActView />} />
+          <Route path="/challenge" element={<Challenge />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </div>
   );
 }

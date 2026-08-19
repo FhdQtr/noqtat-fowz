@@ -1,4 +1,4 @@
-/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5 · genre: atmospheric · macrostructure: Bento Grid · theme: studied-DNA (approved image) · nav: N9 · footer: Ft1 · visual QA: pending */
+/* Hallmark · genre: atmospheric · macrostructure: Workbench + Index-First · design-system: design.md · Apple interaction foundations */
 :root {
   --m-paper: oklch(15% 0.012 58);
   --m-paper-2: oklch(19% 0.016 48);
@@ -34,6 +34,8 @@
   --m-focus: oklch(84% 0.14 88);
   --m-focus-inner: oklch(17% 0.02 52);
   --m-focus-outer: var(--m-ivory);
+  --m-paper-overlay: oklch(11% 0.012 48 / 0.76);
+  --m-backdrop: oklch(6% 0.012 42 / 0.62);
   --m-font-display: "Cairo", "Tajawal", sans-serif;
   --m-font-body: "Tajawal", "Cairo", sans-serif;
   --m-space-3xs: 0.125rem;
@@ -51,10 +53,17 @@
   --m-text-md: 1.25rem;
   --m-text-lg: 1.5625rem;
   --m-text-xl: 1.953rem;
+  --m-text-2xl: 2.441rem;
+  --m-text-display: clamp(2.25rem, 6vw, 4.75rem);
   --m-radius-sm: 0.75rem;
   --m-radius-md: 1.125rem;
   --m-radius-lg: 1.5rem;
+  --m-radius-control: 0.875rem;
+  --m-radius-sheet: 1.75rem;
+  --m-radius-pill: 999px;
   --m-rule-hair: 0.0625rem;
+  --m-rule-fine: 0.125rem;
+  --m-rule-focus: 0.125rem;
   --m-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --m-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --m-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -62,6 +71,21 @@
   --m-duration-press: 100ms;
   --m-duration-short: 220ms;
   --m-duration-long: 420ms;
+  --m-duration-reduced: 150ms;
+  --m-duration-press-in: 80ms;
+  --m-control-height: 2.75rem;
+  --m-control-height-touch: 3rem;
+  --m-material-blur-thin: 0.75rem;
+  --m-material-blur-heavy: 1.5rem;
+  --m-shadow-card: 0 0.0625rem 0.125rem oklch(5% 0.01 45 / 0.28);
+  --m-shadow-float: 0 0.75rem 2rem oklch(5% 0.01 45 / 0.36);
+  --m-shadow-sheet: 0 -1.25rem 3.5rem oklch(5% 0.01 45 / 0.46);
+  --m-z-behind: -1;
   --m-z-base: 1;
   --m-z-raised: 10;
+  --m-z-dropdown: 100;
+  --m-z-sticky: 200;
+  --m-z-modal: 400;
+  --m-z-toast: 500;
+  --m-z-tooltip: 600;
 }

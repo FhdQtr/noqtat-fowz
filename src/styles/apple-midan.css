@@ -1,0 +1,507 @@
+/* Hallmark · genre: atmospheric · macrostructure: Workbench · design-system: design.md · designed-as-app · Apple interaction foundations */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-width: 0;
+  min-height: 100%;
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+  background-color: var(--m-paper);
+  background-image: url("/img/luxury-majlis/background.webp");
+  background-position: center top;
+  background-repeat: repeat-y;
+  background-size: max(48rem, 100%) auto;
+  background-attachment: scroll;
+  color: var(--m-ink);
+  font-family: var(--m-font-body);
+  font-size: var(--m-text-base);
+  line-height: 1.6;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+summary {
+  touch-action: manipulation;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: var(--m-rule-focus) solid var(--m-focus);
+  outline-offset: var(--m-space-2xs);
+}
+
+.midan-app {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+}
+
+.midan-app::before {
+  content: "";
+  position: fixed;
+  z-index: var(--m-z-behind);
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 82% -12%, color-mix(in oklch, var(--m-maroon) 16%, transparent), transparent 36%),
+    linear-gradient(to bottom, color-mix(in oklch, var(--m-paper) 20%, transparent), var(--m-paper-overlay));
+}
+
+.midan-loading {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+}
+
+/* Shared score rail: stable geometry, no decorative pulse or layout shift. */
+.m-scoreboard {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  justify-content: center;
+  gap: var(--m-space-xs);
+}
+
+.m-scoreboard__team {
+  position: relative;
+  display: grid;
+  min-width: 6.5rem;
+  gap: var(--m-space-2xs);
+  padding: var(--m-space-xs) var(--m-space-sm);
+  border: var(--m-rule-hair) solid color-mix(in oklch, var(--team-color) 55%, var(--m-rule));
+  border-radius: var(--m-radius-control);
+  background: color-mix(in oklch, var(--team-color) 13%, var(--m-paper-2));
+  box-shadow: var(--m-shadow-card);
+  transition:
+    background-color var(--m-duration-short) var(--m-ease-out),
+    border-color var(--m-duration-short) var(--m-ease-out),
+    transform var(--m-duration-short) var(--m-ease-out);
+}
+
+.m-scoreboard__team[data-turn="true"] {
+  border-color: var(--m-gold-bright);
+  background: color-mix(in oklch, var(--team-color) 22%, var(--m-paper-2));
+  transform: translate3d(0, calc(var(--m-space-3xs) * -1), 0);
+}
+
+.m-scoreboard__crown {
+  position: absolute;
+  inset-block-start: calc(var(--m-space-sm) * -1);
+  inset-inline-start: 50%;
+  width: 1rem;
+  height: 1rem;
+  transform: translateX(-50%);
+  color: var(--m-gold-bright);
+}
+
+.m-scoreboard__identity,
+.m-scoreboard__meta { display: flex; align-items: center; justify-content: center; gap: var(--m-space-2xs); }
+.m-scoreboard__dot { width: 0.625rem; height: 0.625rem; flex: 0 0 auto; border-radius: 50%; background: var(--team-color-light); }
+.m-scoreboard__name { max-width: 9ch; overflow: hidden; color: var(--team-color-light); font-family: var(--m-font-display); font-size: var(--m-text-xs); font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.m-scoreboard__score { color: var(--m-gold-bright); font-family: var(--m-font-display); font-size: var(--m-text-md); font-variant-numeric: tabular-nums; font-weight: 900; line-height: 1.1; text-align: center; }
+.m-scoreboard__meta { color: var(--m-muted); font-size: var(--m-text-xs); }
+.m-scoreboard__meta svg { width: 0.875rem; height: 0.875rem; }
+.m-scoreboard[data-size="large"] { gap: var(--m-space-sm); }
+.m-scoreboard[data-size="large"] .m-scoreboard__team { min-width: 9.5rem; padding: var(--m-space-sm) var(--m-space-lg); }
+.m-scoreboard[data-size="large"] .m-scoreboard__name { max-width: 12ch; font-size: var(--m-text-md); }
+.m-scoreboard[data-size="large"] .m-scoreboard__score { font-size: var(--m-text-xl); }
+.m-scoreboard[data-size="large"] .m-scoreboard__crown { width: 1.4rem; height: 1.4rem; }
+
+.midan-app [class~="fixed"][class~="inset-0"][class~="-z-10"] {
+  display: none;
+}
+
+/* Opaque content layers keep the Qatari materiality without repaint-heavy glass. */
+.midan-app .glass-card,
+.midan-app .arena-panel {
+  border: var(--m-rule-hair) solid var(--m-rule);
+  border-radius: var(--m-radius-lg);
+  background: var(--m-paper-raised);
+  box-shadow: var(--m-shadow-card);
+  color: var(--m-ink);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.midan-app .glass-card .glass-card,
+.midan-app .arena-panel .glass-card {
+  border-color: var(--m-rule-soft);
+  background: var(--m-paper-2);
+  box-shadow: none;
+}
+
+.midan-app .text-gold-gradient {
+  background: none;
+  color: var(--m-gold-bright);
+  -webkit-text-fill-color: currentColor;
+}
+
+.midan-app .shine::after {
+  content: none;
+}
+
+.midan-app .btn-gold,
+.midan-app .btn-maroon,
+.midan-app .btn-ghost-gold,
+.midan-app .arena-primary {
+  min-height: var(--m-control-height);
+  border-width: var(--m-rule-hair);
+  border-style: solid;
+  border-radius: var(--m-radius-control);
+  padding: var(--m-space-sm) var(--m-space-lg);
+  font-family: var(--m-font-display);
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+  box-shadow: none;
+  transition:
+    background-color var(--m-duration-short) var(--m-ease-out),
+    border-color var(--m-duration-short) var(--m-ease-out),
+    color var(--m-duration-short) var(--m-ease-out),
+    opacity var(--m-duration-short) var(--m-ease-out),
+    transform var(--m-duration-press) var(--m-ease-out);
+}
+
+.midan-app .btn-gold,
+.midan-app .arena-primary {
+  border-color: var(--m-gold-low);
+  background: var(--m-gold);
+  color: var(--m-accent-ink);
+}
+
+.midan-app .btn-maroon {
+  border-color: var(--m-maroon-high);
+  background: var(--m-maroon);
+  color: var(--m-ivory);
+}
+
+.midan-app .btn-ghost-gold {
+  border-color: var(--m-rule);
+  background: var(--m-paper-2);
+  color: var(--m-gold-bright);
+}
+
+.midan-app .btn-gold:active:not(:disabled),
+.midan-app .btn-maroon:active:not(:disabled),
+.midan-app .btn-ghost-gold:active:not(:disabled),
+.midan-app .arena-primary:active:not(:disabled) {
+  transform: scale(0.98);
+  transition-duration: var(--m-duration-press-in);
+}
+
+.midan-app button:disabled,
+.midan-app [aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.midan-app .input-night,
+.midan-app input:not([type="checkbox"]):not([type="radio"]),
+.midan-app select,
+.midan-app textarea {
+  min-height: var(--m-control-height);
+  border: var(--m-rule-hair) solid var(--m-rule);
+  border-radius: var(--m-radius-control);
+  outline: var(--m-rule-focus) solid transparent;
+  outline-offset: var(--m-space-3xs);
+  background: var(--m-input);
+  color: var(--m-ink);
+  transition:
+    background-color var(--m-duration-short) var(--m-ease-out),
+    border-color var(--m-duration-short) var(--m-ease-out);
+}
+
+.midan-app input::placeholder,
+.midan-app textarea::placeholder {
+  color: var(--m-muted);
+  opacity: 1;
+}
+
+.midan-app input[aria-invalid="true"],
+.midan-app textarea[aria-invalid="true"] {
+  border-color: var(--m-danger);
+  background: var(--m-danger-deep);
+}
+
+.midan-app details > summary {
+  min-height: var(--m-control-height);
+  align-items: center;
+  cursor: pointer;
+}
+
+.midan-app .animate-fade-up,
+.midan-app .animate-scale-in {
+  animation: m-apple-enter var(--m-duration-long) var(--m-ease-out) both;
+}
+
+.midan-app .animate-pulse,
+.midan-app .animate-pulse-gold,
+.midan-app .animate-float-slow {
+  animation: none;
+}
+
+@keyframes m-apple-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--m-space-xs), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Fixed audio control is the one persistent thin material in gameplay. */
+.midan-app .m-sound-toggle {
+  z-index: var(--m-z-sticky);
+  width: var(--m-control-height);
+  height: var(--m-control-height);
+  border: var(--m-rule-hair) solid var(--m-rule);
+  border-radius: var(--m-radius-pill);
+  background: color-mix(in oklch, var(--m-paper-2) 90%, transparent);
+  box-shadow: var(--m-shadow-float);
+  color: var(--m-gold-bright);
+  transition:
+    background-color var(--m-duration-short) var(--m-ease-out),
+    transform var(--m-duration-press) var(--m-ease-out);
+}
+
+.midan-app .m-sound-toggle:active {
+  transform: scale(0.94);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1rem)) or (backdrop-filter: blur(1rem))) {
+  @media (hover: hover) and (pointer: fine) {
+    .midan-app .m-sound-toggle {
+      -webkit-backdrop-filter: saturate(1.15) blur(var(--m-material-blur-thin));
+      backdrop-filter: saturate(1.15) blur(var(--m-material-blur-thin));
+    }
+  }
+}
+
+/* Shared native dialog with direct, interruptible, pointer-tracked sheet motion. */
+.m-fluid-sheet {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--m-ink);
+  overflow: hidden;
+}
+
+.m-fluid-sheet::backdrop {
+  background: var(--m-backdrop);
+}
+
+.m-fluid-sheet__panel {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  display: grid;
+  width: min(100%, 40rem);
+  max-height: min(82dvh, 42rem);
+  margin-inline: auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: var(--m-rule-hair) solid var(--m-rule);
+  border-block-end: 0;
+  border-radius: var(--m-radius-sheet) var(--m-radius-sheet) 0 0;
+  background: color-mix(in oklch, var(--m-paper-raised) 94%, transparent);
+  box-shadow: var(--m-shadow-sheet);
+  will-change: transform;
+}
+
+.m-fluid-sheet__grabber {
+  display: grid;
+  min-height: 2rem;
+  place-items: center;
+  cursor: grab;
+  touch-action: none;
+}
+
+.m-fluid-sheet__grabber:active {
+  cursor: grabbing;
+}
+
+.m-fluid-sheet__grabber span {
+  width: 2.5rem;
+  height: var(--m-rule-fine);
+  border-radius: var(--m-radius-pill);
+  background: var(--m-rule);
+}
+
+.m-fluid-sheet__header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--m-space-md);
+  padding: var(--m-space-xs) var(--m-space-lg) var(--m-space-md);
+}
+
+.m-fluid-sheet__header h2 {
+  min-width: 0;
+  margin: 0;
+  font-family: var(--m-font-display);
+  font-size: var(--m-text-lg);
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.m-fluid-sheet__header button {
+  display: grid;
+  width: var(--m-control-height);
+  height: var(--m-control-height);
+  flex: 0 0 auto;
+  place-items: center;
+  border: var(--m-rule-hair) solid var(--m-rule-soft);
+  border-radius: var(--m-radius-pill);
+  background: var(--m-paper-2);
+  color: var(--m-ink-soft);
+}
+
+.m-fluid-sheet__header svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.m-fluid-sheet__body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--m-space-lg) max(var(--m-space-xl), env(safe-area-inset-bottom));
+}
+
+@supports ((-webkit-backdrop-filter: blur(1rem)) or (backdrop-filter: blur(1rem))) {
+  .m-fluid-sheet__panel {
+    -webkit-backdrop-filter: saturate(1.18) blur(var(--m-material-blur-heavy));
+    backdrop-filter: saturate(1.18) blur(var(--m-material-blur-heavy));
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .midan-app .btn-gold:hover,
+  .midan-app .arena-primary:hover {
+    background: var(--m-gold-bright);
+  }
+
+  .midan-app .btn-maroon:hover {
+    background: var(--m-maroon-high);
+  }
+
+  .midan-app .btn-ghost-gold:hover {
+    border-color: var(--m-gold-low);
+    background: var(--m-paper-3);
+  }
+
+  .midan-app input:not([type="checkbox"]):not([type="radio"]):hover,
+  .midan-app select:hover,
+  .midan-app textarea:hover {
+    background: var(--m-paper-2);
+  }
+}
+
+@media (pointer: coarse) {
+  .midan-app button,
+  .midan-app a,
+  .midan-app summary,
+  .midan-app input,
+  .midan-app select {
+    min-height: var(--m-control-height-touch);
+  }
+
+  .midan-app .m-sound-toggle,
+  .m-fluid-sheet__panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .midan-app .animate-fade-up,
+  .midan-app .animate-scale-in {
+    animation: m-apple-fade var(--m-duration-reduced) linear both;
+  }
+
+  .midan-app .btn-gold,
+  .midan-app .btn-maroon,
+  .midan-app .btn-ghost-gold,
+  .midan-app .arena-primary,
+  .midan-app .m-sound-toggle,
+  .m-scoreboard__team {
+    transition-duration: var(--m-duration-reduced);
+  }
+
+  .midan-app .btn-gold:active,
+  .midan-app .btn-maroon:active,
+  .midan-app .btn-ghost-gold:active,
+  .midan-app .arena-primary:active,
+  .midan-app .m-sound-toggle:active {
+    transform: none;
+  }
+
+  .m-scoreboard__team[data-turn="true"] {
+    transform: none;
+  }
+}
+
+@keyframes m-apple-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .midan-app .m-sound-toggle,
+  .m-fluid-sheet__panel {
+    background: var(--m-paper-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .midan-app .glass-card,
+  .midan-app .arena-panel,
+  .midan-app .btn-ghost-gold,
+  .midan-app input,
+  .midan-app select,
+  .midan-app textarea,
+  .m-fluid-sheet__panel {
+    border-color: var(--m-ink-soft);
+  }
+}

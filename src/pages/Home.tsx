@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Gamepad2, Menu, MonitorPlay, Trophy, UsersRound } from "lucide-react";
+import { ArrowLeft, Gamepad2, Menu, MonitorPlay, ShieldCheck, Trophy, UsersRound } from "lucide-react";
 import { unlockAudio, sfx } from "../lib/sounds";
 import { findMatchByTeamCode } from "../lib/matchApi";
+import { haptic } from "../lib/haptics";
+import FluidSheet from "../components/FluidSheet";
 import "./Home.css";
 
 export default function Home() {
@@ -12,9 +14,35 @@ export default function Home() {
   const [err, setErr] = useState("");
   const [errField, setErrField] = useState<"team" | "tv" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [floatingNav, setFloatingNav] = useState(false);
+
+  useEffect(() => {
+    let frame = 0;
+    let current = false;
+    const update = () => {
+      const next = window.scrollY > 72;
+      if (next !== current) {
+        current = next;
+        setFloatingNav(next);
+      }
+      frame = 0;
+    };
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(update);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    update();
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, []);
 
   const openMatch = () => {
     unlockAudio();
+    haptic("light");
     sfx.click();
     nav("/host");
   };
@@ -29,13 +57,16 @@ export default function Home() {
     try {
       const matchCode = await findMatchByTeamCode(code);
       if (matchCode) {
+        haptic("success");
         sfx.click();
         nav(`/play/${code}`);
       } else {
+        haptic("error");
         setErr("ما لقينا فريق بهذا الكود — تأكد منه وحاول مرة ثانية");
         setErrField("team");
       }
     } catch {
+      haptic("error");
       setErr("تعذّر الاتصال بالميدان حالياً — جرّب مرة ثانية");
       setErrField("team");
     } finally {
@@ -47,9 +78,11 @@ export default function Home() {
     const code = tvCode.trim().toUpperCase();
     if (code.length === 4) {
       unlockAudio();
+      haptic("light");
       sfx.click();
       nav(`/tv/${code}`);
     } else {
+      haptic("error");
       setErr("كود الميدان أربع خانات، مثل A482");
       setErrField("tv");
     }
@@ -73,18 +106,31 @@ export default function Home() {
 
   return (
     <div className="am-home">
-      <header className="am-header">
+      <header className={`am-header ${floatingNav ? "is-floating" : ""}`}>
         <div className="am-nav">
           <Link to="/" aria-label="الصفحة الرئيسية" className="am-wordmark-link">
-            <span
+            <img
               className="am-wordmark-image"
-              role="img"
-              aria-label="الميدان — الميدان يا حميدان"
+              src="/brand/al-midan-logo.webp"
+              alt="الميدان — الميدان يا حميدان"
+              width="1472"
+              height="561"
+              decoding="async"
+              fetchPriority="high"
             />
           </Link>
-          <Link className="am-menu" to="/admin" aria-label="إدارة الميدان">
+          <button
+            className="am-menu"
+            type="button"
+            aria-label="فتح قائمة الميدان"
+            aria-expanded={menuOpen}
+            onClick={() => {
+              haptic("light");
+              setMenuOpen(true);
+            }}
+          >
             <Menu aria-hidden="true" />
-          </Link>
+          </button>
         </div>
         <div className="am-sadu" aria-hidden="true" />
       </header>
@@ -214,6 +260,21 @@ export default function Home() {
       <footer className="am-footer">
         <span>فكرة وتصميم: <strong>فهد القحطاني</strong></span>
       </footer>
+
+      <FluidSheet open={menuOpen} title="قائمة الميدان" onClose={() => setMenuOpen(false)}>
+        <nav className="am-sheet-links" aria-label="روابط الميدان">
+          <Link to="/admin" onClick={() => setMenuOpen(false)}>
+            <ShieldCheck aria-hidden="true" />
+            <span><strong>إدارة الميدان</strong><small>بنك الأسئلة والنسخ الاحتياطي</small></span>
+            <ArrowLeft aria-hidden="true" />
+          </Link>
+          <Link to="/challenge" onClick={() => setMenuOpen(false)}>
+            <Trophy aria-hidden="true" />
+            <span><strong>تحدي فردي</strong><small>اختبر معلوماتك مباشرة</small></span>
+            <ArrowLeft aria-hidden="true" />
+          </Link>
+        </nav>
+      </FluidSheet>
     </div>
   );
 }

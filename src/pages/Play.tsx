@@ -8,7 +8,7 @@ import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
 } from "../lib/matchApi";
 import type { Match, Player, QuestionType } from "../types/game";
-import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds } from "../types/game";
+import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
 import LinearTimer from "../components/LinearTimer";
@@ -260,6 +260,7 @@ export default function Play() {
   const timerTotal = questionTimerSeconds(match) + (st!.extraTimeUsed ? 15 : 0);
   const timerRunning = st!.phase === "question" && !!st!.questionStartedAt && !viewing;
   const actingTimerWaiting = q?.type === "acting" && st!.phase === "question" && !st!.questionStartedAt;
+  const canPassAfterWrong = canPassQuestion(match);
 
   // ═══ الشاشة الرئيسية للاعب ═══
   return (
@@ -533,10 +534,14 @@ export default function Play() {
                     st!.isCorrect ? "!border-emerald2/60 animate-correct-glow" : "!border-maroon/60 animate-shake"
                   }`}>
                     <p className={`font-cairo font-black text-2xl ${st!.isCorrect ? "text-emerald2-light" : "text-maroon-light"}`}>
-                      {st!.isCorrect ? "إجابة صحيحة" : "إجابة خاطئة"}
+                      {st!.isCorrect
+                        ? "إجابة صحيحة"
+                        : canPassAfterWrong
+                          ? "إجابة خاطئة — السؤال ينتقل لفريق آخر"
+                          : "إجابة خاطئة — انتهى السؤال بلا نقاط"}
                     </p>
-                    {/* الإجابة الصحيحة تظهر فقط إذا انتهى السؤال بإجابة صحيحة — عند الخطأ تبقى سرّية لأن السؤال ممكن ينتقل */}
-                    {st!.isCorrect && q.type !== "acting" && q.options.length > 0 && (
+                    {/* نخفي الحل أثناء إمكانية النقل، ونظهره عند انتهاء محاولات الفرق. */}
+                    {(st!.isCorrect || !canPassAfterWrong) && q.type !== "acting" && q.options.length > 0 && (
                       <p className="text-sm text-muted-foreground mt-2">
                         الإجابة: <span className="text-emerald2-light font-bold">{q.options[q.answer]}</span>
                       </p>

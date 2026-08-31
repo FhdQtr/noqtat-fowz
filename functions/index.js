@@ -42,6 +42,9 @@ function viewSeconds(question) {
   if (question.video) return Math.max(1, question.video.end - question.video.start) + 3;
   return null;
 }
+function isTrueFalse(question) {
+  return question?.type === "true_false" || question?.format === "tf";
+}
 function points(state) {
   const base = state.questionValue || 0;
   let result = base;
@@ -239,6 +242,7 @@ async function chooseType(uid, data) {
       targetTeam: teamCode,
       originalTeam: teamCode,
       passCount: 0,
+      attemptedTeams: [],
       question: publicQuestion(question),
       answer: null,
       isCorrect: null,
@@ -335,10 +339,17 @@ async function reveal(id, match, correctOverride) {
   const correct = typeof correctOverride === "boolean" ? correctOverride : state.answer?.choice === secret.answer;
   const teamCode = state.targetTeam;
   const team = match.teams[teamCode];
+  const attemptedTeams = correct
+    ? (state.attemptedTeams || [])
+    : [...new Set([...(state.attemptedTeams || []), teamCode])];
+  const canPass = !correct
+    && !isTrueFalse(state.question)
+    && match.teamOrder.some((candidate) => !attemptedTeams.includes(candidate));
   const updates = {
     [`matches/${id}/state/phase`]: "revealed",
     [`matches/${id}/state/isCorrect`]: correct,
-    [`matches/${id}/state/question/answer`]: correct ? secret.answer : -1,
+    [`matches/${id}/state/attemptedTeams`]: attemptedTeams,
+    [`matches/${id}/state/question/answer`]: correct || !canPass ? secret.answer : -1,
     [`matches/${id}/teams/${teamCode}/correctCount`]: team.correctCount + (correct ? 1 : 0),
     [`matches/${id}/teams/${teamCode}/wrongCount`]: team.wrongCount + (correct ? 0 : 1),
   };
@@ -351,7 +362,7 @@ async function advance(id, match) {
   const state = match.state;
   if (state.round < match.totalRounds) {
     let nextTeam;
-    const updates = { turnIndex: match.turnIndex + 1, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/assistUsed": false, "state/questionValue": null };
+    const updates = { turnIndex: match.turnIndex + 1, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/assistUsed": false, "state/questionValue": null };
     if (match.tieBreaker?.active) {
       const cursor = match.tieBreaker.cursor + 1;
       nextTeam = match.tieBreaker.teams[cursor % match.tieBreaker.teams.length];
@@ -366,7 +377,7 @@ async function advance(id, match) {
   const tied = candidates.filter((team) => match.teams[team].score === high);
   if (tied.length > 1) {
     const cycle = (match.tieBreaker?.cycle || 0) + 1;
-    await db.ref(`matches/${id}`).update({ totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/assistUsed": false, "state/questionValue": null });
+    await db.ref(`matches/${id}`).update({ totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/assistUsed": false, "state/questionValue": null });
     return { ended: false, tieBreaker: true };
   }
   await db.ref(`matches/${id}`).update({ status: "ended", "state/phase": "ended", turnIndex: match.turnIndex + 1 });
@@ -449,12 +460,27 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   } else if (action === "judgeVerbal") {
     return reveal(id, match, Boolean(data.correct));
   } else if (action === "passToNextTeam") {
+    if (match.state.phase !== "revealed" || match.state.isCorrect !== false) {
+      fail("failed-precondition", "لا يمكن نقل السؤال قبل ظهور إجابة خاطئة");
+    }
+    if (isTrueFalse(match.state.question)) {
+      fail("failed-precondition", "سؤال صح أو خطأ لا ينتقل لفريق آخر");
+    }
     const current = match.teamOrder.indexOf(match.state.targetTeam);
-    const next = match.teamOrder[(current + 1) % match.teamOrder.length];
+    const attemptedTeams = [...new Set([...(match.state.attemptedTeams || []), match.state.targetTeam])];
+    let next = null;
+    for (let offset = 1; offset < match.teamOrder.length; offset += 1) {
+      const candidate = match.teamOrder[(current + offset) % match.teamOrder.length];
+      if (!attemptedTeams.includes(candidate)) {
+        next = candidate;
+        break;
+      }
+    }
+    if (!next) fail("failed-precondition", "كل الفرق حاولت الإجابة على هذا السؤال");
     const seconds = match.state.question ? viewSeconds(match.state.question) : null;
     const until = seconds ? now() + seconds * 1000 : null;
     const isActing = match.state.question?.type === "acting";
-    await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false });
+    await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, attemptedTeams, answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false });
   } else if (action === "advanceTurn") {
     return advance(id, match);
   } else if (action === "setCaptain") {

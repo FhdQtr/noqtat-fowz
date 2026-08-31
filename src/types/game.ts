@@ -94,6 +94,7 @@ export interface GameState {
   targetTeam: string | null; // الفريق صاحب السؤال الحالي
   originalTeam: string | null; // الفريق الأول اللي نزل له السؤال
   passCount: number; // كم مرة انسرق السؤال
+  attemptedTeams?: string[]; // الفرق التي أجابت خطأ على السؤال الحالي
   question: Question | null;
   answer: LiveAnswer | null;
   isCorrect: boolean | null;
@@ -217,6 +218,18 @@ export function questionPoints(st: {
   if (st.assistUsed) result = Math.max(1, Math.round(result / 2));
   else if (st.passCount > 0) result = Math.max(1, Math.round(result / 2));
   return result * (st.pointMultiplier ?? 1);
+}
+
+/** هل بقي فريق لم يحاول ويمكن نقل السؤال له بعد إجابة خاطئة؟ */
+export function canPassQuestion(match: Pick<Match, "teamOrder" | "state">): boolean {
+  const st = match.state;
+  if (st.phase !== "revealed" || st.isCorrect !== false || !st.question) return false;
+  if (st.question.type === "true_false" || st.question.format === "tf") return false;
+  const attempted = new Set(st.attemptedTeams ?? [
+    ...(st.passCount > 0 && st.originalTeam ? [st.originalTeam] : []),
+    ...(st.targetTeam ? [st.targetTeam] : []),
+  ]);
+  return match.teamOrder.some((teamCode) => !attempted.has(teamCode));
 }
 
 /** مدة السؤال الحالية قبل بطاقة زيادة الوقت. */

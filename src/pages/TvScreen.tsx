@@ -3,7 +3,7 @@ import { useParams } from "react-router";
 import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap } from "lucide-react";
 import { subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
-import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds } from "../types/game";
+import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
@@ -117,6 +117,7 @@ export default function TvScreen() {
   const showImage = !visual || viewing || st.phase === "revealed";
   const timerTotal = questionTimerSeconds(match) + (st.extraTimeUsed ? 15 : 0);
   const timerRunning = st.phase === "question" && !!st.questionStartedAt && !viewing;
+  const canPassAfterWrong = canPassQuestion(match);
 
   return (
     <div className="relative min-h-dvh overflow-hidden flex flex-col select-none">
@@ -313,7 +314,7 @@ export default function TvScreen() {
                   big
                   reveal={st.phase === "revealed"}
                   showImage={showImage}
-                  showCorrect={st.isCorrect !== false}
+                  showCorrect={!canPassAfterWrong}
                 />
                 {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة أو ينكشف الجواب */}
                 {q.type !== "acting" && !(q.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
@@ -323,7 +324,7 @@ export default function TvScreen() {
                       big
                       chosen={st.phase === "revealed" ? st.answer?.choice ?? null : null}
                       reveal={st.phase === "revealed"}
-                      showCorrect={st.isCorrect !== false}
+                      showCorrect={!canPassAfterWrong}
                     />
                   </div>
                 )}
@@ -340,7 +341,11 @@ export default function TvScreen() {
               <div className={`text-3xl font-black font-cairo animate-scale-in ${
                 st.isCorrect ? "text-emerald2-light" : "text-maroon-light"
               }`}>
-                {st.isCorrect ? "إجابة صحيحة!" : "إجابة خاطئة!"}
+                {st.isCorrect
+                  ? "إجابة صحيحة!"
+                  : canPassAfterWrong
+                    ? "إجابة خاطئة — السؤال متاح لفريق آخر"
+                    : "إجابة خاطئة — انتهى السؤال بلا نقاط"}
               </div>
             )}
           </div>

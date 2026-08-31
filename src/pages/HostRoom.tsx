@@ -12,7 +12,7 @@ import {
   getHostAnswer,
 } from "../lib/matchApi";
 import type { AnswerMode, Match } from "../types/game";
-import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionPoints, questionTimerSeconds } from "../types/game";
+import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
@@ -149,6 +149,7 @@ export default function HostRoom() {
   const missingRepresentatives = match.answerMode === "representative"
     ? teams.some((team) => !team.captainId || !match.players?.[team.captainId])
     : false;
+  const canPassAfterWrong = canPassQuestion(match);
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -570,7 +571,7 @@ export default function HostRoom() {
           {st.phase === "question" && !verbalJudge && (
             <div className="text-center text-muted-foreground animate-pulse font-cairo">
               بانتظار إجابة فريق {match.teams[st.targetTeam!]?.name}…
-              {timeLeft === 0 && <span className="block text-maroon-light font-bold mt-1">انتهى الوقت — انقل السؤال أو اكشف الإجابة</span>}
+              {timeLeft === 0 && <span className="block text-maroon-light font-bold mt-1">انتهى الوقت — تخطَّ السؤال أو ثبّت الإجابة</span>}
             </div>
           )}
           {verbalJudge && (
@@ -629,9 +630,9 @@ export default function HostRoom() {
             }`}>
               {st.isCorrect
                 ? `إجابة صحيحة! +${questionPoints(st)} نقطة`
-                : st.answer
-                ? "إجابة خاطئة"
-                : "إجابة خاطئة / ما جاوب أحد"}
+                : canPassAfterWrong
+                ? "إجابة خاطئة — يمكن نقل السؤال لفريق آخر"
+                : "إجابة خاطئة — انتهى السؤال بلا نقاط"}
             </div>
           )}
 
@@ -645,10 +646,6 @@ export default function HostRoom() {
             )}
             {st.phase === "question" && (
               <div className="flex gap-2 opacity-80">
-                <button onClick={() => act(() => passToNextTeam(code, match))} disabled={busy} className="btn-ghost-gold !text-sm !px-4 !py-2 flex items-center gap-2">
-                  <Repeat2 className="w-4 h-4" />
-                  انقل للفريق التالي
-                </button>
                 <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-ghost-gold !text-sm !px-4 !py-2 flex items-center gap-2">
                   <SkipForward className="w-4 h-4" />
                   تخطي السؤال
@@ -657,7 +654,7 @@ export default function HostRoom() {
             )}
             {st.phase === "revealed" && (
               <>
-                {!st.isCorrect && (
+                {canPassAfterWrong && (
                   <button onClick={() => act(() => passToNextTeam(code, match))} disabled={busy} className="btn-maroon flex items-center gap-2 text-lg px-6">
                     <Repeat2 className="w-5 h-5" />
                     انقل السؤال لفريق ثاني

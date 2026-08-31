@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Clock3, CopyPlus, LockKeyhole, Snowflake, Swords, UserRoundCheck,
-  WalletCards, X, Zap,
+  CheckCircle2, Clock3, CopyPlus, Hourglass, LockKeyhole, Snowflake, Swords,
+  UserRoundCheck, WalletCards, X, Zap,
 } from "lucide-react";
 import type { Match, PowerCardId } from "../types/game";
 import { POWER_CARD_LABEL, powerCardCost, TEAM_COLORS } from "../types/game";
@@ -33,6 +33,8 @@ interface Props {
   teamCode: string;
   onUse: (card: PowerCardId, targetPlayerId?: string) => Promise<{ accepted: boolean; reason?: string }>;
 }
+
+type CardStatus = "ready" | "waiting" | "locked" | "used";
 
 function timingReason(match: Match, teamCode: string, card: PowerCardId): string | null {
   const st = match.state;
@@ -95,6 +97,21 @@ export default function PowerCardsWallet({ match, teamCode, onUse }: Props) {
     .sort((a, b) => a - b)[0];
   const color = TEAM_COLORS[team.color];
   const previousBalance = useRef(balance);
+  const cardViews = CARD_ORDER.map((card) => {
+    const cost = powerCardCost(card, questionsPerTeam);
+    const used = team.powerCards?.[card] === false;
+    const affordable = balance >= cost;
+    const reason = timingReason(match, teamCode, card);
+    const ready = !used && affordable && !reason;
+    const status: CardStatus = used ? "used" : ready ? "ready" : affordable ? "waiting" : "locked";
+    return { card, cost, used, affordable, reason, ready, status, progress: Math.min(100, Math.round(balance / cost * 100)) };
+  }).sort((a, b) => {
+    const rank: Record<CardStatus, number> = { ready: 0, waiting: 1, locked: 2, used: 3 };
+    return rank[a.status] - rank[b.status] || CARD_ORDER.indexOf(a.card) - CARD_ORDER.indexOf(b.card);
+  });
+  const readyCount = cardViews.filter((view) => view.status === "ready").length;
+  const waitingCount = cardViews.filter((view) => view.status === "waiting").length;
+  const lockedCount = cardViews.filter((view) => view.status === "locked").length;
 
   useEffect(() => {
     const gained = balance - previousBalance.current;
@@ -147,20 +164,21 @@ export default function PowerCardsWallet({ match, teamCode, onUse }: Props) {
               <button className="power-wallet-close" onClick={() => setOpen(false)} aria-label="إغلاق"><X /></button>
             </header>
 
+            <div className="power-wallet-summary" aria-label="ملخص حالة الكروت">
+              <span className="is-ready"><CheckCircle2 /> جاهز الآن <b>{readyCount}</b></span>
+              <span className="is-waiting"><Hourglass /> ينتظر وقته <b>{waitingCount}</b></span>
+              <span className="is-locked"><LockKeyhole /> مقفل <b>{lockedCount}</b></span>
+            </div>
+
             <div className="power-card-grid">
-              {CARD_ORDER.map((card) => {
+              {cardViews.map(({ card, cost, used, affordable, reason, ready, status, progress }) => {
                 const Icon = CARD_ICON[card];
-                const cost = powerCardCost(card, questionsPerTeam);
-                const used = team.powerCards?.[card] === false;
-                const affordable = balance >= cost;
-                const reason = timingReason(match, teamCode, card);
-                const ready = !used && affordable && !reason;
-                const progress = Math.min(100, Math.round(balance / cost * 100));
+                const StatusIcon = status === "ready" ? CheckCircle2 : status === "waiting" ? Hourglass : LockKeyhole;
                 return (
                   <button
                     type="button"
                     key={card}
-                    className={`power-card ${ready ? "is-ready" : ""} ${used ? "is-used" : ""}`}
+                    className={`power-card is-${status}`}
                     onClick={() => { if (ready) { setPending(card); setMessage(""); } }}
                     disabled={!ready}
                   >
@@ -170,9 +188,10 @@ export default function PowerCardsWallet({ match, teamCode, onUse }: Props) {
                       <small>{CARD_COPY[card].hint}</small>
                     </span>
                     <span className="power-card-cost">{cost}</span>
-                    <span className="power-card-progress"><i style={{ width: `${progress}%` }} /></span>
+                    <span className="power-card-badge"><StatusIcon />{status === "ready" ? "جاهز للاستخدام الآن" : status === "waiting" ? "رصيدكم يكفي، انتظر وقته" : used ? "تم استخدامه" : "لم يُفتح بعد"}</span>
+                    <span className="power-card-progress" aria-label={`التقدم ${progress}%`}><i style={{ width: `${progress}%` }} /><b>{progress}%</b></span>
                     <span className="power-card-state">
-                      {used ? "تم الاستخدام" : !affordable ? `باقي ${cost - balance}` : reason ?? "جاهز للاستخدام"}
+                      {used ? "لن يعود في هذه المسابقة" : !affordable ? `باقي ${cost - balance} نقطة للفتح` : reason ?? "اضغط لاستخدام الكرت"}
                     </span>
                     {!affordable && !used ? <LockKeyhole className="power-card-lock" /> : null}
                   </button>

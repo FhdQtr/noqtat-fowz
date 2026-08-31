@@ -77,8 +77,16 @@ async function createMatch(uid, options) {
   if (names.length < 2) fail("invalid-argument", "اختر فريقين على الأقل");
   const enabledTypes = Array.isArray(options.enabledTypes) ? [...new Set(options.enabledTypes.map((x) => text(x, 50)).filter(Boolean))] : [];
   if (!enabledTypes.length) fail("invalid-argument", "اختر نوع سؤال واحداً على الأقل");
-  const questionsPerTeam = Math.min(10, Math.max(1, Number(options.questionsPerTeam) || 8));
-  const totalRounds = questionsPerTeam * names.length;
+  // توافق مؤقت مع الواجهة الحالية في الإنتاج التي ترسل totalRounds،
+  // ومع الواجهة الجديدة التي ترسل questionsPerTeam.
+  const requestedPerTeam = Number(options.questionsPerTeam);
+  const hasPerTeam = Number.isFinite(requestedPerTeam) && requestedPerTeam > 0;
+  const questionsPerTeam = hasPerTeam
+    ? Math.min(10, Math.max(1, requestedPerTeam))
+    : Math.ceil(Math.min(40, Math.max(4, Number(options.totalRounds) || 12)) / names.length);
+  const totalRounds = hasPerTeam
+    ? questionsPerTeam * names.length
+    : Math.min(40, Math.max(4, Number(options.totalRounds) || 12));
   const timer = Math.min(120, Math.max(0, Number(options.timer) || 0));
   const difficulty = ["easy", "medium", "hard", "mixed"].includes(options.difficulty) ? options.difficulty : "medium";
   const answerMode = ["anyone", "representative", "host"].includes(options.answerMode) ? options.answerMode : "representative";

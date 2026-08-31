@@ -21,6 +21,7 @@ import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import { ANSWER_LETTERS } from "../lib/answers";
+import PowerCardEvent from "../components/PowerCardEvent";
 
 const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
 
@@ -322,6 +323,7 @@ export default function HostRoom() {
   // ═══════════ أثناء اللعب — تحكم المقدم ═══════════
   return (
     <div className="min-h-dvh px-4 py-5 flex flex-col max-w-3xl mx-auto w-full">
+      <PowerCardEvent match={match} />
       <div className="fixed inset-0 -z-10">
         <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-20" />
         <div className="absolute inset-0 bg-night/88" />
@@ -465,7 +467,7 @@ export default function HostRoom() {
               >
                 <Crown className="w-4 h-4" />
                 الدور: {match.teams[st.targetTeam].name}
-                {st.passCount > 0 && <span className="text-xs opacity-80">(مسروق · نصف النقاط)</span>}
+                {st.passCount > 0 && <span className="text-xs opacity-80">({st.stealFullValue ? "سرقة الميدان · كامل النقاط" : "مسروق · نصف النقاط"})</span>}
               </div>
             )}
             {timeLeft !== null && (
@@ -481,6 +483,11 @@ export default function HostRoom() {
               {st.assistUsed ? " (نصف — ظهرت الخيارات)" : ""}
               {st.pointMultiplier === 2 ? " (بطاقة المضاعفة ×٢)" : ""}
             </span>
+            {st.forcedPlayerName && st.phase === "question" ? (
+              <span className="w-full text-center rounded-xl border border-gold/40 bg-gold/10 px-3 py-2 text-sm font-cairo font-black text-gold-light">
+                اللاعب الوحيد المسموح له بالإجابة: {st.forcedPlayerName}
+              </span>
+            ) : null}
           </div>
 
           {/* عدّاد المعاينة (صورة/مقطع) */}

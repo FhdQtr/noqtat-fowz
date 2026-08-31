@@ -1,4 +1,4 @@
-import { Crown, Users } from "lucide-react";
+import { Crown, Users, WalletCards } from "lucide-react";
 import type { Match } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 
@@ -70,6 +70,10 @@ export default function ScoreBoard({
               }`}
             >
               {t.score}
+            </div>
+            <div className={`flex items-center justify-center gap-1 font-cairo font-bold text-gold-light/70 ${big ? "mt-1 text-xs" : "text-[9px]"}`} title="رصيد الكروت">
+              <WalletCards className={big ? "h-3.5 w-3.5" : "h-2.5 w-2.5"} />
+              <span>{t.cardBalance ?? 0}</span>
             </div>
             {big && (
               <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mt-0.5">

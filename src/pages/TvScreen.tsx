@@ -12,6 +12,7 @@ import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/Questi
 import TimerRing from "../components/TimerRing";
 import { sfx } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
+import PowerCardEvent from "../components/PowerCardEvent";
 
 export default function TvScreen() {
   const { code = "" } = useParams();
@@ -121,6 +122,7 @@ export default function TvScreen() {
 
   return (
     <div className="relative min-h-dvh overflow-hidden flex flex-col select-none">
+      <PowerCardEvent match={match} />
       {/* خلفية المسرح */}
       <div className="fixed inset-0 -z-10">
         <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover" />
@@ -220,7 +222,7 @@ export default function TvScreen() {
               <QuestionMeta q={q} />
               <span className="rounded-full bg-gold/20 border border-gold/60 px-4 py-1 text-sm font-cairo font-bold text-gold-light">
                 {questionPoints(st)} نقطة
-                {st.passCount > 0 && " · سؤال مسروق"}
+                {st.passCount > 0 && (st.stealFullValue ? " · سرقة بالقيمة الكاملة" : " · سؤال مسروق")}
                 {st.assistUsed && " · مساعدة الخيارات"}
                 {st.pointMultiplier === 2 && " · مضاعفة ×٢"}
               </span>
@@ -248,6 +250,11 @@ export default function TvScreen() {
                   : `السؤال لفريق ${match.teams[st.targetTeam].name}`}
               </div>
             )}
+            {st.forcedPlayerName && st.phase === "question" ? (
+              <div className="rounded-2xl border border-gold/50 bg-gold/10 px-6 py-3 text-center font-cairo font-black text-gold-light animate-pulse-gold">
+                المسموح له يجاوب فقط: {st.forcedPlayerName} · والباقي ممنوع يساعدونه 😂
+              </div>
+            ) : null}
 
             {/* المعاينة: مقطع فيديو (يوتيوب مدمج) أو صورة كبيرة (ذاكرة/أعلام) */}
             {visual && viewing && q.video ? (

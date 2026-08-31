@@ -27,7 +27,7 @@ const TYPE_OPTIONS: { id: QuestionType; label: string }[] = [
   { id: "acting", label: "مثّل المثل" },
 ];
 
-const QUESTIONS_PER_TEAM_OPTIONS = [4, 6, 8, 10];
+const QUESTIONS_PER_TEAM_OPTIONS = [4, 6, 8, 10, 12];
 const TIMER_OPTIONS = [10, 15, 20, 30, 40, 50, 60];
 const DIFFICULTY_OPTIONS: { id: DifficultyMode; label: string }[] = [
   { id: "easy", label: "سهل" },

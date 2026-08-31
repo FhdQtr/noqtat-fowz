@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
   Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
-  HelpCircle, MessageSquare, ListChecks, Eye, Drama, Zap, Clock3,
+  HelpCircle, MessageSquare, ListChecks, Eye, Drama, Zap,
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
 } from "../lib/matchApi";
-import type { Match, Player, QuestionType } from "../types/game";
+import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
@@ -16,6 +16,8 @@ import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 import { ANSWER_LETTERS } from "../lib/answers";
 import QuestionTypeIcon from "../components/QuestionTypeIcon";
+import PowerCardsWallet from "../components/PowerCardsWallet";
+import PowerCardEvent from "../components/PowerCardEvent";
 
 const STORAGE_KEY = "al_midan_player";
 
@@ -58,11 +60,12 @@ export default function Play() {
   const captainId = captain ? captainIdRaw : null; // لو القائد غادر نعتبرها بدون قائد
   const captainName = captain?.name ?? null;
   const answerMode = match?.answerMode ?? "anyone";
-  const canAnswer = answerMode === "host"
+  const modeAllowsAnswer = answerMode === "host"
     ? false
     : answerMode === "representative"
       ? captainId === player?.id
       : true;
+  const canAnswer = modeAllowsAnswer && (!st?.forcedPlayerId || st.forcedPlayerId === player?.id);
 
   // ساعة حيّة لعدّاد معاينة الصور
   const now = useNow(
@@ -149,14 +152,15 @@ export default function Play() {
     if (ok) sfx.questionIn();
   };
 
-  const activateCard = async (card: "doublePoints" | "extraTime") => {
+  const activateCard = async (card: PowerCardId, targetPlayerId?: string) => {
     setCardMsg("");
     unlockAudio();
-    const ok = await requestPowerCard(matchCode, teamCode, card);
-    if (ok) {
+    const result = await requestPowerCard(matchCode, teamCode, card, targetPlayerId);
+    if (result.accepted) {
       sfx.correct();
-      setCardMsg(card === "doublePoints" ? "تم تفعيل مضاعفة النقاط ×٢" : "تمت إضافة ١٥ ثانية");
+      setCardMsg("تم تفعيل الكرت");
     } else setCardMsg("تعذّر استخدام البطاقة الآن");
+    return result;
   };
 
   if (connErr)
@@ -265,6 +269,8 @@ export default function Play() {
   // ═══ الشاشة الرئيسية للاعب ═══
   return (
     <div className="min-h-dvh flex flex-col">
+      <PowerCardEvent match={match} />
+      <PowerCardsWallet match={match} teamCode={teamCode} onUse={activateCard} />
       {/* شريط النتائج */}
       <header className="sticky top-0 z-30 bg-night/90 backdrop-blur-md border-b border-gold-faint/30 px-3 py-2.5">
         <ScoreBoard match={match} highlight={st!.targetTeam} />
@@ -371,22 +377,7 @@ export default function Play() {
                   </span>
                 </div>
 
-                {(team.powerCards?.doublePoints || (q.type !== "acting" && team.powerCards?.extraTime && timerTotal > 0)) && st!.phase === "question" && !st!.answer && (
-                  <div className="arena-panel flex flex-wrap items-center justify-center gap-2 p-3">
-                    <span className="w-full text-center text-xs font-bold text-stone-400">بطاقاتكم التكتيكية — كل بطاقة مرة واحدة في المباراة</span>
-                    {team.powerCards?.doublePoints && (
-                      <button onClick={() => void activateCard("doublePoints")} className="btn-ghost-gold !px-3 !py-2 text-xs flex items-center gap-1.5">
-                        <Zap className="h-4 w-4" /> ضاعف النقاط ×٢
-                      </button>
-                    )}
-                    {q.type !== "acting" && team.powerCards?.extraTime && timerTotal > 0 && (
-                      <button onClick={() => void activateCard("extraTime")} className="btn-ghost-gold !px-3 !py-2 text-xs flex items-center gap-1.5">
-                        <Clock3 className="h-4 w-4" /> +١٥ ثانية
-                      </button>
-                    )}
-                    {cardMsg && <span className="w-full text-center text-xs font-bold text-gold-light">{cardMsg}</span>}
-                  </div>
-                )}
+                {cardMsg && <div className="arena-panel p-3 text-center text-xs font-bold text-gold-light">{cardMsg}</div>}
 
                 {/* معاينة الصورة (ذاكرة/أعلام) */}
                 {visual && viewing && q.image && (
@@ -482,7 +473,9 @@ export default function Play() {
                       <>
                         {!canAnswer && (
                           <p className="text-center text-sm font-cairo text-gold-light/90 animate-fade-up">
-                            {answerMode === "host"
+                            {st!.forcedPlayerId
+                              ? <>الفريق المنافس اختار <strong>{st!.forcedPlayerName}</strong> يجاوب بروحه — ممنوع تساعدونه 😂</>
+                              : answerMode === "host"
                               ? "تناقشوا مع بعض — المقدم هو الذي يثبت الإجابة"
                               : <>تناقشوا مع بعض — ممثل الفريق <strong>{captainName ?? "لم يُعيّن"}</strong> هو الذي يثبت الإجابة</>}
                           </p>

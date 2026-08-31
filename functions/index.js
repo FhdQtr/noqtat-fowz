@@ -10,6 +10,7 @@ const QUESTIONS = JSON.parse(readFileSync(require.resolve("./questions.json"), "
 const LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const DIGITS = "23456789";
 const COLORS = ["maroon", "emerald", "royal", "gold"];
+const POWER_CARD_BASE_COST = { extraTime: 100, swapQuestion: 150, pickPlayer: 200, doublePoints: 200, freeze: 250, steal: 300 };
 
 function fail(code, message) { throw new HttpsError(code, message); }
 function text(value, max = 30) { return String(value ?? "").trim().slice(0, max); }
@@ -22,6 +23,10 @@ function levelForPick(n, difficulty = "mixed") {
   return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
 }
 function pointsForPick(n) { return Math.min(250, Math.max(50, n * 50)); }
+function powerCardCost(card, questionsPerTeam = 8) {
+  const scaled = (POWER_CARD_BASE_COST[card] || 0) * Math.max(1, questionsPerTeam) / 8;
+  return Math.max(50, Math.round(scaled / 50) * 50);
+}
 function typeCap(match) {
   if (match.enabledTypes.length <= 1) return 99;
   const perTeam = Math.ceil(match.totalRounds / Math.max(1, match.teamOrder.length));
@@ -54,8 +59,14 @@ function points(state) {
   const base = state.questionValue || 0;
   let result = base;
   if (state.assistUsed) result = Math.max(1, Math.round(result / 2));
-  else if (state.passCount > 0) result = Math.max(1, Math.round(result / 2));
+  else if (state.passCount > 0 && !state.stealFullValue) result = Math.max(1, Math.round(result / 2));
   return result * (state.pointMultiplier || 1);
+}
+function cardReward(state) {
+  const base = state.questionValue || 0;
+  if (state.assistUsed) return Math.max(1, Math.round(base / 2));
+  if (state.passCount > 0 && !state.stealFullValue) return Math.max(1, Math.round(base / 2));
+  return base;
 }
 function playerForUid(match, uid, playerId) {
   const player = match.players?.[playerId];
@@ -102,7 +113,7 @@ async function createMatch(uid, options) {
   const requestedPerTeam = Number(options.questionsPerTeam);
   const hasPerTeam = Number.isFinite(requestedPerTeam) && requestedPerTeam > 0;
   const questionsPerTeam = hasPerTeam
-    ? Math.min(10, Math.max(1, requestedPerTeam))
+    ? Math.min(12, Math.max(1, requestedPerTeam))
     : Math.ceil(Math.min(40, Math.max(4, Number(options.totalRounds) || 12)) / names.length);
   const totalRounds = hasPerTeam
     ? questionsPerTeam * names.length
@@ -118,13 +129,22 @@ async function createMatch(uid, options) {
     names.forEach((name, index) => {
       const teamCode = `${id}-${index + 1}`;
       teamOrder.push(teamCode);
-      teams[teamCode] = { code: teamCode, name: text(name, 16) || `فريق ${index + 1}`, color: COLORS[index], score: 0, correctCount: 0, wrongCount: 0, powerCards: { doublePoints: true, extraTime: true } };
+      teams[teamCode] = {
+        code: teamCode,
+        name: text(name, 16) || `فريق ${index + 1}`,
+        color: COLORS[index],
+        score: 0,
+        correctCount: 0,
+        wrongCount: 0,
+        cardBalance: 0,
+        powerCards: { extraTime: true, doublePoints: true, swapQuestion: true, freeze: true, steal: true, pickPlayer: true },
+      };
     });
     const match = {
       hostUid: uid,
       hostName: text(options.hostName, 20) || "المقدم",
       createdAt: now(), status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, difficulty, answerMode, enabledTypes, teams,
-      state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false },
+      state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     await db.ref(`matches/${id}`).set(match);
     return { code: id };
@@ -256,8 +276,13 @@ async function chooseType(uid, data) {
       selectionRequestId: requestId || null,
       viewUntil,
       assistUsed: false,
-      pointMultiplier: 1,
+      pointMultiplier: latestState.pointMultiplier || 1,
       extraTimeUsed: false,
+      stealFullValue: false,
+      forcedPlayerId: null,
+      forcedPlayerName: null,
+      cardsFrozenTeam: latestState.cardsFrozenTeam || null,
+      cardUsedThisTurn: Boolean(latestState.cardUsedThisTurn),
       questionValue: pointsForPick(usedCount + 1),
       usedIds: [...(latestState.usedIds || []), question.id],
     };
@@ -284,6 +309,7 @@ async function submitAnswer(uid, data) {
   if (answerMode === "host") fail("permission-denied", "المقدم هو من يثبت الإجابة");
   const representativeId = match.teams[player.teamCode]?.captainId;
   if (answerMode === "representative" && representativeId !== player.id) fail("permission-denied", "الإجابة لممثل الفريق");
+  if (match.state.forcedPlayerId && match.state.forcedPlayerId !== player.id) fail("permission-denied", "الإجابة للاعب الذي اختاره الفريق المنافس");
   const choice = Number(data.choice);
   if (match.state.phase !== "question" || match.state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
   const stateRef = db.ref(`matches/${id}/state`);
@@ -358,7 +384,10 @@ async function reveal(id, match, correctOverride) {
     [`matches/${id}/teams/${teamCode}/correctCount`]: team.correctCount + (correct ? 1 : 0),
     [`matches/${id}/teams/${teamCode}/wrongCount`]: team.wrongCount + (correct ? 0 : 1),
   };
-  if (correct) updates[`matches/${id}/teams/${teamCode}/score`] = team.score + points(state);
+  if (correct) {
+    updates[`matches/${id}/teams/${teamCode}/score`] = team.score + points(state);
+    updates[`matches/${id}/teams/${teamCode}/cardBalance`] = (team.cardBalance || 0) + cardReward(state);
+  }
   await db.ref().update(updates);
   return { correct };
 }
@@ -367,7 +396,7 @@ async function advance(id, match) {
   const state = match.state;
   if (state.round < match.totalRounds) {
     let nextTeam;
-    const updates = { turnIndex: match.turnIndex + 1, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/assistUsed": false, "state/questionValue": null };
+    const updates = { turnIndex: match.turnIndex + 1, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false };
     if (match.tieBreaker?.active) {
       const cursor = match.tieBreaker.cursor + 1;
       nextTeam = match.tieBreaker.teams[cursor % match.tieBreaker.teams.length];
@@ -382,11 +411,149 @@ async function advance(id, match) {
   const tied = candidates.filter((team) => match.teams[team].score === high);
   if (tied.length > 1) {
     const cycle = (match.tieBreaker?.cycle || 0) + 1;
-    await db.ref(`matches/${id}`).update({ totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/assistUsed": false, "state/questionValue": null });
+    await db.ref(`matches/${id}`).update({ totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false });
     return { ended: false, tieBreaker: true };
   }
   await db.ref(`matches/${id}`).update({ status: "ended", "state/phase": "ended", turnIndex: match.turnIndex + 1 });
   return { ended: true };
+}
+
+async function playPowerCard(uid, data, id, initialMatch) {
+  const teamCode = code(data.teamCode);
+  const card = text(data.card, 30);
+  if (!POWER_CARD_BASE_COST[card]) return { accepted: false, reason: "unknown" };
+  if (!canPlayFor(initialMatch, uid, teamCode)) fail("permission-denied", "هذا الكرت ليس لفريقك");
+
+  const claimId = `${uid}_${now()}_${randomInt(100000, 999999)}`;
+  const matchRef = db.ref(`matches/${id}`);
+  const claimRef = matchRef.child("state/cardClaimId");
+  if (!await acquireClaim(claimRef, claimId)) return { accepted: false, reason: "busy" };
+
+  try {
+    const match = (await matchRef.get()).val();
+    const state = match?.state;
+    const team = match?.teams?.[teamCode];
+    if (!state || !team || !canPlayFor(match, uid, teamCode)) return { accepted: false, reason: "team" };
+    if (state.cardClaimId !== claimId || state.cardUsedThisTurn) return { accepted: false, reason: "turn-used" };
+    if (state.cardsFrozenTeam === teamCode) return { accepted: false, reason: "frozen" };
+    if (team.powerCards?.[card] === false) return { accepted: false, reason: "used" };
+
+    const cost = powerCardCost(card, match.questionsPerTeam || Math.ceil(match.totalRounds / match.teamOrder.length));
+    const balance = Number(team.cardBalance) || 0;
+    if (balance < cost) return { accepted: false, reason: "balance" };
+
+    const targetTeam = state.targetTeam;
+    const event = {
+      id: `${now()}_${randomInt(100000, 999999)}`,
+      card,
+      byTeam: teamCode,
+      targetTeam: null,
+      targetPlayerId: null,
+      targetPlayerName: null,
+      at: now(),
+    };
+    const updates = {
+      [`teams/${teamCode}/cardBalance`]: balance - cost,
+      [`teams/${teamCode}/powerCards/${card}`]: false,
+      "state/cardUsedThisTurn": true,
+      "state/cardClaimId": null,
+    };
+
+    if (card === "doublePoints") {
+      if (state.phase !== "choose" || targetTeam !== teamCode || state.question) return { accepted: false, reason: "timing" };
+      updates["state/pointMultiplier"] = 2;
+    } else if (card === "extraTime") {
+      if (state.phase !== "question" || targetTeam !== teamCode || state.answer || state.extraTimeUsed) return { accepted: false, reason: "timing" };
+      if (state.question?.type === "acting" || !(state.questionDuration || match.timer)) return { accepted: false, reason: "timer" };
+      updates["state/extraTimeUsed"] = true;
+    } else if (card === "freeze") {
+      if (state.phase !== "choose" || !targetTeam || targetTeam === teamCode || state.question) return { accepted: false, reason: "timing" };
+      updates["state/cardsFrozenTeam"] = targetTeam;
+      event.targetTeam = targetTeam;
+    } else if (card === "pickPlayer") {
+      if (state.phase !== "question" || !targetTeam || targetTeam === teamCode || state.answer || match.answerMode !== "anyone") return { accepted: false, reason: "timing" };
+      if (state.question?.type === "acting" || (state.question?.type === "flag" && !state.assistUsed)) return { accepted: false, reason: "verbal" };
+      const targetPlayerId = text(data.targetPlayerId, 80);
+      const targetPlayer = match.players?.[targetPlayerId];
+      const eligible = Object.values(match.players || {}).filter((player) => player.teamCode === targetTeam);
+      if (eligible.length < 2 || !targetPlayer || targetPlayer.teamCode !== targetTeam) return { accepted: false, reason: "player" };
+      updates["state/forcedPlayerId"] = targetPlayer.id;
+      updates["state/forcedPlayerName"] = targetPlayer.name;
+      event.targetTeam = targetTeam;
+      event.targetPlayerId = targetPlayer.id;
+      event.targetPlayerName = targetPlayer.name;
+    } else if (card === "swapQuestion") {
+      if (state.phase !== "question" || targetTeam !== teamCode || state.answer || !state.question) return { accepted: false, reason: "timing" };
+      let candidates;
+      if (state.question.type.startsWith("ct_")) {
+        const custom = (await db.ref("customQuestions").get()).val() || {};
+        candidates = Object.values(custom);
+      } else candidates = QUESTIONS;
+      const usedIds = new Set(state.usedIds || []);
+      const pool = candidates.filter((question) => question.type === state.question.type && question.level === state.question.level && !question.disabled && !usedIds.has(question.id));
+      if (!pool.length) return { accepted: false, reason: "empty" };
+      const question = shuffled(pool[randomInt(pool.length)]);
+      const started = now();
+      const seconds = viewSeconds(question);
+      const viewUntil = seconds ? started + seconds * 1000 : null;
+      const isActing = question.type === "acting";
+      updates["state/question"] = publicQuestion(question);
+      updates["state/usedIds"] = [...usedIds, question.id];
+      updates["state/viewUntil"] = viewUntil;
+      updates["state/questionStartedAt"] = isActing ? null : (viewUntil || started);
+      updates["state/questionDuration"] = isActing ? 120 : match.timer;
+      updates["state/assistUsed"] = false;
+      updates["state/forcedPlayerId"] = null;
+      updates["state/forcedPlayerName"] = null;
+      await db.ref().update({
+        [`matches/${id}/teams/${teamCode}/cardBalance`]: balance - cost,
+        [`matches/${id}/teams/${teamCode}/powerCards/${card}`]: false,
+        [`matches/${id}/state/question`]: publicQuestion(question),
+        [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
+        [`matches/${id}/state/viewUntil`]: viewUntil,
+        [`matches/${id}/state/questionStartedAt`]: isActing ? null : (viewUntil || started),
+        [`matches/${id}/state/questionDuration`]: isActing ? 120 : match.timer,
+        [`matches/${id}/state/assistUsed`]: false,
+        [`matches/${id}/state/forcedPlayerId`]: null,
+        [`matches/${id}/state/forcedPlayerName`]: null,
+        [`matches/${id}/state/cardUsedThisTurn`]: true,
+        [`matches/${id}/state/cardClaimId`]: null,
+        [`matches/${id}/state/cardEvent`]: event,
+        [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
+      });
+      return { accepted: true };
+    } else if (card === "steal") {
+      const attemptedTeams = [...new Set([...(state.attemptedTeams || []), targetTeam].filter(Boolean))];
+      if (state.phase !== "revealed" || state.isCorrect !== false || !state.question || targetTeam === teamCode) return { accepted: false, reason: "timing" };
+      if (isTrueFalse(state.question) || attemptedTeams.includes(teamCode)) return { accepted: false, reason: "ineligible" };
+      const seconds = viewSeconds(state.question);
+      const started = now();
+      const viewUntil = seconds ? started + seconds * 1000 : null;
+      const isActing = state.question.type === "acting";
+      updates["state/phase"] = "question";
+      updates["state/targetTeam"] = teamCode;
+      updates["state/passCount"] = (state.passCount || 0) + 1;
+      updates["state/attemptedTeams"] = attemptedTeams;
+      updates["state/answer"] = null;
+      updates["state/isCorrect"] = null;
+      updates["state/questionStartedAt"] = isActing ? null : (viewUntil || started);
+      updates["state/questionDuration"] = isActing ? 120 : match.timer;
+      updates["state/viewUntil"] = viewUntil;
+      updates["state/assistUsed"] = false;
+      updates["state/pointMultiplier"] = 1;
+      updates["state/extraTimeUsed"] = false;
+      updates["state/stealFullValue"] = true;
+      updates["state/forcedPlayerId"] = null;
+      updates["state/forcedPlayerName"] = null;
+      event.targetTeam = teamCode;
+    }
+
+    updates["state/cardEvent"] = event;
+    await matchRef.update(updates);
+    return { accepted: true };
+  } finally {
+    await releaseClaim(claimRef, claimId);
+  }
 }
 
 exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: process.env.ENFORCE_APP_CHECK === "true" }, async (request) => {
@@ -424,22 +591,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { accepted: true };
   }
   if (action === "usePowerCard") {
-    const teamCode = code(data.teamCode);
-    const card = text(data.card, 30);
-    if (!canPlayFor(match, uid, teamCode) || match.state.targetTeam !== teamCode) fail("permission-denied", "البطاقة للفريق صاحب السؤال");
-    if (!match.teams[teamCode]?.powerCards?.[card] || !["doublePoints", "extraTime"].includes(card)) return { accepted: false };
-    if (match.state.phase !== "question" || match.state.answer) return { accepted: false };
-    // وقت «مثّل المثل» ثابت بدقيقتين، لذلك لا تعمل عليه بطاقة زيادة الوقت.
-    if (card === "extraTime" && match.state.question?.type === "acting") return { accepted: false };
-    const updates = { [`teams/${teamCode}/powerCards/${card}`]: false };
-    if (card === "doublePoints") {
-      updates["state/pointMultiplier"] = 2;
-    } else {
-      if (!match.timer || match.state.extraTimeUsed) return { accepted: false };
-      updates["state/extraTimeUsed"] = true;
-    }
-    await db.ref(`matches/${id}`).update(updates);
-    return { accepted: true };
+    return playPowerCard(uid, data, id, match);
   }
 
   requireHost(match, uid);
@@ -485,7 +637,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const seconds = match.state.question ? viewSeconds(match.state.question) : null;
     const until = seconds ? now() + seconds * 1000 : null;
     const isActing = match.state.question?.type === "acting";
-    await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, attemptedTeams, answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false });
+    await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, attemptedTeams, answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardClaimId: null });
   } else if (action === "advanceTurn") {
     return advance(id, match);
   } else if (action === "setCaptain") {

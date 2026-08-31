@@ -19,6 +19,16 @@ export type QuestionType = string;
 export type QuestionLevel = "easy" | "medium" | "hard";
 export type DifficultyMode = QuestionLevel | "mixed";
 export type AnswerMode = "anyone" | "representative" | "host";
+export type PowerCardId = "extraTime" | "doublePoints" | "swapQuestion" | "freeze" | "steal" | "pickPlayer";
+
+export interface TeamPowerCards {
+  extraTime: boolean;
+  doublePoints: boolean;
+  swapQuestion: boolean;
+  freeze: boolean;
+  steal: boolean;
+  pickPlayer: boolean;
+}
 
 /** مقطع فيديو يوتيوب مرفق بالسؤال (يشاهدونه ثم يظهر السؤال) */
 export interface QuestionVideo {
@@ -59,10 +69,8 @@ export interface Team {
   correctCount: number;
   wrongCount: number;
   captainId?: string | null; // ممثل الفريق — الوحيد اللي يجيب في وضع representative
-  powerCards?: {
-    doublePoints: boolean;
-    extraTime: boolean;
-  };
+  cardBalance?: number; // رصيد مستقل لصرف الكروت ولا ينقص نقاط الفوز
+  powerCards?: Partial<TeamPowerCards>; // true = لم يُستخدم الكرت بعد
 }
 
 export interface Player {
@@ -108,6 +116,21 @@ export interface GameState {
   assistUsed?: boolean; // الأعلام: الفريق طلب "اختيار من الإجابات" (ربع النقاط)
   pointMultiplier?: number; // بطاقة مضاعفة النقاط
   extraTimeUsed?: boolean; // بطاقة +١٥ ثانية
+  stealFullValue?: boolean; // السرقة بالقيمة الكاملة بدل نصف قيمة النقل
+  forcedPlayerId?: string | null; // اللاعب الوحيد المسموح له بالإجابة
+  forcedPlayerName?: string | null;
+  cardsFrozenTeam?: string | null; // الفريق الممنوع من الكروت في هذا السؤال
+  cardUsedThisTurn?: boolean; // كرت واحد فقط في السؤال
+  cardClaimId?: string | null; // يمنع طلبَي كرت متزامنين
+  cardEvent?: {
+    id: string;
+    card: PowerCardId;
+    byTeam: string;
+    targetTeam?: string | null;
+    targetPlayerId?: string | null;
+    targetPlayerName?: string | null;
+    at: number;
+  } | null;
 }
 
 export interface Match {
@@ -157,6 +180,30 @@ export const LEVEL_LABEL: Record<QuestionLevel, string> = {
   medium: "متوسط",
   hard: "صعب",
 };
+
+export const POWER_CARD_BASE_COST: Record<PowerCardId, number> = {
+  extraTime: 100,
+  swapQuestion: 150,
+  pickPlayer: 200,
+  doublePoints: 200,
+  freeze: 250,
+  steal: 300,
+};
+
+export const POWER_CARD_LABEL: Record<PowerCardId, string> = {
+  extraTime: "زيادة الوقت",
+  swapQuestion: "بدّل السؤال",
+  pickPlayer: "أنت اللي بتجاوب",
+  doublePoints: "دبلها",
+  freeze: "جمّدهم",
+  steal: "سرقة الميدان",
+};
+
+/** تكلفة متناسبة مع عدد أسئلة كل فريق، مقربة لأقرب ٥٠ نقطة. */
+export function powerCardCost(card: PowerCardId, questionsPerTeam = 8): number {
+  const scaled = POWER_CARD_BASE_COST[card] * Math.max(1, questionsPerTeam) / 8;
+  return Math.max(50, Math.round(scaled / 50) * 50);
+}
 
 export const TYPE_LABEL: Record<string, string> = {
   multiple_choice: "اختيار من متعدد",

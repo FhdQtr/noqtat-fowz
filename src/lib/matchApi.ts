@@ -2,7 +2,7 @@
 import { get, onValue, ref, type Unsubscribe } from "firebase/database";
 import { httpsCallable } from "firebase/functions";
 import { db, ensureAuth, functions } from "./firebase";
-import type { AnswerMode, DifficultyMode, Match, Player, QuestionLevel, QuestionType, TeamColor } from "../types/game";
+import type { AnswerMode, DifficultyMode, Match, Player, PowerCardId, QuestionLevel, QuestionType, TeamColor } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 
 export interface CreateMatchOptions {
@@ -233,12 +233,16 @@ export async function useAssist(matchCode: string, teamCode: string): Promise<bo
   }
 }
 
-export async function usePowerCard(matchCode: string, teamCode: string, card: "doublePoints" | "extraTime"): Promise<boolean> {
+export async function usePowerCard(
+  matchCode: string,
+  teamCode: string,
+  card: PowerCardId,
+  targetPlayerId?: string,
+): Promise<{ accepted: boolean; reason?: string }> {
   try {
-    const result = await gameAction<{ accepted: boolean }>("usePowerCard", { matchCode, teamCode, card });
-    return result.accepted;
+    return await gameAction<{ accepted: boolean; reason?: string }>("usePowerCard", { matchCode, teamCode, card, targetPlayerId });
   } catch {
-    return false;
+    return { accepted: false, reason: "error" };
   }
 }
 

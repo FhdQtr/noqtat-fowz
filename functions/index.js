@@ -38,7 +38,12 @@ function shuffled(question) {
   return { ...question, options: tagged.map((x) => x.value), answer: tagged.findIndex((x) => x.correct) };
 }
 function viewSeconds(question) {
-  if (["memory", "flag"].includes(question.type)) return 10;
+  if (question.type === "memory") {
+    if (question.level === "easy") return 12;
+    if (question.level === "hard") return 8;
+    return 10;
+  }
+  if (question.type === "flag") return 10;
   if (question.video) return Math.max(1, question.video.end - question.video.start) + 3;
   return null;
 }

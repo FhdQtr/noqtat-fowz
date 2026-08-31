@@ -184,7 +184,7 @@ export function typeLabel(type: QuestionType): string {
   return TYPE_LABEL[type] ?? customLabels.get(type) ?? type;
 }
 
-/** مدة عرض الصورة قبل إخفائها (الذاكرة والأعلام) */
+/** مدة عرض صورة العلم قبل إخفائها */
 export const VIEW_SECONDS = 10;
 
 /** الأنواع اللي تعتمد على مشاهدة الصورة أولاً */
@@ -192,10 +192,16 @@ export const VISUAL_TYPES: QuestionType[] = ["memory", "flag"];
 
 /**
  * مدة المشاهدة قبل ظهور السؤال (بالثواني):
- * الذاكرة/الأعلام ١٠ ثواني — أسئلة الفيديو = طول المقطع — وغيرها بدون مشاهدة
+ * الذاكرة: سهل ١٢، متوسط ١٠، صعب ٨ — الأعلام ١٠ ثوانٍ
+ * أسئلة الفيديو = طول المقطع — وغيرها بدون مشاهدة
  */
 export function viewSecondsFor(q: Question): number | null {
-  if (VISUAL_TYPES.includes(q.type)) return VIEW_SECONDS;
+  if (q.type === "memory") {
+    if (q.level === "easy") return 12;
+    if (q.level === "hard") return 8;
+    return 10;
+  }
+  if (q.type === "flag") return VIEW_SECONDS;
   if (q.video) return Math.max(1, q.video.end - q.video.start) + 3; // +3 سماحية تشغيل
   return null;
 }

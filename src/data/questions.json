@@ -14408,135 +14408,279 @@
   "type": "memory",
   "category": "memory",
   "level": "easy",
-  "question": "كم عدد الكراسي المفردة حول الطاولة المستديرة؟",
-  "options": [
-   "2",
-   "3",
-   "4",
-   "5"
-  ],
-  "answer": 2,
-  "image": "/img/memory/room-e1.jpg"
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
+  "answer": 0,
+  "image": "/img/memory/room-e1.jpg",
+  "disabled": true
  },
  {
   "id": 3002,
   "type": "memory",
   "category": "memory",
   "level": "easy",
-  "question": "كم عدد فناجين القهوة على الصينية؟",
-  "options": [
-   "2",
-   "3",
-   "4",
-   "5"
-  ],
-  "answer": 1,
-  "image": "/img/memory/room-e2.jpg"
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
+  "answer": 0,
+  "image": "/img/memory/room-e2.jpg",
+  "disabled": true
  },
  {
   "id": 3003,
   "type": "memory",
   "category": "memory",
   "level": "easy",
-  "question": "كم عدد الكراسي حول طاولة الطعام؟",
-  "options": [
-   "4",
-   "5",
-   "6",
-   "8"
-  ],
-  "answer": 2,
-  "image": "/img/memory/room-e3.jpg"
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
+  "answer": 0,
+  "image": "/img/memory/room-e3.jpg",
+  "disabled": true
  },
  {
   "id": 3004,
   "type": "memory",
   "category": "memory",
   "level": "medium",
-  "question": "كم عدد المخدات على السرير؟",
-  "options": [
-   "2",
-   "3",
-   "4",
-   "6"
-  ],
-  "answer": 2,
-  "image": "/img/memory/room-m1.jpg"
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
+  "answer": 0,
+  "image": "/img/memory/room-m1.jpg",
+  "disabled": true
  },
  {
   "id": 3005,
   "type": "memory",
   "category": "memory",
   "level": "medium",
-  "question": "كم عدد الأكواب الملونة على الرخامة؟",
-  "options": [
-   "3",
-   "4",
-   "5",
-   "6"
-  ],
-  "answer": 2,
-  "image": "/img/memory/room-m2.jpg"
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
+  "answer": 0,
+  "image": "/img/memory/room-m2.jpg",
+  "disabled": true
  },
  {
   "id": 3006,
   "type": "memory",
   "category": "memory",
   "level": "medium",
-  "question": "كم عدد الكتب المكدسة على المكتب؟",
-  "options": [
-   "2",
-   "3",
-   "4",
-   "5"
-  ],
-  "answer": 1,
-  "image": "/img/memory/room-m3.jpg"
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
+  "answer": 0,
+  "image": "/img/memory/room-m3.jpg",
+  "disabled": true
  },
  {
   "id": 3007,
   "type": "memory",
   "category": "memory",
   "level": "hard",
-  "question": "ماذا يوجد على الرف العلوي بجانب الساعة؟",
-  "options": [
-   "مزهرية",
-   "كرة أرضية",
-   "تمثال حصان",
-   "مصباح"
-  ],
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
   "answer": 0,
-  "image": "/img/memory/room-h1.jpg"
+  "image": "/img/memory/room-h1.jpg",
+  "disabled": true
  },
  {
   "id": 3008,
   "type": "memory",
   "category": "memory",
   "level": "hard",
-  "question": "ماذا يوجد في الطبق الصغير على الطاولة؟",
-  "options": [
-   "تمر",
-   "بسكويت",
-   "مكسرات",
-   "قطع شوكولاتة"
-  ],
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
   "answer": 0,
-  "image": "/img/memory/room-h2.jpg"
+  "image": "/img/memory/room-h2.jpg",
+  "disabled": true
  },
  {
   "id": 3009,
   "type": "memory",
   "category": "memory",
   "level": "hard",
-  "question": "كم عدد المكعبات المكدسة فوق بعضها؟",
-  "options": [
-   "3",
-   "4",
-   "5",
-   "6"
-  ],
-  "answer": 2,
-  "image": "/img/memory/room-h3.jpg"
+  "question": "سؤال ذاكرة قديم",
+  "options": ["-", "-", "-", "-"],
+  "answer": 0,
+  "image": "/img/memory/room-h3.jpg",
+  "disabled": true
+ },
+ {
+  "id": 3101, "type": "memory", "category": "memory", "level": "easy",
+  "question": "ما لون الكتاب على الطاولة؟",
+  "options": ["أزرق", "أصفر", "أحمر", "أخضر"], "answer": 1,
+  "image": "/img/memory-v2/e01-corniche.webp"
+ },
+ {
+  "id": 3102, "type": "memory", "category": "memory", "level": "easy",
+  "question": "كم وعاء بهارات كبير كان على الطاولة؟",
+  "options": ["3", "4", "5", "6"], "answer": 1,
+  "image": "/img/memory-v2/e02-souq.webp"
+ },
+ {
+  "id": 3103, "type": "memory", "category": "memory", "level": "easy",
+  "question": "ما لون الفانوس بجانب الخيمة؟",
+  "options": ["أحمر", "أزرق", "ذهبي", "أخضر"], "answer": 1,
+  "image": "/img/memory-v2/e03-desert-camp.webp"
+ },
+ {
+  "id": 3104, "type": "memory", "category": "memory", "level": "easy",
+  "question": "ما لون القبعة على طاولة المقهى؟",
+  "options": ["أحمر", "أسود", "أزرق", "أصفر"], "answer": 0,
+  "image": "/img/memory-v2/e04-paris-cafe.webp"
+ },
+ {
+  "id": 3105, "type": "memory", "category": "memory", "level": "easy",
+  "question": "كم سمكة ظهرت في البركة؟",
+  "options": ["1", "2", "3", "4"], "answer": 1,
+  "image": "/img/memory-v2/e05-japan-garden.webp"
+ },
+ {
+  "id": 3106, "type": "memory", "category": "memory", "level": "easy",
+  "question": "ما الغرض الموجود أمام الحقيبة الزرقاء؟",
+  "options": ["قبعة صفراء", "أناناس", "قناع غوص", "جوزة هند"], "answer": 0,
+  "image": "/img/memory-v2/e06-beach.webp"
+ },
+ {
+  "id": 3107, "type": "memory", "category": "memory", "level": "easy",
+  "question": "ما لون الثلاجة؟",
+  "options": ["أزرق", "أخضر", "بنفسجي", "أحمر"], "answer": 2,
+  "image": "/img/memory-v2/e07-kitchen-illustration.webp"
+ },
+ {
+  "id": 3108, "type": "memory", "category": "memory", "level": "easy",
+  "question": "كم كرة زرقاء كانت تطفو؟",
+  "options": ["2", "3", "4", "5"], "answer": 1,
+  "image": "/img/memory-v2/e08-space-illustration.webp"
+ },
+ {
+  "id": 3109, "type": "memory", "category": "memory", "level": "easy",
+  "question": "كم كرة زرقاء ظهرت في الصورة؟",
+  "options": ["1", "2", "3", "4"], "answer": 1,
+  "image": "/img/memory-v2/e09-solids.webp"
+ },
+ {
+  "id": 3110, "type": "memory", "category": "memory", "level": "easy",
+  "question": "ما لون الكرة داخل المسار؟",
+  "options": ["أبيض", "أحمر", "أزرق", "أصفر"], "answer": 0,
+  "image": "/img/memory-v2/e10-domino.webp"
+ },
+ {
+  "id": 3111, "type": "memory", "category": "memory", "level": "medium",
+  "question": "أي مركب حمل شراعًا عنابيًا؟",
+  "options": ["الأيسر", "الأوسط", "الأيمن", "جميعها"], "answer": 1,
+  "image": "/img/memory-v2/m01-dhow-harbor.webp"
+ },
+ {
+  "id": 3112, "type": "memory", "category": "memory", "level": "medium",
+  "question": "ما لون المسباح على الطاولة؟",
+  "options": ["أحمر", "أزرق", "أخضر", "أسود"], "answer": 1,
+  "image": "/img/memory-v2/m02-majlis.webp"
+ },
+ {
+  "id": 3113, "type": "memory", "category": "memory", "level": "medium",
+  "question": "أي مجسم كان بجانب الكرة الزرقاء؟",
+  "options": ["قوس أحمر", "هرم أبيض", "مكعب أصفر", "عمود أسود"], "answer": 0,
+  "image": "/img/memory-v2/m03-museum.webp"
+ },
+ {
+  "id": 3114, "type": "memory", "category": "memory", "level": "medium",
+  "question": "ما لون المظلة الموضوعة على المقعد؟",
+  "options": ["حمراء", "خضراء", "زرقاء", "صفراء"], "answer": 1,
+  "image": "/img/memory-v2/m04-london-park.webp"
+ },
+ {
+  "id": 3115, "type": "memory", "category": "memory", "level": "medium",
+  "question": "أين كانت الملعقة بالنسبة لمرطبان المربى؟",
+  "options": ["على يساره", "على يمينه", "خلفه", "داخله"], "answer": 1,
+  "image": "/img/memory-v2/m05-alpine-cabin.webp"
+ },
+ {
+  "id": 3116, "type": "memory", "category": "memory", "level": "medium",
+  "question": "ما لون قطعة القماش في الرف السفلي؟",
+  "options": ["أحمر", "أزرق", "بنفسجي", "أخضر"], "answer": 2,
+  "image": "/img/memory-v2/m06-market.webp"
+ },
+ {
+  "id": 3117, "type": "memory", "category": "memory", "level": "medium",
+  "question": "ما لون المظلة الواقفة بجانب الباب؟",
+  "options": ["صفراء", "بنفسجية", "خضراء", "زرقاء"], "answer": 1,
+  "image": "/img/memory-v2/m07-detective.webp"
+ },
+ {
+  "id": 3118, "type": "memory", "category": "memory", "level": "medium",
+  "question": "كم خوذة غوص كانت على الرف العلوي؟",
+  "options": ["1", "2", "3", "4"], "answer": 1,
+  "image": "/img/memory-v2/m08-underwater.webp"
+ },
+ {
+  "id": 3119, "type": "memory", "category": "memory", "level": "medium",
+  "question": "في أي زاوية ظهر القرص الأسود؟",
+  "options": ["أعلى اليمين", "أعلى اليسار", "أسفل اليمين", "أسفل اليسار"], "answer": 0,
+  "image": "/img/memory-v2/m09-grid.webp"
+ },
+ {
+  "id": 3120, "type": "memory", "category": "memory", "level": "medium",
+  "question": "ما الشكل الموجود في وسط الصينية؟",
+  "options": ["كرة فضية", "مكعب أحمر", "نجمة صفراء", "مخروط أخضر"], "answer": 0,
+  "image": "/img/memory-v2/m10-circle.webp"
+ },
+ {
+  "id": 3121, "type": "memory", "category": "memory", "level": "hard",
+  "question": "ما لون الأداة المقوسة بين الحبل والفخاخ؟",
+  "options": ["أحمر", "أزرق", "أخضر", "ذهبي"], "answer": 0,
+  "image": "/img/memory-v2/h01-pearl-diving.webp"
+ },
+ {
+  "id": 3122, "type": "memory", "category": "memory", "level": "hard",
+  "question": "كم مرطبان توابل صغير كان أمام القدر؟",
+  "options": ["3", "4", "5", "6"], "answer": 1,
+  "image": "/img/memory-v2/h02-qatar-kitchen.webp"
+ },
+ {
+  "id": 3123, "type": "memory", "category": "memory", "level": "hard",
+  "question": "ما لون الكتاب الموضوع على الكرسي الأيسر؟",
+  "options": ["أحمر", "أزرق", "أخضر", "أبيض"], "answer": 1,
+  "image": "/img/memory-v2/h03-doha-rooftop.webp"
+ },
+ {
+  "id": 3124, "type": "memory", "category": "memory", "level": "hard",
+  "question": "ماذا كان على يمين القبعة الخضراء؟",
+  "options": ["منظار", "سترة نجاة", "حقيبة زرقاء", "زجاجات ماء"], "answer": 0,
+  "image": "/img/memory-v2/h04-mangrove.webp"
+ },
+ {
+  "id": 3125, "type": "memory", "category": "memory", "level": "hard",
+  "question": "ما الغرض الواقع بين الرسائل وحبات الليمون؟",
+  "options": ["مفتاح", "قناع", "مزهرية", "ريشة"], "answer": 0,
+  "image": "/img/memory-v2/h05-venice.webp"
+ },
+ {
+  "id": 3126, "type": "memory", "category": "memory", "level": "hard",
+  "question": "ما شكل اللوحة البيضاء في أعلى يمين المجموعة؟",
+  "options": ["دائرة", "مربع", "مثلث", "مستطيل"], "answer": 0,
+  "image": "/img/memory-v2/h06-new-york-loft.webp"
+ },
+ {
+  "id": 3127, "type": "memory", "category": "memory", "level": "hard",
+  "question": "ما الغرض الموضوع فوق الكتاب البنفسجي؟",
+  "options": ["مفتاح فضي", "ترس أزرق", "ريشة حمراء", "عدسة"], "answer": 0,
+  "image": "/img/memory-v2/h07-inventor.webp"
+ },
+ {
+  "id": 3128, "type": "memory", "category": "memory", "level": "hard",
+  "question": "ما الموجود داخل المكعب الشفاف الأوسط؟",
+  "options": ["كرة زرقاء", "بلورة حمراء", "قفاز أبيض", "زجاجة بنفسجية"], "answer": 0,
+  "image": "/img/memory-v2/h08-future-lab.webp"
+ },
+ {
+  "id": 3129, "type": "memory", "category": "memory", "level": "hard",
+  "question": "داخل أي إطار ظهر الشكل الحلزوني؟",
+  "options": ["العنابي", "التركوازي", "الذهبي", "لم يكن داخل إطار"], "answer": 1,
+  "image": "/img/memory-v2/h09-abstract.webp"
+ },
+ {
+  "id": 3130, "type": "memory", "category": "memory", "level": "hard",
+  "question": "أي شكل كان أسفل المكعب الأخضر العلوي مباشرة؟",
+  "options": ["كرة بنفسجية", "مخروط أصفر", "كرة سوداء", "حلقة فضية"], "answer": 0,
+  "image": "/img/memory-v2/h10-towers.webp"
  },
  {
   "id": 2012,

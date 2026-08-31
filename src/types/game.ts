@@ -17,6 +17,8 @@ export type BuiltinQuestionType =
 export type QuestionType = string;
 
 export type QuestionLevel = "easy" | "medium" | "hard";
+export type DifficultyMode = QuestionLevel | "mixed";
+export type AnswerMode = "anyone" | "representative" | "host";
 
 /** مقطع فيديو يوتيوب مرفق بالسؤال (يشاهدونه ثم يظهر السؤال) */
 export interface QuestionVideo {
@@ -36,6 +38,8 @@ export interface Question {
   image?: string; // رابط صورة أو data URL (علم/معلم/صورة مخصصة)
   video?: QuestionVideo; // مقطع يوتيوب (أسئلة الفيديو)
   format?: "tf" | "mc"; // صيغة الإجابة (لأسئلة المقدم المخصصة)
+  region?: "qatari" | "gulf"; // للأمثال: قطري أولاً ثم خليجي
+  disabled?: boolean; // مستبعد من اللعب مع بقائه في البنك للمراجعة
 }
 
 /** نوع سؤال مخصص يسويه صاحب اللعبة من لوحة التحكم */
@@ -54,7 +58,7 @@ export interface Team {
   score: number;
   correctCount: number;
   wrongCount: number;
-  captainId?: string | null; // قائد الفريق — الوحيد اللي يختار النوع ويجاوب (فارغ = الكل يقدر)
+  captainId?: string | null; // ممثل الفريق — الوحيد اللي يجيب في وضع representative
   powerCards?: {
     doublePoints: boolean;
     extraTime: boolean;
@@ -95,6 +99,8 @@ export interface GameState {
   isCorrect: boolean | null;
   timer: number; // 0 = بدون مؤقت، غيره = ثواني
   questionStartedAt: number | null;
+  questionDuration?: number; // مدة خاصة بالسؤال؛ «مثّل المثل» دقيقتان
+  selectionRequestId?: string | null; // يمنع تكرار اختيار النوع عند إعادة الطلب
   usedIds: number[]; // الأسئلة المستخدمة
   questionValue?: number; // قيمة السؤال الأساسية (٥٠ × رقم اختيار النوع)
   viewUntil?: number | null; // للصور/الأعلام: وقت إخفاء الصورة (مللي ثانية)
@@ -111,7 +117,10 @@ export interface Match {
   teamOrder: string[]; // ترتيب أكواد الفرق
   turnIndex: number; // مؤشر الدور الحالي
   totalRounds: number; // عدد الأسئلة المخطط
+  questionsPerTeam?: number; // عدد الأسئلة لكل فريق
   timer: number; // ثواني لكل سؤال (0 = يدوي)
+  difficulty?: DifficultyMode;
+  answerMode?: AnswerMode;
   enabledTypes: QuestionType[];
   state: GameState;
   teams: Record<string, Team>;
@@ -205,9 +214,14 @@ export function questionPoints(st: {
 }): number {
   const base = st.questionValue ?? (st.question ? LEVEL_POINTS[st.question.level] : 0);
   let result = base;
-  if (st.assistUsed) result = Math.max(1, Math.round(result / 4));
+  if (st.assistUsed) result = Math.max(1, Math.round(result / 2));
   else if (st.passCount > 0) result = Math.max(1, Math.round(result / 2));
   return result * (st.pointMultiplier ?? 1);
+}
+
+/** مدة السؤال الحالية قبل بطاقة زيادة الوقت. */
+export function questionTimerSeconds(match: Pick<Match, "timer" | "state">): number {
+  return match.state.questionDuration ?? match.timer;
 }
 
 export const CATEGORY_LABEL: Record<string, string> = {

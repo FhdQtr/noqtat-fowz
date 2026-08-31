@@ -3,7 +3,7 @@ import { useParams } from "react-router";
 import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap } from "lucide-react";
 import { subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
-import { TEAM_COLORS, viewSecondsFor, questionPoints } from "../types/game";
+import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
@@ -40,12 +40,13 @@ export default function TvScreen() {
   );
 
   useEffect(() => {
-    if (!match || match.timer === 0 || match.state.phase !== "question" || !match.state.questionStartedAt) {
+    const duration = match ? questionTimerSeconds(match) : 0;
+    if (!match || duration === 0 || match.state.phase !== "question" || !match.state.questionStartedAt) {
       setTimeLeft(null);
       return;
     }
     const tick = () => {
-      const total = match.timer + (match.state.extraTimeUsed ? 15 : 0);
+      const total = duration + (match.state.extraTimeUsed ? 15 : 0);
       const left = Math.max(0, total - Math.floor((Date.now() - match.state.questionStartedAt!) / 1000));
       if (left !== lastTickSecond.current) {
         setTimeLeft(left);
@@ -114,6 +115,8 @@ export default function TvScreen() {
   const viewing = !!(st.viewUntil && now < st.viewUntil);
   const viewLeft = st.viewUntil ? Math.max(0, Math.ceil((st.viewUntil - now) / 1000)) : 0;
   const showImage = !visual || viewing || st.phase === "revealed";
+  const timerTotal = questionTimerSeconds(match) + (st.extraTimeUsed ? 15 : 0);
+  const timerRunning = st.phase === "question" && !!st.questionStartedAt && !viewing;
 
   return (
     <div className="relative min-h-dvh overflow-hidden flex flex-col select-none">
@@ -268,26 +271,33 @@ export default function TvScreen() {
               </div>
             ) : q.type === "acting" && st.phase !== "revealed" ? (
               /* ═══ مثّل المثل: المثل سرّي — يقرأه الممثّل من شاشة الحكم فقط ═══ */
-              <div className="glass-card w-full p-8 sm:p-10 flex flex-col items-center gap-6 animate-scale-in">
-                <Drama className="w-14 h-14 text-gold-light animate-pulse" />
-                <h2 className="font-cairo font-black text-3xl sm:text-4xl text-gold-gradient">
-                  مثّل المثل!
-                </h2>
-                <p className="text-xl text-muted-foreground font-cairo leading-relaxed">
-                  واحد من فريق{" "}
-                  <strong style={{ color: st.targetTeam ? TEAM_COLORS[match.teams[st.targetTeam].color].light : undefined }}>
-                    {st.targetTeam ? match.teams[st.targetTeam].name : ""}
-                  </strong>{" "}
-                  يقف قدام فريقه — يقرأ المثل من <span className="text-gold-light">شاشة الحكم</span> ويمثّله{" "}
-                  <span className="text-gold-light">بدون كلام</span>
-                </p>
-                <p className="text-sm text-muted-foreground">الفريق يخمّن بصوت عالي — والحكم يحكم صح أو خطأ</p>
-              </div>
+              <TimerRing startedAt={st.questionStartedAt ?? 0} total={timerTotal} active={timerRunning}>
+                <div className="glass-card w-full p-8 sm:p-10 flex flex-col items-center gap-6 animate-scale-in">
+                  <Drama className="w-14 h-14 text-gold-light animate-pulse" />
+                  <h2 className="font-cairo font-black text-3xl sm:text-4xl text-gold-gradient">
+                    مثّل المثل!
+                  </h2>
+                  <p className="text-xl text-muted-foreground font-cairo leading-relaxed">
+                    واحد من فريق{" "}
+                    <strong style={{ color: st.targetTeam ? TEAM_COLORS[match.teams[st.targetTeam].color].light : undefined }}>
+                      {st.targetTeam ? match.teams[st.targetTeam].name : ""}
+                    </strong>{" "}
+                    يقف قدام فريقه — يقرأ المثل من <span className="text-gold-light">شاشة الحكم</span> ويمثّله{" "}
+                    <span className="text-gold-light">بدون كلام</span>
+                  </p>
+                  <p className="text-sm text-muted-foreground">الفريق يخمّن بصوت عالي — والحكم يحكم صح أو خطأ</p>
+                  {!st.questionStartedAt && (
+                    <p className="rounded-full border border-gold/60 bg-gold/15 px-6 py-2 font-cairo font-black text-gold-light">
+                      استعدوا — بانتظار المقدم يبدأ دقيقتين
+                    </p>
+                  )}
+                </div>
+              </TimerRing>
             ) : (
               <TimerRing
                 startedAt={st.questionStartedAt ?? 0}
-                total={match.timer + (st.extraTimeUsed ? 15 : 0)}
-                active={st.phase === "question" && !viewing && match.timer > 0}
+                total={timerTotal}
+                active={timerRunning && timerTotal > 0}
               >
               <div
                 className={`glass-card w-full p-6 sm:p-8 transition-shadow duration-500 ${
@@ -319,7 +329,7 @@ export default function TvScreen() {
                 )}
                 {q.type === "flag" && !st.assistUsed && st.phase !== "revealed" && (
                   <p className="mt-6 text-center text-muted-foreground font-cairo text-xl">
-                    الفريق يجاوب شفهياً… أو يطلب «اختيار من الإجابات» من جهازه بربع النقاط
+                    الفريق يجاوب شفهياً… أو يطلب أربعة خيارات بنصف النقاط
                   </p>
                 )}
               </div>

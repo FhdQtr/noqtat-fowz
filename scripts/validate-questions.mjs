@@ -6,6 +6,19 @@ const questions = JSON.parse(
 
 const errors = [];
 const ids = new Set();
+const activeTexts = new Map();
+
+function normalizedQuestion(value) {
+  return String(value)
+    .normalize("NFKD")
+    .replace(/[ًٌٍَُِّْـ]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/^(ما هو|ما هي)\s+/, "")
+    .trim();
+}
 
 for (const [index, q] of questions.entries()) {
   const at = `السؤال ${q.id ?? `عند الصف ${index + 1}`}`;
@@ -24,9 +37,17 @@ for (const [index, q] of questions.entries()) {
     if (!Number.isInteger(q.answer) || q.answer < 0 || q.answer >= q.options.length) {
       errors.push(`${at}: فهرس الإجابة خارج الخيارات`);
     }
+  } else if (!q.disabled && !["qatari", "gulf"].includes(q.region)) {
+    errors.push(`${at}: المثل المفعّل يجب تصنيفه قطرياً أو خليجياً`);
   }
   if (q.video && (!q.video.youtubeId || q.video.end <= q.video.start)) {
     errors.push(`${at}: بيانات الفيديو غير صحيحة`);
+  }
+  if (!q.disabled && q.type !== "flag") {
+    const textKey = `${q.type}:${normalizedQuestion(q.question)}`;
+    const duplicateId = activeTexts.get(textKey);
+    if (duplicateId) errors.push(`${at}: مكرر بالمعنى مع السؤال ${duplicateId}`);
+    else activeTexts.set(textKey, q.id);
   }
 }
 
@@ -37,4 +58,5 @@ if (errors.length) {
 }
 
 const byType = Object.groupBy(questions, (q) => q.type);
-console.log(`بنك الأسئلة سليم: ${questions.length} سؤالاً، ${Object.keys(byType).length} أنواع، ولا توجد معرّفات مكررة.`);
+const activeCount = questions.filter((q) => !q.disabled).length;
+console.log(`بنك الأسئلة سليم: ${activeCount} سؤالاً مفعّلاً من أصل ${questions.length}، ${Object.keys(byType).length} أنواع، ولا توجد معرّفات أو نصوص مكررة.`);

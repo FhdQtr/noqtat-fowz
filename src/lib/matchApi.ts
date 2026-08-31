@@ -2,14 +2,16 @@
 import { get, onValue, ref, type Unsubscribe } from "firebase/database";
 import { httpsCallable } from "firebase/functions";
 import { db, ensureAuth, functions } from "./firebase";
-import type { Match, Player, QuestionLevel, QuestionType, TeamColor } from "../types/game";
+import type { AnswerMode, DifficultyMode, Match, Player, QuestionLevel, QuestionType, TeamColor } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 
 export interface CreateMatchOptions {
   hostName: string;
   teamNames: string[];
-  totalRounds: number;
+  questionsPerTeam: number;
   timer: number;
+  difficulty: DifficultyMode;
+  answerMode: AnswerMode;
   enabledTypes: QuestionType[];
 }
 
@@ -17,9 +19,11 @@ type ActionName =
   | "createMatch" | "joinTeam" | "leaveMatch" | "startMatch" | "chooseType"
   | "submitAnswer" | "useAssist" | "judgeVerbal" | "revealAnswer"
   | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
-  | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch";
+  | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
+  | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer";
 
-function levelForPick(n: number): QuestionLevel {
+function levelForPick(n: number, difficulty: DifficultyMode = "mixed"): QuestionLevel {
+  if (difficulty !== "mixed") return difficulty;
   return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
 }
 
@@ -185,18 +189,29 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
     used,
     cap,
     left: Math.max(0, cap - used),
-    nextLevel: levelForPick(used + 1),
+    nextLevel: levelForPick(used + 1, match.difficulty ?? "mixed"),
     nextPoints: pointsForPick(used + 1),
     available: used < cap,
   };
 }
 
 export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "error"> {
+  const requestId = typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" }>("chooseType", { matchCode, type, requestId });
   try {
-    const result = await gameAction<{ status: "accepted" | "late" | "cap" | "empty" }>("chooseType", { matchCode, type });
+    const result = await send();
     return result.status;
   } catch {
-    return "error";
+    // نفس requestId يجعل الإعادة آمنة حتى لو وصل الطلب الأول وفقد الرد.
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+    try {
+      const result = await send();
+      return result.status;
+    } catch {
+      return "error";
+    }
   }
 }
 
@@ -257,6 +272,30 @@ export async function deleteMatch(matchCode: string) {
 
 export async function setCaptain(matchCode: string, teamCode: string, playerId: string | null) {
   await gameAction("setCaptain", { matchCode, teamCode, playerId });
+}
+
+export async function setAnswerMode(matchCode: string, answerMode: AnswerMode) {
+  await gameAction("setAnswerMode", { matchCode, answerMode });
+}
+
+export async function submitHostAnswer(matchCode: string, choice: number): Promise<"accepted" | "late"> {
+  const result = await gameAction<{ status: "accepted" | "late" }>("submitHostAnswer", { matchCode, choice });
+  return result.status;
+}
+
+export async function startQuestionTimer(matchCode: string) {
+  await gameAction("startQuestionTimer", { matchCode });
+}
+
+export async function getHostAnswer(matchCode: string): Promise<number | null> {
+  // حالة السؤال تصل لحظياً قبل كتابة السر بجزء بسيط من الثانية أحياناً.
+  // نعيد القراءة فترة قصيرة حتى لا تبقى إجابة العلم فارغة عند المقدم.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const result = await gameAction<{ answer: number | null }>("getHostAnswer", { matchCode });
+    if (result.answer !== null) return result.answer;
+    if (attempt < 4) await new Promise((resolve) => window.setTimeout(resolve, 150 * (attempt + 1)));
+  }
+  return null;
 }
 
 export async function startSoloChallenge(): Promise<{ sessionId: string; questions: import("../types/game").Question[] }> {

@@ -10,7 +10,7 @@ import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import { createMatch } from "../lib/matchApi";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useCustomTypes } from "../lib/useCustomBank";
-import type { QuestionType } from "../types/game";
+import type { AnswerMode, DifficultyMode, QuestionType } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 
 const TEAM_COLOR_ORDER = ["maroon", "emerald", "royal", "gold"] as const;
@@ -27,8 +27,19 @@ const TYPE_OPTIONS: { id: QuestionType; label: string }[] = [
   { id: "acting", label: "مثّل المثل" },
 ];
 
-const ROUND_OPTIONS = [8, 12, 16, 20];
+const QUESTIONS_PER_TEAM_OPTIONS = [4, 6, 8, 10];
 const TIMER_OPTIONS = [10, 15, 20, 30, 40, 50, 60];
+const DIFFICULTY_OPTIONS: { id: DifficultyMode; label: string }[] = [
+  { id: "easy", label: "سهل" },
+  { id: "medium", label: "متوسط" },
+  { id: "hard", label: "صعب" },
+  { id: "mixed", label: "متنوع" },
+];
+const ANSWER_MODE_OPTIONS: { id: AnswerMode; label: string; hint: string }[] = [
+  { id: "representative", label: "ممثل الفريق", hint: "شخص واحد من كل فريق يثبت الإجابة" },
+  { id: "host", label: "المقدم فقط", hint: "الفرق تختار النوع والمقدم يثبت الإجابة" },
+  { id: "anyone", label: "أي لاعب", hint: "أول لاعب من الفريق يضغط يثبت الإجابة" },
+];
 
 export default function HostSetup() {
   const nav = useNavigate();
@@ -36,8 +47,10 @@ export default function HostSetup() {
   const [hostName, setHostName] = useState("");
   const [teamCount, setTeamCount] = useState(2);
   const [teamNames, setTeamNames] = useState<string[]>(["", ""]);
-  const [totalRounds, setTotalRounds] = useState(12);
+  const [questionsPerTeam, setQuestionsPerTeam] = useState(8);
   const [timer, setTimer] = useState(0);
+  const [difficulty, setDifficulty] = useState<DifficultyMode>("medium");
+  const [answerMode, setAnswerMode] = useState<AnswerMode>("representative");
   const [types, setTypes] = useState<QuestionType[]>(TYPE_OPTIONS.map((t) => t.id));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -82,8 +95,10 @@ export default function HostSetup() {
         createMatch({
           hostName,
           teamNames: teamNames.map((n, i) => n.trim() || `فريق ${["العنابي", "الأخضر", "الأزرق", "الذهبي"][i]}`),
-          totalRounds,
+          questionsPerTeam,
           timer,
+          difficulty,
+          answerMode,
           enabledTypes: types,
         }),
         new Promise<never>((_, rej) =>
@@ -165,20 +180,60 @@ export default function HostSetup() {
             })}
           </div>
 
-          {/* عدد الأسئلة */}
-          <label className="block text-sm font-bold mb-2 text-gold-light/90">عدد الأسئلة</label>
+          {/* عدد الأسئلة لكل فريق */}
+          <label className="block text-sm font-bold mb-2 text-gold-light/90">عدد الأسئلة لكل فريق</label>
           <div className="flex gap-2 mb-6">
-            {ROUND_OPTIONS.map((n) => (
+            {QUESTIONS_PER_TEAM_OPTIONS.map((n) => (
               <button
                 key={n}
-                onClick={() => setTotalRounds(n)}
+                onClick={() => setQuestionsPerTeam(n)}
                 className={`flex-1 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
-                  totalRounds === n
+                  questionsPerTeam === n
                     ? "bg-gold/20 border-gold text-gold-light"
                     : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
                 }`}
               >
                 {n}
+              </button>
+            ))}
+          </div>
+          <p className="-mt-4 mb-6 text-xs text-muted-foreground">
+            المجموع: {questionsPerTeam * teamCount} سؤال · كل فريق له {questionsPerTeam} أسئلة
+          </p>
+
+          {/* مستوى المسابقة */}
+          <label className="block text-sm font-bold mb-2 text-gold-light/90">مستوى الأسئلة</label>
+          <div className="grid grid-cols-4 gap-2 mb-6">
+            {DIFFICULTY_OPTIONS.map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setDifficulty(id)}
+                className={`rounded-xl py-2.5 font-cairo font-bold border transition-all ${
+                  difficulty === id
+                    ? "bg-gold/20 border-gold text-gold-light"
+                    : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* من يثبت الإجابة */}
+          <label className="block text-sm font-bold mb-2 text-gold-light/90">من يثبت الإجابة؟</label>
+          <div className="grid gap-2 mb-6">
+            {ANSWER_MODE_OPTIONS.map(({ id, label, hint }) => (
+              <button
+                key={id}
+                onClick={() => setAnswerMode(id)}
+                className={`rounded-xl px-4 py-3 text-right font-cairo border transition-all ${
+                  answerMode === id
+                    ? "bg-gold/20 border-gold text-gold-light"
+                    : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
+                }`}
+              >
+                <span className="block font-bold">{label}</span>
+                <span className="block mt-0.5 text-xs opacity-75">{hint}</span>
               </button>
             ))}
           </div>
@@ -247,8 +302,8 @@ export default function HostSetup() {
             </p>
           )}
           <p className="text-xs text-muted-foreground leading-relaxed mb-8">
-            في كل دور، الفريق يختار نوع سؤاله من الأنواع المفعّلة — أول سؤال من النوع سهل بـ٥٠ نقطة،
-            وكل ما كرر نفس النوع صار أصعب ونقاطه أكثر (١٠٠، ١٥٠…)، وفي حد أقصى لكل نوع علشان تتنوع الأسئلة.
+            في كل دور يختار الفريق نوع سؤاله من الأنواع المفعّلة. مستوى السؤال يتبع اختيارك أعلاه،
+            وتزيد قيمة النوع كلما كرره الفريق، مع حد أقصى يحافظ على تنوع المسابقة.
           </p>
 
           {err && (

@@ -3,14 +3,16 @@ import { useNavigate, useParams } from "react-router";
 import {
   Tv, Play, Users, Crown, Eye, Repeat2, SkipForward,
   Trophy, Loader2, LogOut, Timer, CheckCircle2, XCircle, Share2, Trash2, WifiOff,
-  HelpCircle, MessageSquare, EyeOff, Drama, Zap,
+  HelpCircle, MessageSquare, EyeOff, Drama, Zap, ListChecks, PlayCircle,
 } from "lucide-react";
 import {
   subscribeMatch, startMatch, chooseType, revealAnswer, judgeVerbal,
   passToNextTeam, advanceTurn, endMatch, deleteMatch, typeProgress, setCaptain,
+  setAnswerMode, submitHostAnswer, startQuestionTimer, useAssist as requestAssist,
+  getHostAnswer,
 } from "../lib/matchApi";
-import type { Match } from "../types/game";
-import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionPoints } from "../types/game";
+import type { AnswerMode, Match } from "../types/game";
+import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionPoints, questionTimerSeconds } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
@@ -18,6 +20,7 @@ import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/Questi
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 import QuestionTypeIcon from "../components/QuestionTypeIcon";
+import { ANSWER_LETTERS } from "../lib/answers";
 
 const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
 
@@ -29,10 +32,24 @@ export default function HostRoom() {
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [connErr, setConnErr] = useState("");
+  const [hostAnswer, setHostAnswer] = useState<number | null>(null);
   const prevPhase = useRef<string>("");
   const lastTimerSecond = useRef<number | null>(null);
 
   useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
+
+  const questionId = match?.state.question?.id ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    if (questionId === null) {
+      setHostAnswer(null);
+      return () => { cancelled = true; };
+    }
+    void getHostAnswer(code)
+      .then((answer) => { if (!cancelled) setHostAnswer(answer); })
+      .catch(() => { if (!cancelled) setHostAnswer(null); });
+    return () => { cancelled = true; };
+  }, [code, questionId]);
 
   const players = useMemo(() => Object.values(match?.players ?? {}), [match]);
 
@@ -45,13 +62,14 @@ export default function HostRoom() {
   // مؤقت السؤال (اختياري)
   useEffect(() => {
     lastTimerSecond.current = null;
-    if (!match || match.timer === 0 || match.state.phase !== "question" || !match.state.questionStartedAt) {
+    const duration = match ? questionTimerSeconds(match) : 0;
+    if (!match || duration === 0 || match.state.phase !== "question" || !match.state.questionStartedAt) {
       setTimeLeft(null);
       return;
     }
     const tick = () => {
       const elapsed = Math.floor((Date.now() - match.state.questionStartedAt!) / 1000);
-      const total = match.timer + (match.state.extraTimeUsed ? 15 : 0);
+      const total = duration + (match.state.extraTimeUsed ? 15 : 0);
       const left = Math.max(0, total - elapsed);
       if (left !== lastTimerSecond.current) {
         setTimeLeft(left);
@@ -123,6 +141,14 @@ export default function HostRoom() {
   // مثّل المثل: حكم شفهي دائماً (الفريق يخمّن والمقدم يحكم)
   const actingVerbal = st.question?.type === "acting" && st.phase === "question";
   const verbalJudge = flagVerbal || actingVerbal;
+  const actingTimerWaiting = actingVerbal && !st.questionStartedAt;
+  const hostCanSelect = match.answerMode === "host"
+    && st.phase === "question"
+    && st.question?.type !== "acting"
+    && !(st.question?.type === "flag" && !st.assistUsed);
+  const missingRepresentatives = match.answerMode === "representative"
+    ? teams.some((team) => !team.captainId || !match.players?.[team.captainId])
+    : false;
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -211,6 +237,14 @@ export default function HostRoom() {
         </div>
         <p className="mt-2 text-xs text-muted-foreground">كل لاعب يمسح QR حق فريقه ويدخل مباشرة</p>
 
+        <div className="mt-6 w-full max-w-3xl">
+          <AnswerModeControls
+            value={match.answerMode ?? "anyone"}
+            disabled={busy}
+            onChange={(mode) => act(() => setAnswerMode(code, mode))}
+          />
+        </div>
+
         {/* بطاقات الفرق مع QR */}
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-5 w-full max-w-3xl">
           {teams.map((t) => {
@@ -232,7 +266,7 @@ export default function HostRoom() {
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
                     <Users className="w-3.5 h-3.5" />
                     <span>{members.length} لاعب</span>
-                    <span className="text-muted-foreground/60">— اضغط على الاسم لتعيينه قائداً</span>
+                    <span className="text-muted-foreground/60">— اضغط على الاسم لتعيينه ممثل الفريق</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 min-h-[28px]">
                     {members.map((p) => {
@@ -241,7 +275,7 @@ export default function HostRoom() {
                         <button
                           key={p.id}
                           onClick={() => setCaptain(code, t.code, isCap ? null : p.id)}
-                          title={isCap ? "إلغاء القيادة" : "تعيين قائداً"}
+                          title={isCap ? "إلغاء التعيين" : "تعيين ممثل الفريق"}
                           className={`rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in transition-all flex items-center gap-1 ${
                             isCap ? "ring-2 ring-gold scale-105" : "hover:scale-105"
                           }`}
@@ -260,7 +294,7 @@ export default function HostRoom() {
                   </div>
                   {t.captainId && (
                     <p className="mt-1.5 text-[11px] text-gold-light/80 font-cairo">
-                      القائد هو الوحيد اللي يختار النوع ويجاوب — الباقي يشوفون ويتناقشون معه
+                      ممثل الفريق هو الوحيد الذي يثبت الإجابة في وضع «ممثل الفريق»
                     </p>
                   )}
                 </div>
@@ -271,11 +305,15 @@ export default function HostRoom() {
 
         <button
           onClick={() => act(() => startMatch(code, match.teamOrder[0]))}
-          disabled={busy || players.length === 0}
+          disabled={busy || players.length === 0 || missingRepresentatives}
           className="btn-gold shine mt-10 text-lg px-10 flex items-center gap-2"
         >
           <Play className="w-5 h-5" />
-          {players.length === 0 ? "بانتظار دخول اللاعبين…" : "ابدأ المسابقة"}
+          {players.length === 0
+            ? "بانتظار دخول اللاعبين…"
+            : missingRepresentatives
+              ? "عيّن ممثلاً لكل فريق"
+              : "ابدأ المسابقة"}
         </button>
       </div>
     );
@@ -311,11 +349,20 @@ export default function HostRoom() {
         </div>
       )}
 
-      {/* قادة الفرق — الحكم يقدر يغيّر القائد في أي وقت */}
+      <div className="mb-4">
+        <AnswerModeControls
+          value={match.answerMode ?? "anyone"}
+          disabled={busy}
+          compact
+          onChange={(mode) => act(() => setAnswerMode(code, mode))}
+        />
+      </div>
+
+      {/* ممثلو الفرق — الحكم يقدر يغيّر الممثل في أي وقت */}
       <details className="mb-4 glass-card !p-0 overflow-hidden">
         <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-cairo font-bold text-gold-light/90 flex items-center gap-2">
           <Crown className="w-3.5 h-3.5" />
-          قادة الفرق — اضغط لتعيين أو تغيير (القائد هو الوحيد اللي يختار ويجاوب من جهازه)
+          ممثلو الفرق — اضغط لتعيين أو تغيير من يثبت الإجابة
         </summary>
         <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-gold-faint/20">
           {teams.map((t) => {
@@ -430,7 +477,7 @@ export default function HostRoom() {
             )}
             <span className="text-xs text-muted-foreground">
               قيمة السؤال: {questionPoints(st)} نقطة
-              {st.assistUsed ? " (ربع — استخدموا المساعدة)" : ""}
+              {st.assistUsed ? " (نصف — ظهرت الخيارات)" : ""}
               {st.pointMultiplier === 2 ? " (بطاقة المضاعفة ×٢)" : ""}
             </span>
           </div>
@@ -463,6 +510,18 @@ export default function HostRoom() {
               <p className="font-cairo font-black text-3xl sm:text-4xl leading-relaxed text-gold-gradient">
                 «{st.question.question}»
               </p>
+              {actingTimerWaiting ? (
+                <button
+                  onClick={() => act(() => startQuestionTimer(code))}
+                  disabled={busy}
+                  className="btn-gold shine mx-auto mt-5 flex items-center gap-2 text-lg"
+                >
+                  <PlayCircle className="h-5 w-5" />
+                  ابدأ دقيقتين
+                </button>
+              ) : (
+                <p className="mt-4 font-cairo font-bold text-gold-light">بدأ مؤقت الدقيقتين عند الجميع</p>
+              )}
             </div>
           )}
 
@@ -474,18 +533,35 @@ export default function HostRoom() {
             {/* المقدم يشوف الإجابة للحكم الشفهي في الأعلام */}
             {st.question.type === "flag" && st.phase !== "revealed" && (
               <p className="mt-3 text-center text-sm font-cairo font-bold text-emerald2-light">
-                الإجابة الصحيحة: {st.question.options[st.question.answer]}
+                الإجابة الصحيحة: {hostAnswer === null ? "جاري التحميل…" : st.question.options[hostAnswer]}
               </p>
             )}
             {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة — والتمثيل بلا خيارات أصلاً */}
             {st.question.type !== "acting" &&
               !(st.question.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
               <div className="mt-6">
-                <OptionsDisplay
-                  q={st.question}
-                  chosen={st.answer?.choice ?? null}
-                  reveal={st.phase === "revealed"}
-                />
+                {hostCanSelect ? (
+                  <div className="m-answer-grid" data-count={st.question.options.length} data-size="regular">
+                    {st.question.options.map((option, index) => (
+                      <button
+                        key={index}
+                        onClick={() => act(() => submitHostAnswer(code, index))}
+                        disabled={busy}
+                        className="m-answer-option m-answer-option--interactive"
+                        data-state="default"
+                      >
+                        <span className="m-answer-option__label" aria-hidden="true">{ANSWER_LETTERS[index]}</span>
+                        <span className="m-answer-option__text">{option}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <OptionsDisplay
+                    q={st.question}
+                    chosen={st.answer?.choice ?? null}
+                    reveal={st.phase === "revealed"}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -508,7 +584,7 @@ export default function HostRoom() {
               <div className="flex gap-3 flex-wrap justify-center">
                 <button
                   onClick={() => act(() => judgeVerbal(code, match, true))}
-                  disabled={busy || viewing}
+                  disabled={busy || viewing || actingTimerWaiting}
                   className="btn-gold shine flex items-center gap-2 text-lg px-8"
                 >
                   <CheckCircle2 className="w-5 h-5" />
@@ -516,7 +592,7 @@ export default function HostRoom() {
                 </button>
                 <button
                   onClick={() => act(() => judgeVerbal(code, match, false))}
-                  disabled={busy || viewing}
+                  disabled={busy || viewing || actingTimerWaiting}
                   className="btn-maroon flex items-center gap-2 text-lg px-8"
                 >
                   <XCircle className="w-5 h-5" />
@@ -524,7 +600,17 @@ export default function HostRoom() {
                 </button>
               </div>
               {flagVerbal && (
-                <p className="text-xs text-muted-foreground">أو عندهم خيار «اختيار من الإجابات» في أجهزتهم بربع النقاط</p>
+                <>
+                  <button
+                    onClick={() => act(() => requestAssist(code, st.targetTeam!))}
+                    disabled={busy || viewing}
+                    className="btn-ghost-gold flex items-center gap-2"
+                  >
+                    <ListChecks className="h-4 w-4" />
+                    إظهار 4 خيارات (نصف النقاط)
+                  </button>
+                  <p className="text-xs text-muted-foreground">إذا طلب الفريق الخيارات تصبح قيمة السؤال نصف النقاط</p>
+                </>
               )}
             </div>
           )}
@@ -586,6 +672,51 @@ export default function HostRoom() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const ANSWER_MODE_LABELS: Record<AnswerMode, { label: string; hint: string }> = {
+  representative: { label: "ممثل الفريق", hint: "شخص محدد من كل فريق يثبت الإجابة" },
+  host: { label: "المقدم فقط", hint: "الفرق تختار النوع والمقدم يثبت الإجابة" },
+  anyone: { label: "أي لاعب", hint: "أول لاعب يضغط يثبت الإجابة" },
+};
+
+function AnswerModeControls({
+  value,
+  disabled,
+  compact = false,
+  onChange,
+}: {
+  value: AnswerMode;
+  disabled: boolean;
+  compact?: boolean;
+  onChange: (mode: AnswerMode) => void;
+}) {
+  return (
+    <div className={`glass-card ${compact ? "p-3" : "p-4"}`}>
+      <p className="mb-2 text-xs font-bold text-gold-light">من يثبت الإجابة؟</p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {(Object.keys(ANSWER_MODE_LABELS) as AnswerMode[]).map((mode) => {
+          const option = ANSWER_MODE_LABELS[mode];
+          const active = value === mode;
+          return (
+            <button
+              key={mode}
+              onClick={() => onChange(mode)}
+              disabled={disabled || active}
+              className={`rounded-xl border px-3 py-2 text-right font-cairo transition-colors ${
+                active
+                  ? "border-gold bg-gold/20 text-gold-light"
+                  : "border-gold-faint/40 text-muted-foreground hover:border-gold/60"
+              }`}
+            >
+              <span className="block text-sm font-bold">{option.label}</span>
+              {!compact && <span className="mt-0.5 block text-[11px] opacity-75">{option.hint}</span>}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

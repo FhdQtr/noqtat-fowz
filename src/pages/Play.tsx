@@ -8,7 +8,7 @@ import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
 } from "../lib/matchApi";
 import type { Match, Player, QuestionType } from "../types/game";
-import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor } from "../types/game";
+import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
 import LinearTimer from "../components/LinearTimer";
@@ -38,6 +38,7 @@ export default function Play() {
   const [myPick, setMyPick] = useState<number | null>(null);
   const [status, setStatus] = useState<"" | "accepted" | "late">("");
   const [chooseMsg, setChooseMsg] = useState("");
+  const [choosingType, setChoosingType] = useState<QuestionType | null>(null);
   const [cardMsg, setCardMsg] = useState("");
   const [connErr, setConnErr] = useState("");
   const prevPhase = useRef("");
@@ -50,13 +51,18 @@ export default function Play() {
   const isMyTurn = st?.phase === "question" && st.targetTeam === teamCode;
   const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
 
-  // قائد الفريق — لو معيّن، هو الوحيد اللي يختار النوع ويجاوب
+  // ممثل الفريق يثبت الإجابة فقط؛ اختيار نوع السؤال متاح لكل أعضاء الفريق.
   const allPlayers = Object.values(match?.players ?? {});
   const captainIdRaw = team?.captainId ?? null;
   const captain = captainIdRaw ? allPlayers.find((p) => p.id === captainIdRaw) ?? null : null;
   const captainId = captain ? captainIdRaw : null; // لو القائد غادر نعتبرها بدون قائد
   const captainName = captain?.name ?? null;
-  const isCaptain = !captainId || captainId === player?.id;
+  const answerMode = match?.answerMode ?? "anyone";
+  const canAnswer = answerMode === "host"
+    ? false
+    : answerMode === "representative"
+      ? captainId === player?.id
+      : true;
 
   // ساعة حيّة لعدّاد معاينة الصور
   const now = useNow(
@@ -73,7 +79,10 @@ export default function Play() {
         setStatus("");
         if (st.targetTeam === teamCode) sfx.questionIn();
       }
-      if (st.phase === "choose") setChooseMsg("");
+      if (st.phase === "choose") {
+        setChooseMsg("");
+        setChoosingType(null);
+      }
       if (st.phase === "revealed") {
         if (st.isCorrect) sfx.correct();
         else sfx.wrong();
@@ -102,7 +111,7 @@ export default function Play() {
   };
 
   const answer = async (i: number) => {
-    if (!player || !isMyTurn || myPick !== null || !isCaptain) return;
+    if (!player || !isMyTurn || myPick !== null || !canAnswer) return;
     setMyPick(i);
     unlockAudio();
     const res = await submitAnswer(matchCode, player.id, player.name, i);
@@ -111,12 +120,27 @@ export default function Play() {
   };
 
   const pickType = async (t: QuestionType) => {
-    if (!isCaptain) return;
+    if (choosingType) return;
+    setChoosingType(t);
+    setChooseMsg("جاري اختيار السؤال…");
     unlockAudio();
-    const res = await chooseType(matchCode, t);
-    if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
-    else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
-    else if (res === "accepted") sfx.lock();
+    let accepted = false;
+    try {
+      const res = await chooseType(matchCode, t);
+      if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
+      else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
+      else if (res === "empty") setChooseMsg("لا توجد أسئلة متاحة من هذا النوع والمستوى");
+      else if (res === "error") setChooseMsg("تعذّر تحميل السؤال — اضغط مرة أخرى");
+      else if (res === "accepted") {
+        accepted = true;
+        setChooseMsg("تم اختيار السؤال");
+        sfx.lock();
+      }
+    } finally {
+      // بعد قبول الطلب نبقي الأزرار مقفلة حتى تصل حالة السؤال من Firebase.
+      // هذا يمنع النقر الثاني في بعض أجهزة أندرويد عند بطء التحديث اللحظي.
+      if (!accepted) setChoosingType(null);
+    }
   };
 
   const askAssist = async () => {
@@ -233,6 +257,9 @@ export default function Play() {
   const visual = q ? viewSecondsFor(q) !== null : false; // مشاهدة أولاً: ذاكرة/أعلام/فيديو
   const viewing = !!(st!.viewUntil && now < st!.viewUntil);
   const viewLeft = st!.viewUntil ? Math.max(0, Math.ceil((st!.viewUntil - now) / 1000)) : 0;
+  const timerTotal = questionTimerSeconds(match) + (st!.extraTimeUsed ? 15 : 0);
+  const timerRunning = st!.phase === "question" && !!st!.questionStartedAt && !viewing;
+  const actingTimerWaiting = q?.type === "acting" && st!.phase === "question" && !st!.questionStartedAt;
 
   // ═══ الشاشة الرئيسية للاعب ═══
   return (
@@ -274,15 +301,7 @@ export default function Play() {
 
         {/* ═══ اختيار نوع السؤال ═══ */}
         {match.status === "playing" && st!.phase === "choose" && (
-          isMyChoose && !isCaptain ? (
-            <div className="text-center animate-fade-up">
-              <Crown className="w-10 h-10 text-gold-light mx-auto mb-3 animate-pulse" />
-              <p className="font-cairo text-lg">
-                القائد <strong className="text-gold-light">{captainName}</strong> يختار نوع السؤال…
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">تناقشوا معه وقلوا له وش تبون</p>
-            </div>
-          ) : isMyChoose ? (
+          isMyChoose ? (
             <div className="w-full flex flex-col gap-4 animate-fade-up">
               <div className="text-center">
                 <span className="inline-flex items-center gap-2 rounded-full px-5 py-2 border-2 font-cairo font-black animate-pulse-gold"
@@ -299,11 +318,15 @@ export default function Play() {
                     <button
                       key={t}
                       onClick={() => pickType(t)}
-                      disabled={!pr.available}
-                      className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35"
+                      disabled={!pr.available || choosingType !== null}
+                      className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35 touch-manipulation"
                       style={{ borderColor: `${c.hex}66` }}
                     >
-                      {t.startsWith("ct_") ? <HelpCircle className="h-10 w-10 p-2 text-gold-light" /> : <QuestionTypeIcon type={t} className="h-12 w-12" />}
+                      {choosingType === t
+                        ? <Loader2 className="h-10 w-10 animate-spin text-gold-light" />
+                        : t.startsWith("ct_")
+                          ? <HelpCircle className="h-10 w-10 p-2 text-gold-light" />
+                          : <QuestionTypeIcon type={t} className="h-12 w-12" />}
                       <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>
                       <span className="text-xs text-muted-foreground">
                         {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
@@ -347,7 +370,7 @@ export default function Play() {
                   </span>
                 </div>
 
-                {(team.powerCards?.doublePoints || (team.powerCards?.extraTime && match.timer > 0)) && st!.phase === "question" && !st!.answer && (
+                {(team.powerCards?.doublePoints || (q.type !== "acting" && team.powerCards?.extraTime && timerTotal > 0)) && st!.phase === "question" && !st!.answer && (
                   <div className="arena-panel flex flex-wrap items-center justify-center gap-2 p-3">
                     <span className="w-full text-center text-xs font-bold text-stone-400">بطاقاتكم التكتيكية — كل بطاقة مرة واحدة في المباراة</span>
                     {team.powerCards?.doublePoints && (
@@ -355,7 +378,7 @@ export default function Play() {
                         <Zap className="h-4 w-4" /> ضاعف النقاط ×٢
                       </button>
                     )}
-                    {team.powerCards?.extraTime && match.timer > 0 && (
+                    {q.type !== "acting" && team.powerCards?.extraTime && timerTotal > 0 && (
                       <button onClick={() => void activateCard("extraTime")} className="btn-ghost-gold !px-3 !py-2 text-xs flex items-center gap-1.5">
                         <Clock3 className="h-4 w-4" /> +١٥ ثانية
                       </button>
@@ -399,15 +422,29 @@ export default function Play() {
                         <p className="text-sm text-muted-foreground">
                           قولوا تخمينكم بصوت عالي والمقدم يحكم
                         </p>
+                        {actingTimerWaiting ? (
+                          <p className="rounded-full border border-gold/50 bg-gold/10 px-4 py-2 font-cairo font-bold text-gold-light">
+                            استعدوا — المقدم سيبدأ مؤقت الدقيقتين
+                          </p>
+                        ) : (
+                          <div className="w-full">
+                            <LinearTimer
+                              startedAt={st!.questionStartedAt ?? 0}
+                              total={timerTotal}
+                              active={timerRunning}
+                              big
+                            />
+                          </div>
+                        )}
                       </div>
                     ) : (
                     <>
                     {/* المؤقت: خط مستقيم + عد تنازلي — واضح للكل */}
-                    {match.timer > 0 && (
+                    {timerTotal > 0 && st!.questionStartedAt && (
                       <LinearTimer
                         startedAt={st!.questionStartedAt ?? 0}
-                        total={match.timer + (st!.extraTimeUsed ? 15 : 0)}
-                        active={st!.phase === "question"}
+                        total={timerTotal}
+                        active={timerRunning}
                         big
                       />
                     )}
@@ -434,17 +471,19 @@ export default function Play() {
                         <p className="font-cairo font-bold leading-relaxed">
                           قولوا الإجابة <span className="text-gold-light">شفهياً</span> للمقدم وخذوا الدرجة كاملة
                         </p>
-                        <p className="text-xs text-muted-foreground">ما تعرفون؟ استخدموا المساعدة — الإجابة الصحيحة بربع النقاط فقط</p>
+                        <p className="text-xs text-muted-foreground">ما تعرفون؟ اطلبوا الخيارات الأربعة بنصف قيمة السؤال</p>
                         <button onClick={askAssist} className="btn-ghost-gold flex items-center gap-2">
                           <ListChecks className="w-5 h-5" />
-                          اختيار من الإجابات (ربع النقاط)
+                          إظهار 4 خيارات (نصف النقاط)
                         </button>
                       </div>
                     ) : (
                       <>
-                        {!isCaptain && (
+                        {!canAnswer && (
                           <p className="text-center text-sm font-cairo text-gold-light/90 animate-fade-up">
-                            تناقشوا مع بعض — القائد <strong>{captainName}</strong> هو اللي يثبّت الإجابة
+                            {answerMode === "host"
+                              ? "تناقشوا مع بعض — المقدم هو الذي يثبت الإجابة"
+                              : <>تناقشوا مع بعض — ممثل الفريق <strong>{captainName ?? "لم يُعيّن"}</strong> هو الذي يثبت الإجابة</>}
                           </p>
                         )}
                         <div className="m-answer-grid" data-count={q.options.length} data-size="regular">
@@ -452,7 +491,7 @@ export default function Play() {
                             <button
                               key={i}
                               onClick={() => answer(i)}
-                              disabled={myPick !== null || !isCaptain}
+                              disabled={myPick !== null || !canAnswer}
                               className="m-answer-option m-answer-option--interactive"
                               data-state={myPick === i ? "selected" : "default"}
                               aria-pressed={myPick === i}
@@ -514,15 +553,26 @@ export default function Play() {
                       يمثّل مثل ويخمّنونه…
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">المثل سرّي — ما يظهر إلا بجهاز الممثّل</p>
+                    {actingTimerWaiting ? (
+                      <p className="mt-4 font-cairo font-bold text-gold-light">بانتظار المقدم يبدأ دقيقتين</p>
+                    ) : (
+                      <div className="mt-4">
+                        <LinearTimer
+                          startedAt={st!.questionStartedAt ?? 0}
+                          total={timerTotal}
+                          active={timerRunning}
+                        />
+                      </div>
+                    )}
                   </div>
                 ) : (
                   /* ═══ باقي الفرق تشوف السؤال (قراءة فقط) — جهزوا إجابتكم لو انسرق! ═══ */
                   <div className="w-full flex flex-col gap-4 animate-fade-up">
-                    {match.timer > 0 && st!.phase === "question" && (
+                    {timerTotal > 0 && st!.phase === "question" && st!.questionStartedAt && (
                       <LinearTimer
                         startedAt={st!.questionStartedAt ?? 0}
-                        total={match.timer + (st!.extraTimeUsed ? 15 : 0)}
-                        active
+                        total={timerTotal}
+                        active={timerRunning}
                       />
                     )}
                     <p className="text-center text-sm font-cairo text-muted-foreground">

@@ -1,6 +1,7 @@
 [
  {
-  "id": 1,
+ "id": 1,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "religion",
   "level": "easy",
@@ -14,7 +15,8 @@
   "answer": 0
  },
  {
-  "id": 2,
+ "id": 2,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "religion",
   "level": "easy",
@@ -28,7 +30,8 @@
   "answer": 0
  },
  {
-  "id": 3,
+ "id": 3,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "religion",
   "level": "easy",
@@ -42,7 +45,8 @@
   "answer": 0
  },
  {
-  "id": 4,
+ "id": 4,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "religion",
   "level": "easy",
@@ -70,7 +74,8 @@
   "answer": 0
  },
  {
-  "id": 6,
+ "id": 6,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "language",
   "level": "easy",
@@ -84,7 +89,8 @@
   "answer": 0
  },
  {
-  "id": 7,
+ "id": 7,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "language",
   "level": "easy",
@@ -98,7 +104,8 @@
   "answer": 0
  },
  {
-  "id": 8,
+ "id": 8,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "language",
   "level": "easy",
@@ -112,7 +119,8 @@
   "answer": 0
  },
  {
-  "id": 9,
+ "id": 9,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "language",
   "level": "easy",
@@ -126,7 +134,8 @@
   "answer": 0
  },
  {
-  "id": 10,
+ "id": 10,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "language",
   "level": "easy",
@@ -210,7 +219,8 @@
   "answer": 0
  },
  {
-  "id": 16,
+ "id": 16,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -238,7 +248,8 @@
   "answer": 0
  },
  {
-  "id": 18,
+ "id": 18,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -252,7 +263,8 @@
   "answer": 0
  },
  {
-  "id": 19,
+ "id": 19,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -266,7 +278,8 @@
   "answer": 0
  },
  {
-  "id": 20,
+ "id": 20,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -280,7 +293,8 @@
   "answer": 0
  },
  {
-  "id": 21,
+ "id": 21,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -294,7 +308,8 @@
   "answer": 0
  },
  {
-  "id": 22,
+ "id": 22,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -308,7 +323,8 @@
   "answer": 0
  },
  {
-  "id": 23,
+ "id": 23,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -322,7 +338,8 @@
   "answer": 0
  },
  {
-  "id": 24,
+ "id": 24,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -336,7 +353,8 @@
   "answer": 0
  },
  {
-  "id": 25,
+ "id": 25,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -350,7 +368,8 @@
   "answer": 0
  },
  {
-  "id": 26,
+ "id": 26,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -364,7 +383,8 @@
   "answer": 0
  },
  {
-  "id": 27,
+ "id": 27,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -378,7 +398,8 @@
   "answer": 0
  },
  {
-  "id": 28,
+ "id": 28,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -392,7 +413,8 @@
   "answer": 0
  },
  {
-  "id": 29,
+ "id": 29,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -406,7 +428,8 @@
   "answer": 0
  },
  {
-  "id": 30,
+ "id": 30,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -434,7 +457,8 @@
   "answer": 0
  },
  {
-  "id": 32,
+ "id": 32,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -448,7 +472,8 @@
   "answer": 0
  },
  {
-  "id": 33,
+ "id": 33,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -462,7 +487,8 @@
   "answer": 0
  },
  {
-  "id": 34,
+ "id": 34,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -476,7 +502,8 @@
   "answer": 0
  },
  {
-  "id": 35,
+ "id": 35,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -490,7 +517,8 @@
   "answer": 0
  },
  {
-  "id": 36,
+ "id": 36,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "culture",
   "level": "easy",
@@ -504,7 +532,8 @@
   "answer": 0
  },
  {
-  "id": 37,
+ "id": 37,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "culture",
   "level": "easy",
@@ -1932,7 +1961,8 @@
   "answer": 0
  },
  {
-  "id": 139,
+ "id": 139,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "culture",
   "level": "medium",
@@ -7028,7 +7058,8 @@
   "answer": 2
  },
  {
-  "id": 503,
+ "id": 503,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -7182,7 +7213,8 @@
   "answer": 1
  },
  {
-  "id": 514,
+ "id": 514,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "geography",
   "level": "easy",
@@ -7224,7 +7256,8 @@
   "answer": 1
  },
  {
-  "id": 517,
+ "id": 517,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "geography",
   "level": "easy",
@@ -7336,7 +7369,8 @@
   "answer": 2
  },
  {
-  "id": 525,
+ "id": 525,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "culture",
   "level": "easy",
@@ -7364,7 +7398,8 @@
   "answer": 1
  },
  {
-  "id": 527,
+ "id": 527,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "culture",
   "level": "easy",
@@ -7630,7 +7665,8 @@
   "answer": 2
  },
  {
-  "id": 546,
+ "id": 546,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -7700,7 +7736,8 @@
   "answer": 2
  },
  {
-  "id": 551,
+ "id": 551,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "geography",
   "level": "easy",
@@ -7798,7 +7835,8 @@
   "answer": 1
  },
  {
-  "id": 558,
+ "id": 558,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "medium",
@@ -7882,7 +7920,8 @@
   "answer": 2
  },
  {
-  "id": 564,
+ "id": 564,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "geography",
   "level": "medium",
@@ -8008,7 +8047,8 @@
   "answer": 3
  },
  {
-  "id": 573,
+ "id": 573,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "religion",
   "level": "easy",
@@ -8288,7 +8328,8 @@
   "answer": 0
  },
  {
-  "id": 593,
+ "id": 593,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "sports",
   "level": "easy",
@@ -9128,7 +9169,8 @@
   "answer": 1
  },
  {
-  "id": 653,
+ "id": 653,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "culture",
   "level": "easy",
@@ -9226,7 +9268,8 @@
   "answer": 3
  },
  {
-  "id": 660,
+ "id": 660,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "religion",
   "level": "easy",
@@ -9422,7 +9465,8 @@
   "answer": 1
  },
  {
-  "id": 674,
+ "id": 674,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -10010,7 +10054,8 @@
   "answer": 2
  },
  {
-  "id": 716,
+ "id": 716,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "science",
   "level": "easy",
@@ -11813,7 +11858,8 @@
   "answer": 1
  },
  {
-  "id": 856,
+ "id": 856,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "gulf",
   "level": "easy",
@@ -12331,7 +12377,8 @@
   "answer": 1
  },
  {
-  "id": 893,
+ "id": 893,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "gulf",
   "level": "easy",
@@ -12345,7 +12392,8 @@
   "answer": 0
  },
  {
-  "id": 894,
+ "id": 894,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "gulf",
   "level": "easy",
@@ -12387,7 +12435,8 @@
   "answer": 1
  },
  {
-  "id": 897,
+ "id": 897,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "gulf",
   "level": "easy",
@@ -12457,7 +12506,8 @@
   "answer": 1
  },
  {
-  "id": 902,
+ "id": 902,
+  "disabled": true,
   "type": "multiple_choice",
   "category": "gulf",
   "level": "medium",
@@ -13279,7 +13329,8 @@
   "answer": 0
  },
  {
-  "id": 961,
+ "id": 961,
+  "disabled": true,
   "type": "true_false",
   "category": "science",
   "level": "medium",
@@ -13375,7 +13426,8 @@
   "answer": 1
  },
  {
-  "id": 969,
+ "id": 969,
+  "disabled": true,
   "type": "true_false",
   "category": "geography",
   "level": "easy",
@@ -13447,7 +13499,8 @@
   "answer": 1
  },
  {
-  "id": 975,
+ "id": 975,
+  "disabled": true,
   "type": "true_false",
   "category": "science",
   "level": "easy",
@@ -13603,7 +13656,8 @@
   "answer": 0
  },
  {
-  "id": 988,
+ "id": 988,
+  "disabled": true,
   "type": "riddle",
   "category": "riddles",
   "level": "easy",
@@ -13631,7 +13685,8 @@
   "answer": 1
  },
  {
-  "id": 990,
+ "id": 990,
+  "disabled": true,
   "type": "riddle",
   "category": "riddles",
   "level": "easy",
@@ -13729,7 +13784,8 @@
   "answer": 0
  },
  {
-  "id": 997,
+ "id": 997,
+  "disabled": true,
   "type": "riddle",
   "category": "riddles",
   "level": "easy",
@@ -14498,6 +14554,7 @@
  },
  {
   "id": 6001,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "easy",
@@ -14507,6 +14564,7 @@
  },
  {
   "id": 6002,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "easy",
@@ -14516,6 +14574,7 @@
  },
  {
   "id": 6003,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "easy",
@@ -14525,6 +14584,7 @@
  },
  {
   "id": 6004,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "easy",
@@ -14534,6 +14594,7 @@
  },
  {
   "id": 6005,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "easy",
@@ -14543,6 +14604,7 @@
  },
  {
   "id": 6006,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "easy",
@@ -14552,6 +14614,7 @@
  },
  {
   "id": 6007,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "easy",
@@ -14561,6 +14624,7 @@
  },
  {
   "id": 6008,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "easy",
@@ -14570,6 +14634,7 @@
  },
  {
   "id": 6009,
+  "region": "qatari",
   "type": "acting",
   "category": "proverbs",
   "level": "medium",
@@ -14579,6 +14644,7 @@
  },
  {
   "id": 3010,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "medium",
@@ -14588,6 +14654,7 @@
  },
  {
   "id": 3011,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "medium",
@@ -14597,6 +14664,7 @@
  },
  {
   "id": 3012,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "medium",
@@ -14606,6 +14674,7 @@
  },
  {
   "id": 3013,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "medium",
@@ -14615,6 +14684,7 @@
  },
  {
   "id": 3014,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "medium",
@@ -14624,6 +14694,7 @@
  },
  {
   "id": 3015,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "medium",
@@ -14633,6 +14704,7 @@
  },
  {
   "id": 3016,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "medium",
@@ -14642,6 +14714,7 @@
  },
  {
   "id": 3017,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "hard",
@@ -14651,6 +14724,7 @@
  },
  {
   "id": 3018,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "hard",
@@ -14660,6 +14734,7 @@
  },
  {
   "id": 3019,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "hard",
@@ -14669,6 +14744,7 @@
  },
  {
   "id": 3020,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "hard",
@@ -14678,6 +14754,7 @@
  },
  {
   "id": 3021,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "hard",
@@ -14687,6 +14764,7 @@
  },
  {
   "id": 3022,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "hard",
@@ -14696,6 +14774,7 @@
  },
  {
   "id": 3023,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "hard",
@@ -14705,10 +14784,301 @@
  },
  {
   "id": 3024,
+  "disabled": true,
   "type": "acting",
   "category": "proverbs",
   "level": "hard",
   "question": "البخيل ما ينفع معه طب",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6101,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "الباب اللي يجيك منه الريح سده واستريح",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6102,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "ما يعرف كوعه من بوعه",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6103,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "بغى يكحلها عماها",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6104,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "بغاها طرب صارت نشب",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6105,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "حاميها حراميها",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6106,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "طارت الطيور بأرزاقها",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6107,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "الشمس ما يغطيها المنخل",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6108,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "الضرب في الميت حرام",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6109,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "الفضول قتل العيوز",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6110,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "easy",
+  "question": "ردت حليمة لعادتها القديمة",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6111,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "اللي ماله أول ماله تالي",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6112,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "ما حك جلدك إلا ظفرك",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6113,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "بات مظلوم ولا تبات ظالم",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6114,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "أذنك من وين يا جحا؟",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6115,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "البيت من ساسه",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6116,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "الثوب اللي أطول منك يتعبك",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6117,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "الرجال مخابر مب مظاهر",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6118,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "اللي ما يعرفك ما يثمنك",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6119,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "medium",
+  "question": "إذا كثروا الرعيان ضاعت الغنم",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6120,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "اصبر على مجنونك لا يجيك الأجن منه",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6121,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "انفخ يا شريم قال ماكو برطم",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6122,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "تجيك التهايم وإنت نايم",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6123,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "خبز خبزتيه يا الرفلة إكليه",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6124,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "شبعونا طراقات وشبعناهم شتايم",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6125,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "إيش حادك يا المسمار؟ قال المطرقة",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6126,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "البيض ما يلاطم حجر",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6127,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "تموت الدجاجة وعينها بالسبوس",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6128,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "جرح السيف يبرى وجرح الكلام ما يبرى",
+  "options": [],
+  "answer": 0
+ },
+ {
+  "id": 6129,
+  "region": "qatari",
+  "type": "acting",
+  "category": "proverbs",
+  "level": "hard",
+  "question": "حلاة الثوب رقعته منه وفيه",
   "options": [],
   "answer": 0
  }

@@ -62,6 +62,18 @@ function canChoose(match, uid, teamCode) {
   const players = Object.values(match.players || {}).filter((player) => player.authUid === uid && player.teamCode === teamCode);
   return players.length > 0;
 }
+async function acquireClaim(claimRef, claimId) {
+  const transaction = await claimRef.transaction((currentClaim) => {
+    // Firebase may call a transaction first with null while its local cache is cold.
+    // A missing value is exactly the unlocked state for this small claim node.
+    if (currentClaim === null || currentClaim === undefined || currentClaim === claimId) return claimId;
+    return;
+  }, undefined, false);
+  return transaction.snapshot.val() === claimId;
+}
+async function releaseClaim(claimRef, claimId) {
+  await claimRef.transaction((currentClaim) => currentClaim === claimId ? null : currentClaim, undefined, false);
+}
 async function loadMatch(rawCode) {
   const id = code(rawCode);
   const snapshot = await db.ref(`matches/${id}`).get();
@@ -161,10 +173,10 @@ async function chooseType(uid, data) {
   const { id, match } = await loadMatch(data.matchCode);
   const type = text(data.type, 50);
   const typeKey = dbKey(type);
-  const requestId = text(data.requestId, 80);
+  const requestId = text(data.requestId, 80) || `${uid}_${now()}_${randomInt(100000, 999999)}`;
   const teamCode = match.state.targetTeam || match.teamOrder[match.turnIndex % match.teamOrder.length];
   if (!canChoose(match, uid, teamCode)) fail("permission-denied", "الاختيار للفريق صاحب الدور");
-  if (requestId && match.state.selectionRequestId === requestId) return { status: "accepted" };
+  if (match.state.phase === "question" && match.state.selectionRequestId === requestId) return { status: "accepted" };
   if (match.state.phase !== "choose" || match.state.question) {
     return { status: "late", reason: "initial-state", phase: match.state.phase, hasQuestion: Boolean(match.state.question) };
   }
@@ -182,7 +194,8 @@ async function chooseType(uid, data) {
   if (!pool.length) return { status: "empty" };
 
   // سجل دائم للمقدم: لا نكرر السؤال بين المسابقات حتى ينتهي مخزون النوع/المستوى.
-  const historyRef = db.ref(`hostQuestionHistory/${uid}/${typeKey}/${level}`);
+  const historyOwner = match.hostUid || uid;
+  const historyRef = db.ref(`hostQuestionHistory/${historyOwner}/${typeKey}/${level}`);
   const history = (await historyRef.get()).val() || {};
   let available = pool.filter((q) => !history[q.id]);
   if (!available.length) {
@@ -206,9 +219,20 @@ async function chooseType(uid, data) {
   const viewUntil = seconds ? started + seconds * 1000 : null;
   const isActing = question.type === "acting";
   const stateRef = db.ref(`matches/${id}/state`);
-  const transaction = await stateRef.transaction((latestState) => {
-    if (!latestState || latestState.phase !== "choose" || latestState.question || latestState.targetTeam !== teamCode) return;
-    return {
+  const claimRef = stateRef.child("selectionRequestId");
+  if (!await acquireClaim(claimRef, requestId)) return { status: "late", reason: "claimed" };
+
+  try {
+    const latestState = (await stateRef.get()).val();
+    if (latestState?.phase === "question" && latestState.selectionRequestId === requestId) {
+      return { status: "accepted" };
+    }
+    if (!latestState || latestState.phase !== "choose" || latestState.question || latestState.targetTeam !== teamCode) {
+      await releaseClaim(claimRef, requestId);
+      return { status: "late", reason: "state-changed" };
+    }
+
+    const nextState = {
       ...latestState,
       phase: "question",
       round: latestState.round + 1,
@@ -228,19 +252,19 @@ async function chooseType(uid, data) {
       questionValue: pointsForPick(usedCount + 1),
       usedIds: [...(latestState.usedIds || []), question.id],
     };
-  }, undefined, false);
-  if (!transaction.committed) {
-    const latestState = transaction.snapshot.val();
-    if (requestId && latestState?.selectionRequestId === requestId) return { status: "accepted" };
-    return { status: "late", reason: "transaction" };
-  }
 
-  await db.ref().update({
-    [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
-    [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
-    [`hostQuestionHistory/${uid}/${typeKey}/${level}/${question.id}`]: started,
-  });
-  return { status: "accepted" };
+    // السؤال وإجابته السرية والعدادات تُثبّت معاً، فلا تصل الواجهة إلى سؤال بلا سر.
+    await db.ref().update({
+      [`matches/${id}/state`]: nextState,
+      [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
+      [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
+      [`hostQuestionHistory/${historyOwner}/${typeKey}/${level}/${question.id}`]: started,
+    });
+    return { status: "accepted" };
+  } catch (error) {
+    await releaseClaim(claimRef, requestId);
+    throw error;
+  }
 }
 
 async function submitAnswer(uid, data) {
@@ -252,12 +276,27 @@ async function submitAnswer(uid, data) {
   const representativeId = match.teams[player.teamCode]?.captainId;
   if (answerMode === "representative" && representativeId !== player.id) fail("permission-denied", "الإجابة لممثل الفريق");
   const choice = Number(data.choice);
+  if (match.state.phase !== "question" || match.state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
   const stateRef = db.ref(`matches/${id}/state`);
-  const transaction = await stateRef.transaction((latestState) => {
-    if (!latestState || latestState.phase !== "question" || latestState.answer || !Number.isInteger(choice) || choice < 0 || choice >= (latestState.question?.options?.length || 0)) return;
-    return { ...latestState, phase: "locked", answer: { playerId: player.id, playerName: player.name, choice, at: now() } };
-  }, undefined, false);
-  return { status: transaction.committed ? "accepted" : "late" };
+  const claimId = `${uid}_${now()}_${randomInt(100000, 999999)}`;
+  const claimRef = stateRef.child("answerClaimId");
+  if (!await acquireClaim(claimRef, claimId)) return { status: "late" };
+  try {
+    const latestState = (await stateRef.get()).val();
+    if (!latestState || latestState.phase !== "question" || latestState.answer || latestState.answerClaimId !== claimId) {
+      await releaseClaim(claimRef, claimId);
+      return { status: "late" };
+    }
+    await stateRef.update({
+      phase: "locked",
+      answer: { playerId: player.id, playerName: player.name, choice, at: now() },
+      answerClaimId: null,
+    });
+    return { status: "accepted" };
+  } catch (error) {
+    await releaseClaim(claimRef, claimId);
+    throw error;
+  }
 }
 
 async function submitHostAnswer(uid, data) {
@@ -265,16 +304,27 @@ async function submitHostAnswer(uid, data) {
   requireHost(match, uid);
   if (match.answerMode !== "host") fail("failed-precondition", "وضع الإجابة ليس للمقدم");
   const choice = Number(data.choice);
+  if (match.state.phase !== "question" || match.state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
   const stateRef = db.ref(`matches/${id}/state`);
-  const transaction = await stateRef.transaction((latestState) => {
-    if (!latestState || latestState.phase !== "question" || latestState.answer || !Number.isInteger(choice) || choice < 0 || choice >= (latestState.question?.options?.length || 0)) return;
-    return {
-      ...latestState,
+  const claimId = `${uid}_${now()}_${randomInt(100000, 999999)}`;
+  const claimRef = stateRef.child("answerClaimId");
+  if (!await acquireClaim(claimRef, claimId)) return { status: "late" };
+  try {
+    const latestState = (await stateRef.get()).val();
+    if (!latestState || latestState.phase !== "question" || latestState.answer || latestState.answerClaimId !== claimId) {
+      await releaseClaim(claimRef, claimId);
+      return { status: "late" };
+    }
+    await stateRef.update({
       phase: "locked",
       answer: { playerId: "host", playerName: match.hostName || "المقدم", choice, at: now() },
-    };
-  }, undefined, false);
-  return { status: transaction.committed ? "accepted" : "late" };
+      answerClaimId: null,
+    });
+    return { status: "accepted" };
+  } catch (error) {
+    await releaseClaim(claimRef, claimId);
+    throw error;
+  }
 }
 
 async function reveal(id, match, correctOverride) {

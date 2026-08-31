@@ -3,23 +3,22 @@ import { useNavigate, useParams } from "react-router";
 import {
   Tv, Play, Users, Crown, Eye, Repeat2, SkipForward,
   Trophy, Loader2, LogOut, Timer, CheckCircle2, XCircle, Share2, Trash2, WifiOff,
-  HelpCircle, MessageSquare, EyeOff, Drama, Zap, ListChecks, PlayCircle,
+  MessageSquare, EyeOff, Drama, Zap, ListChecks, PlayCircle,
 } from "lucide-react";
 import {
-  subscribeMatch, startMatch, chooseType, revealAnswer, judgeVerbal,
-  passToNextTeam, advanceTurn, endMatch, deleteMatch, typeProgress, setCaptain,
+  subscribeMatch, startMatch, revealAnswer, judgeVerbal,
+  passToNextTeam, advanceTurn, endMatch, deleteMatch, setCaptain,
   setAnswerMode, submitHostAnswer, startQuestionTimer, useAssist as requestAssist,
   getHostAnswer,
 } from "../lib/matchApi";
 import type { AnswerMode, Match } from "../types/game";
-import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
+import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
 import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/QuestionCard";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
-import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import { ANSWER_LETTERS } from "../lib/answers";
 import PowerCardEvent from "../components/PowerCardEvent";
 
@@ -419,33 +418,18 @@ export default function HostRoom() {
                 </span>
               </div>
               <p className="mt-3 text-sm text-gold-light/90 font-cairo font-bold">
-                الفريق يختار نوع سؤاله من أجهزتهم — أو اختر عنهم:
+                اختيار نوع السؤال متاح فقط لأعضاء الفريق من أجهزتهم
               </p>
             </div>
           )}
 
           {chooseTeam && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
-              {match.enabledTypes.map((t) => {
-                const pr = typeProgress(match, chooseTeam.code, t);
-                return (
-                  <button
-                    key={t}
-                    onClick={() => act(() => chooseType(code, t))}
-                    disabled={busy || !pr.available}
-                    className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35 disabled:cursor-not-allowed"
-                  >
-                    {t.startsWith("ct_") ? <HelpCircle className="h-10 w-10 p-2 text-gold-light" /> : <QuestionTypeIcon type={t} className="h-12 w-12" />}
-                    <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
-                    </span>
-                    <span className={`text-[11px] font-cairo font-bold ${pr.available ? "text-emerald2-light" : "text-maroon-light"}`}>
-                      {pr.available ? `باقي ${pr.left}` : "اكتمل"}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="glass-card flex w-full max-w-lg flex-col items-center gap-3 px-6 py-8 text-center">
+              <Users className="h-10 w-10 text-gold-light" />
+              <p className="font-cairo text-lg font-black text-foreground">بانتظار اختيار الفريق…</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                عندما يختار أحد أعضاء {chooseTeam.name} نوع السؤال سيظهر السؤال هنا تلقائيًا
+              </p>
             </div>
           )}
         </div>

@@ -79,7 +79,7 @@ function canPlayFor(match, uid, teamCode) {
   return Object.values(match.players || {}).some((player) => player.authUid === uid && player.teamCode === teamCode);
 }
 function canChoose(match, uid, teamCode) {
-  if (match.hostUid === uid) return true;
+  if (!uid || match.hostUid === uid) return false;
   const players = Object.values(match.players || {}).filter((player) => player.authUid === uid && player.teamCode === teamCode);
   return players.length > 0;
 }

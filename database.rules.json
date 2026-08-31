@@ -3,6 +3,7 @@
     ".read": false,
     ".write": false,
     "matches": {
+      ".indexOn": ["expiresAt"],
       "$code": {
         ".read": "auth != null",
         ".write": false

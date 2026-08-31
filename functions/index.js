@@ -1,6 +1,7 @@
 const { readFileSync } = require("node:fs");
 const { randomInt } = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getDatabase } = require("firebase-admin/database");
 
@@ -11,6 +12,7 @@ const LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const DIGITS = "23456789";
 const COLORS = ["maroon", "emerald", "royal", "gold"];
 const POWER_CARD_BASE_COST = { extraTime: 100, swapQuestion: 150, pickPlayer: 200, doublePoints: 200, freeze: 250, steal: 300 };
+const LOBBY_TTL_MS = 10 * 60 * 1000;
 
 function fail(code, message) { throw new HttpsError(code, message); }
 function text(value, max = 30) { return String(value ?? "").trim().slice(0, max); }
@@ -140,10 +142,11 @@ async function createMatch(uid, options) {
         powerCards: { extraTime: true, doublePoints: true, swapQuestion: true, freeze: true, steal: true, pickPlayer: true },
       };
     });
+    const createdAt = now();
     const match = {
       hostUid: uid,
       hostName: text(options.hostName, 20) || "المقدم",
-      createdAt: now(), status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, difficulty, answerMode, enabledTypes, teams,
+      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, difficulty, answerMode, enabledTypes, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     await db.ref(`matches/${id}`).set(match);
@@ -605,7 +608,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
       });
       if (missing) fail("failed-precondition", "عيّن ممثلاً لكل فريق قبل بدء المسابقة");
     }
-    await db.ref(`matches/${id}`).update({ status: "playing", "state/phase": "choose", "state/targetTeam": first });
+    await db.ref(`matches/${id}`).update({ status: "playing", startedAt: now(), expiresAt: null, "state/phase": "choose", "state/targetTeam": first });
   } else if (action === "startQuestionTimer") {
     if (match.state.phase !== "question" || match.state.question?.type !== "acting" || match.state.questionStartedAt) {
       fail("failed-precondition", "لا يوجد مؤقت تمثيل بانتظار البدء");
@@ -655,4 +658,37 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     await Promise.all([db.ref(`matches/${id}`).remove(), db.ref(`matchSecrets/${id}`).remove()]);
   } else fail("invalid-argument", "عملية غير معروفة");
   return { ok: true };
+});
+
+exports.expireUnusedMatches = onSchedule({
+  region: "asia-southeast1",
+  schedule: "every 1 minutes",
+  timeZone: "Asia/Qatar",
+}, async () => {
+  const cutoff = now();
+  const snapshot = await db.ref("matches").orderByChild("expiresAt").endAt(cutoff).get();
+  if (!snapshot.exists()) return;
+
+  const expiredCodes = [];
+  const removals = [];
+  snapshot.forEach((child) => {
+    const match = child.val();
+    const expiresAt = match?.expiresAt || ((match?.createdAt || cutoff) + LOBBY_TTL_MS);
+    if (match?.status !== "lobby" || expiresAt > cutoff) return;
+    expiredCodes.push(child.key);
+    removals.push(child.ref.transaction((current) => {
+      const currentExpiry = current?.expiresAt || ((current?.createdAt || cutoff) + LOBBY_TTL_MS);
+      if (current?.status === "lobby" && currentExpiry <= cutoff) return null;
+      return;
+    }, undefined, false));
+  });
+
+  const results = await Promise.all(removals);
+  const secretRemovals = [];
+  results.forEach((result, index) => {
+    if (result.committed && !result.snapshot.exists()) {
+      secretRemovals.push(db.ref(`matchSecrets/${expiredCodes[index]}`).remove());
+    }
+  });
+  await Promise.all(secretRemovals);
 });

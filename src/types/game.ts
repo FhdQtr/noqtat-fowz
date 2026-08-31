@@ -137,6 +137,8 @@ export interface Match {
   hostUid?: string;
   hostName: string;
   createdAt: number;
+  expiresAt?: number; // اللوبي غير المستخدم يُحذف تلقائياً بعد عشر دقائق
+  startedAt?: number;
   status: "lobby" | "playing" | "ended";
   teamOrder: string[]; // ترتيب أكواد الفرق
   turnIndex: number; // مؤشر الدور الحالي

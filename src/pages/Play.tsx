@@ -99,7 +99,10 @@ export default function Play() {
     : answerMode === "representative"
       ? captainId === player?.id
       : true;
-  const canAnswer = modeAllowsAnswer && (!st?.forcedPlayerId || st.forcedPlayerId === player?.id);
+  // كرت «أنت اللي بتجاوب» يتقدم على وضع ممثل الفريق: المختار وحده يثبت الإجابة.
+  const canAnswer = st?.forcedPlayerId
+    ? st.forcedPlayerId === player?.id
+    : modeAllowsAnswer;
 
   // ساعة حيّة لعدّاد معاينة الصور
   const now = useNow(
@@ -526,7 +529,11 @@ export default function Play() {
                       </div>
                     ) : (
                       <>
-                        {!canAnswer && (
+                        {st!.forcedPlayerId === player.id ? (
+                          <p className="rounded-2xl border border-gold/60 bg-gold/15 px-4 py-3 text-center font-cairo font-black text-gold-light animate-pulse-gold">
+                            أنت المختار! الإجابة من جهازك أنت فقط 😂
+                          </p>
+                        ) : !canAnswer ? (
                           <p className="text-center text-sm font-cairo text-gold-light/90 animate-fade-up">
                             {st!.forcedPlayerId
                               ? <>الفريق المنافس اختار <strong>{st!.forcedPlayerName}</strong> يجاوب بروحه — ممنوع تساعدونه 😂</>
@@ -534,22 +541,24 @@ export default function Play() {
                               ? "تناقشوا مع بعض — المقدم هو الذي يثبت الإجابة"
                               : <>تناقشوا مع بعض — ممثل الفريق <strong>{captainName ?? "لم يُعيّن"}</strong> هو الذي يثبت الإجابة</>}
                           </p>
+                        ) : null}
+                        {st!.forcedPlayerId && !canAnswer ? null : (
+                          <div className="m-answer-grid" data-count={q.options.length} data-size="regular">
+                            {q.options.map((opt, i) => (
+                              <button
+                                key={i}
+                                onClick={() => answer(i)}
+                                disabled={myPick !== null || !canAnswer}
+                                className="m-answer-option m-answer-option--interactive"
+                                data-state={myPick === i ? "selected" : "default"}
+                                aria-pressed={myPick === i}
+                              >
+                                <span className="m-answer-option__label" aria-hidden="true">{ANSWER_LETTERS[i]}</span>
+                                <span className="m-answer-option__text">{opt}</span>
+                              </button>
+                            ))}
+                          </div>
                         )}
-                        <div className="m-answer-grid" data-count={q.options.length} data-size="regular">
-                          {q.options.map((opt, i) => (
-                            <button
-                              key={i}
-                              onClick={() => answer(i)}
-                              disabled={myPick !== null || !canAnswer}
-                              className="m-answer-option m-answer-option--interactive"
-                              data-state={myPick === i ? "selected" : "default"}
-                              aria-pressed={myPick === i}
-                            >
-                              <span className="m-answer-option__label" aria-hidden="true">{ANSWER_LETTERS[i]}</span>
-                              <span className="m-answer-option__text">{opt}</span>
-                            </button>
-                          ))}
-                        </div>
                       </>
                     )}
                   </>

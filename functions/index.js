@@ -573,10 +573,13 @@ async function submitAnswer(uid, data) {
   const player = playerForUid(match, uid, text(data.playerId, 80));
   if (!player || player.teamCode !== match.state.targetTeam) fail("permission-denied", "الإجابة للفريق صاحب السؤال");
   const answerMode = match.answerMode || "anyone";
-  if (answerMode === "host") fail("permission-denied", "المقدم هو من يثبت الإجابة");
-  const representativeId = match.teams[player.teamCode]?.captainId;
-  if (answerMode === "representative" && representativeId !== player.id) fail("permission-denied", "الإجابة لممثل الفريق");
-  if (match.state.forcedPlayerId && match.state.forcedPlayerId !== player.id) fail("permission-denied", "الإجابة للاعب الذي اختاره الفريق المنافس");
+  if (match.state.forcedPlayerId) {
+    if (match.state.forcedPlayerId !== player.id) fail("permission-denied", "الإجابة للاعب الذي اختاره الفريق المنافس");
+  } else {
+    if (answerMode === "host") fail("permission-denied", "المقدم هو من يثبت الإجابة");
+    const representativeId = match.teams[player.teamCode]?.captainId;
+    if (answerMode === "representative" && representativeId !== player.id) fail("permission-denied", "الإجابة لممثل الفريق");
+  }
   const choice = Number(data.choice);
   if (match.state.phase !== "question" || match.state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
   const stateRef = db.ref(`matches/${id}/state`);
@@ -739,7 +742,7 @@ async function playPowerCard(uid, data, id, initialMatch) {
       updates["state/cardsFrozenTeam"] = targetTeam;
       event.targetTeam = targetTeam;
     } else if (card === "pickPlayer") {
-      if (state.phase !== "question" || !targetTeam || targetTeam === teamCode || state.answer || match.answerMode !== "anyone") return { accepted: false, reason: "timing" };
+      if (state.phase !== "question" || !targetTeam || targetTeam === teamCode || state.answer || match.answerMode === "host") return { accepted: false, reason: "timing" };
       if (state.question?.type === "acting" || (state.question?.type === "flag" && !state.assistUsed)) return { accepted: false, reason: "verbal" };
       const targetPlayerId = text(data.targetPlayerId, 80);
       const targetPlayer = match.players?.[targetPlayerId];

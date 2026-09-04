@@ -1,5 +1,5 @@
 // الميدان — واجهة اللعب الآمنة. جميع التغييرات الحساسة تُنفّذ في Cloud Functions.
-import { get, onDisconnect, onValue, ref, remove, serverTimestamp, set, type Unsubscribe } from "firebase/database";
+import { onDisconnect, onValue, ref, remove, serverTimestamp, set, type Unsubscribe } from "firebase/database";
 import { httpsCallable } from "firebase/functions";
 import { db, ensureAuth, functions } from "./firebase";
 import type { AnswerMode, DifficultyMode, Match, Player, PowerCardId, QuestionLevel, QuestionType, TeamColor } from "../types/game";
@@ -22,7 +22,19 @@ type ActionName =
   | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
-  | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats";
+  | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats" | "getTeamInvites"
+  | "revealQuestionPrompt";
+
+export interface TeamInvites {
+  teamKeys: Record<string, string>;
+  viewerKey?: string | null;
+}
+
+export interface ParsedTeamInvite {
+  matchCode: string;
+  teamCode: string;
+  inviteKey: string;
+}
 
 export interface UsageHour {
   activePlayers?: number;
@@ -200,18 +212,20 @@ export function trackQuestionVisibility(matchCode: string, playerId: string, que
   };
 }
 
-export async function findMatchByTeamCode(teamCode: string): Promise<string | null> {
-  await ensureAuth();
-  const normalized = teamCode.trim().toUpperCase();
-  const matchCode = normalized.split("-")[0];
-  if (!matchCode) return null;
-  const snapshot = await get(ref(db, `matches/${matchCode}/teams/${normalized}`));
-  return snapshot.exists() ? matchCode : null;
+export function parseTeamInviteCode(value: string): ParsedTeamInvite | null {
+  const normalized = value.trim().toUpperCase().replace(/\s+/g, "");
+  const matched = /^([A-HJKMNP-Z][2-9]{3}-[1-4])-([A-HJKMNP-Z2-9]{8})$/.exec(normalized);
+  if (!matched) return null;
+  return { matchCode: matched[1].split("-")[0], teamCode: matched[1], inviteKey: matched[2] };
 }
 
-export async function joinTeam(matchCode: string, teamCode: string, name: string): Promise<Player> {
-  const result = await gameAction<{ player: Player }>("joinTeam", { matchCode, teamCode, name });
+export async function joinTeam(matchCode: string, teamCode: string, name: string, inviteKey: string): Promise<Player> {
+  const result = await gameAction<{ player: Player }>("joinTeam", { matchCode, teamCode, name, inviteKey });
   return result.player;
+}
+
+export async function getTeamInvites(matchCode: string, viewerKey?: string): Promise<TeamInvites> {
+  return gameAction<TeamInvites>("getTeamInvites", { matchCode, viewerKey: viewerKey || null });
 }
 
 export async function leaveMatch(matchCode: string, playerId: string) {
@@ -377,15 +391,20 @@ export async function startQuestionTimer(matchCode: string) {
   await gameAction("startQuestionTimer", { matchCode });
 }
 
-export async function getHostAnswer(matchCode: string): Promise<number | null> {
+export async function getHostAnswer(matchCode: string): Promise<string | null> {
   // حالة السؤال تصل لحظياً قبل كتابة السر بجزء بسيط من الثانية أحياناً.
   // نعيد القراءة فترة قصيرة حتى لا تبقى إجابة العلم فارغة عند المقدم.
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const result = await gameAction<{ answer: number | null }>("getHostAnswer", { matchCode });
-    if (result.answer !== null) return result.answer;
+    const result = await gameAction<{ answerText: string | null }>("getHostAnswer", { matchCode });
+    if (result.answerText !== null) return result.answerText;
     if (attempt < 4) await new Promise((resolve) => window.setTimeout(resolve, 150 * (attempt + 1)));
   }
   return null;
+}
+
+export async function revealQuestionPrompt(matchCode: string): Promise<boolean> {
+  const result = await gameAction<{ accepted: boolean }>("revealQuestionPrompt", { matchCode });
+  return result.accepted;
 }
 
 export async function startSoloChallenge(): Promise<{ sessionId: string; questions: import("../types/game").Question[] }> {

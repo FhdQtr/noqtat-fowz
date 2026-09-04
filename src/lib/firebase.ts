@@ -17,16 +17,25 @@ const firebaseConfig = {
   appId: "1:481624442217:web:f36bc520b71f64ce9aa9f8",
 };
 
-export const app = initializeApp(firebaseConfig);
-export const db = getDatabase(app);
-export const auth = getAuth(app);
-export const functions = getFunctions(app, "asia-southeast1");
-
 // محاكي محلي للتطوير والاختبار فقط — ما يشتغل على الدومين الحقيقي
 const USE_EMULATOR =
   typeof window !== "undefined" &&
   (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
   new URLSearchParams(window.location.search).get("emu") === "1";
+
+export const app = initializeApp(firebaseConfig);
+const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY?.trim();
+const appCheckReady = !USE_EMULATOR && appCheckSiteKey
+  ? import("firebase/app-check").then(({ initializeAppCheck, ReCaptchaEnterpriseProvider }) => {
+      initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
+        isTokenAutoRefreshEnabled: true,
+      });
+    })
+  : Promise.resolve();
+export const db = getDatabase(app);
+export const auth = getAuth(app);
+export const functions = getFunctions(app, "asia-southeast1");
 
 if (USE_EMULATOR) {
   connectDatabaseEmulator(db, window.location.hostname, 9000);
@@ -36,7 +45,8 @@ if (USE_EMULATOR) {
 let ready: Promise<User> | null = null;
 
 /** دخول ضيف تلقائي — يشتغل مرة وحدة وننتظره قبل أي عملية */
-export function ensureAuth(): Promise<User> {
+export async function ensureAuth(): Promise<User> {
+  await appCheckReady;
   if (auth.currentUser) return Promise.resolve(auth.currentUser);
   if (!ready) {
     ready = new Promise((resolve, reject) => {

@@ -1,5 +1,5 @@
 const { readFileSync } = require("node:fs");
-const { randomInt } = require("node:crypto");
+const { createHash, randomInt, timingSafeEqual } = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
@@ -10,12 +10,25 @@ const db = getDatabase();
 const QUESTIONS = JSON.parse(readFileSync(require.resolve("./questions.json"), "utf8"));
 const LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const DIGITS = "23456789";
+const INVITE_CHARS = `${LETTERS}${DIGITS}`;
 const COLORS = ["maroon", "emerald", "royal", "gold"];
 const POWER_CARD_BASE_COST = { extraTime: 100, swapQuestion: 150, pickPlayer: 200, doublePoints: 200, freeze: 250, steal: 300 };
 const LOBBY_TTL_MS = 10 * 60 * 1000;
+const ACTIVE_TTL_MS = 8 * 60 * 60 * 1000;
+const ENDED_TTL_MS = 60 * 60 * 1000;
+const MAX_PLAYERS_PER_TEAM = 20;
 const SHOWDOWN_POINTS = 200;
 const SHOWDOWN_OPEN_DELAY_MS = 4000;
 const SHOWDOWN_DURATION_MS = 20000;
+const REQUEST_LIMITS = {
+  createMatch: { uid: 5, ip: 20, window: 10 * 60 * 1000 },
+  joinTeam: { uid: 8, ip: 60, window: 10 * 60 * 1000 },
+  startChallenge: { uid: 5, ip: 20, window: 60 * 60 * 1000 },
+  answerChallenge: { uid: 150, ip: 1000, window: 10 * 60 * 1000 },
+  getMatch: { uid: 180, ip: 600, window: 60 * 1000 },
+  getTeamInvites: { uid: 60, ip: 180, window: 60 * 1000 },
+};
+const RATE_LIMIT_SCOPES = Object.keys(REQUEST_LIMITS).flatMap((action) => [`${action}_uid`, `${action}_ip`]);
 
 function fail(code, message) { throw new HttpsError(code, message); }
 function text(value, max = 30) { return String(value ?? "").trim().slice(0, max); }
@@ -73,6 +86,67 @@ async function safelyRecordUsage(operation) {
   }
 }
 function matchCode() { return LETTERS[randomInt(LETTERS.length)] + Array.from({ length: 3 }, () => DIGITS[randomInt(DIGITS.length)]).join(""); }
+function inviteKey() { return Array.from({ length: 8 }, () => INVITE_CHARS[randomInt(INVITE_CHARS.length)]).join(""); }
+function safeEqual(left, right) {
+  const leftBuffer = Buffer.from(text(left, 40));
+  const rightBuffer = Buffer.from(text(right, 40));
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+function publicPlayer(player) {
+  if (!player) return null;
+  const safePlayer = { ...player };
+  delete safePlayer.authUid;
+  return safePlayer;
+}
+function publicMatch(match) {
+  if (!match) return null;
+  const safeMatch = { ...match };
+  delete safeMatch.hostUid;
+  return {
+    ...safeMatch,
+    players: Object.fromEntries(Object.entries(match.players || {}).map(([id, player]) => [id, publicPlayer(player)])),
+  };
+}
+function attachAccess(publicData, access = {}) {
+  if (!publicData) return null;
+  return {
+    ...publicData,
+    hostUid: access.hostUid || publicData.hostUid,
+    players: Object.fromEntries(Object.entries(publicData.players || {}).map(([id, player]) => [id, {
+      ...player,
+      authUid: access.playerUids?.[id] || player.authUid,
+    }])),
+  };
+}
+function requestIp(request) {
+  const raw = request.rawRequest;
+  const forwarded = raw?.headers?.["x-forwarded-for"];
+  const value = raw?.ip || (Array.isArray(forwarded) ? forwarded[0] : String(forwarded || "").split(",")[0]);
+  return text(value, 100);
+}
+function rateKey(value) {
+  return createHash("sha256").update(value).digest("hex").slice(0, 32);
+}
+async function consumeRateLimit(scope, identity, limit, windowMs) {
+  if (!identity) return;
+  const timestamp = now();
+  const rateRef = db.ref(`securityRateLimits/${dbKey(scope)}/${rateKey(identity)}`);
+  const result = await rateRef.transaction((current) => {
+    if (!current || Number(current.expiresAt) <= timestamp) return { count: 1, expiresAt: timestamp + windowMs };
+    if ((Number(current.count) || 0) >= limit) return;
+    return { count: (Number(current.count) || 0) + 1, expiresAt: current.expiresAt };
+  }, undefined, false);
+  if (!result.committed) fail("resource-exhausted", "طلبات كثيرة خلال وقت قصير، انتظر قليلاً ثم حاول");
+}
+async function enforceRequestLimit(action, request, uid) {
+  const limits = REQUEST_LIMITS[action];
+  if (!limits) return;
+  const ip = requestIp(request);
+  await Promise.all([
+    consumeRateLimit(`${action}_uid`, uid, limits.uid, limits.window),
+    ip ? consumeRateLimit(`${action}_ip`, ip, limits.ip, limits.window) : Promise.resolve(),
+  ]);
+}
 function randomOrder(values) {
   const result = [...values];
   for (let index = result.length - 1; index > 0; index--) {
@@ -128,6 +202,21 @@ function fairTypeCaps(enabledTypes, levels, teamCount, questionsPerTeam) {
   }));
 }
 function publicQuestion(question) { return { ...question, answer: -1 }; }
+function protectedQuestion(question) {
+  const visible = publicQuestion(question);
+  if (question.type === "memory") return { ...visible, question: "", options: [], promptHidden: true };
+  if (question.type === "flag") return { ...visible, options: [], optionsHidden: true };
+  return visible;
+}
+function reprotectQuestionForAttempt(question) {
+  if (!question) return question;
+  if (question.type === "memory") return { ...question, question: "", options: [], promptHidden: true };
+  if (question.type === "flag") return { ...question, options: [], optionsHidden: true };
+  return question;
+}
+function questionSecret(question) {
+  return { questionId: question.id, answer: question.answer, question: question.question, options: question.options };
+}
 function questionAssetKey(question) {
   return question?.image ? `image:${String(question.image).toLowerCase()}` : `question:${question?.id}`;
 }
@@ -204,9 +293,13 @@ async function releaseClaim(claimRef, claimId) {
 }
 async function loadMatch(rawCode) {
   const id = code(rawCode);
-  const snapshot = await db.ref(`matches/${id}`).get();
+  const [snapshot, accessSnapshot] = await Promise.all([
+    db.ref(`matches/${id}`).get(),
+    db.ref(`matchAccess/${id}`).get(),
+  ]);
   if (!snapshot.exists()) fail("not-found", "الميدان غير موجود");
-  return { id, match: snapshot.val() };
+  const access = accessSnapshot.val() || {};
+  return { id, access, match: attachAccess(snapshot.val(), access) };
 }
 function requireHost(match, uid) {
   if (!uid || match.hostUid !== uid) fail("permission-denied", "هذه العملية للمقدم فقط");
@@ -244,10 +337,12 @@ async function createMatch(uid, options) {
     const id = matchCode();
     if ((await db.ref(`matches/${id}`).get()).exists()) continue;
     const teams = {};
+    const teamKeys = {};
     const teamOrder = [];
     names.forEach((name, index) => {
       const teamCode = `${id}-${index + 1}`;
       teamOrder.push(teamCode);
+      teamKeys[teamCode] = inviteKey();
       teams[teamCode] = {
         code: teamCode,
         name: text(name, 16) || `فريق ${index + 1}`,
@@ -261,12 +356,14 @@ async function createMatch(uid, options) {
     });
     const createdAt = now();
     const match = {
-      hostUid: uid,
       hostName: text(options.hostName, 20) || "المقدم",
       createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, difficulty, difficultyLevels, answerMode, enabledTypes, typeCaps, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], usedAssets: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
-    await db.ref(`matches/${id}`).set(match);
+    await db.ref().update({
+      [`matches/${id}`]: match,
+      [`matchAccess/${id}`]: { hostUid: uid, viewerKey: inviteKey(), teamKeys, playerUids: {} },
+    });
     await safelyRecordUsage(() => recordMatchUsage("matchesCreated", id));
     return { code: id };
   }
@@ -274,14 +371,48 @@ async function createMatch(uid, options) {
 }
 
 async function joinTeam(uid, data) {
-  const { id, match } = await loadMatch(data.matchCode);
+  const { id, match, access } = await loadMatch(data.matchCode);
   const teamCode = code(data.teamCode);
   if (!match.teams?.[teamCode]) fail("not-found", "الفريق غير موجود");
-  if (match.status === "ended") fail("failed-precondition", "انتهى هذا الميدان");
-  const player = { id: `p_${now()}_${randomInt(100000, 999999)}`, name: text(data.name, 20) || "لاعب", teamCode, joinedAt: now(), authUid: uid };
-  await db.ref(`matches/${id}/players/${player.id}`).set(player);
-  await safelyRecordUsage(() => recordPlayerUsage(uid));
-  return { player };
+  if (match.status !== "lobby") fail("failed-precondition", "أُغلق دخول الفرق بعد بدء المسابقة");
+  const expectedKey = access.teamKeys?.[teamCode];
+  // الغرف القديمة قبل تحديث الحماية لا تملك مفتاح دعوة، وتنتهي تلقائياً خلال عشر دقائق.
+  if (expectedKey && !safeEqual(data.inviteKey, expectedKey)) fail("permission-denied", "رابط أو كود دخول الفريق غير صالح");
+
+  const existing = Object.values(match.players || {}).find((player) => player.authUid === uid);
+  if (existing) {
+    if (existing.teamCode !== teamCode) fail("failed-precondition", "هذا الجهاز مسجل في فريق آخر");
+    return { player: publicPlayer(existing) };
+  }
+
+  const claimRef = db.ref(`matchAccess/${id}/joinClaims/${dbKey(uid)}`);
+  const claimedAt = now();
+  const claim = await claimRef.transaction((current) => {
+    if (!current || claimedAt - Number(current) > 60 * 1000) return claimedAt;
+    return;
+  }, undefined, false);
+  if (!claim.committed) fail("aborted", "طلب الدخول قيد التنفيذ");
+
+  try {
+    const { match: latestMatch } = await loadMatch(id);
+    const duplicate = Object.values(latestMatch.players || {}).find((player) => player.authUid === uid);
+    if (duplicate) {
+      if (duplicate.teamCode !== teamCode) fail("failed-precondition", "هذا الجهاز مسجل في فريق آخر");
+      return { player: publicPlayer(duplicate) };
+    }
+    const teamPlayers = Object.values(latestMatch.players || {}).filter((player) => player.teamCode === teamCode);
+    if (teamPlayers.length >= MAX_PLAYERS_PER_TEAM) fail("resource-exhausted", "اكتمل عدد لاعبي هذا الفريق");
+
+    const player = { id: `p_${now()}_${randomInt(100000, 999999)}`, name: text(data.name, 20) || "لاعب", teamCode, joinedAt: now() };
+    await db.ref().update({
+      [`matches/${id}/players/${player.id}`]: player,
+      [`matchAccess/${id}/playerUids/${player.id}`]: uid,
+    });
+    await safelyRecordUsage(() => recordPlayerUsage(uid));
+    return { player };
+  } finally {
+    await claimRef.remove();
+  }
 }
 
 async function startChallenge(uid) {
@@ -399,7 +530,7 @@ async function chooseType(uid, data) {
       originalTeam: teamCode,
       passCount: 0,
       attemptedTeams: [],
-      question: publicQuestion(question),
+      question: protectedQuestion(question),
       answer: null,
       isCorrect: null,
       questionStartedAt: isActing ? null : (viewUntil || started),
@@ -422,7 +553,7 @@ async function chooseType(uid, data) {
     // السؤال وإجابته السرية والعدادات تُثبّت معاً، فلا تصل الواجهة إلى سؤال بلا سر.
     await db.ref().update({
       [`matches/${id}/state`]: nextState,
-      [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
+      [`matchSecrets/${id}`]: questionSecret(question),
       [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
       [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
       [`hostQuestionHistory/${historyOwner}/${typeKey}/${level}/${question.id}`]: started,
@@ -477,7 +608,7 @@ async function startShowdown(id, match) {
     [`matches/${id}/state/showdown`]: { number: showdownNumber, points: SHOWDOWN_POINTS, opensAt, closesAt, answers: {}, winnerTeam: null },
     [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
     [`matches/${id}/state/usedAssets`]: [...usedAssets, questionAssetKey(question)],
-    [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
+    [`matchSecrets/${id}`]: questionSecret(question),
     [`hostQuestionHistory/${historyOwner}/showdown_${kind}/hard/${question.id}`]: createdAt,
     [`globalQuestionHistory/showdown_${kind}/hard/${question.id}`]: createdAt,
   });
@@ -486,12 +617,10 @@ async function startShowdown(id, match) {
 
 async function submitShowdownAnswer(uid, data) {
   const id = code(data.matchCode);
-  const [matchSnapshot, secretSnapshot] = await Promise.all([
-    db.ref(`matches/${id}`).get(),
+  const [{ match, access }, secretSnapshot] = await Promise.all([
+    loadMatch(id),
     db.ref(`matchSecrets/${id}`).get(),
   ]);
-  if (!matchSnapshot.exists()) fail("not-found", "الميدان غير موجود");
-  const match = matchSnapshot.val();
   const player = playerForUid(match, uid, text(data.playerId, 80));
   const choice = Number(data.choice);
   const receivedAt = now();
@@ -510,7 +639,8 @@ async function submitShowdownAnswer(uid, data) {
     if (!current || current.state?.phase !== "showdown" || !currentShowdown) return;
     if (receivedAt < currentShowdown.opensAt || receivedAt > currentShowdown.closesAt) return;
     const currentPlayer = current.players?.[player.id];
-    if (!currentPlayer || currentPlayer.authUid !== uid || currentShowdown.answers?.[currentPlayer.teamCode]) return;
+    const currentPlayerUid = access.playerUids?.[player.id] || currentPlayer?.authUid;
+    if (!currentPlayer || currentPlayerUid !== uid || currentShowdown.answers?.[currentPlayer.teamCode]) return;
 
     currentShowdown.answers = currentShowdown.answers || {};
     currentShowdown.answers[currentPlayer.teamCode] = {
@@ -543,12 +673,10 @@ async function submitShowdownAnswer(uid, data) {
 
 async function finishShowdown(uid, data) {
   const id = code(data.matchCode);
-  const [matchSnapshot, secretSnapshot] = await Promise.all([
-    db.ref(`matches/${id}`).get(),
+  const [{ match }, secretSnapshot] = await Promise.all([
+    loadMatch(id),
     db.ref(`matchSecrets/${id}`).get(),
   ]);
-  if (!matchSnapshot.exists()) fail("not-found", "الميدان غير موجود");
-  const match = matchSnapshot.val();
   const isParticipant = match.hostUid === uid
     || Object.values(match.players || {}).some((player) => player.authUid === uid);
   if (!isParticipant) fail("permission-denied", "هذه العملية للمشاركين في الميدان فقط");
@@ -659,6 +787,12 @@ async function reveal(id, match, correctOverride) {
     [`matches/${id}/teams/${teamCode}/correctCount`]: team.correctCount + (correct ? 1 : 0),
     [`matches/${id}/teams/${teamCode}/wrongCount`]: team.wrongCount + (correct ? 0 : 1),
   };
+  if ((correct || !canPass) && Array.isArray(secret.options)) {
+    updates[`matches/${id}/state/question/question`] = text(secret.question, 500);
+    updates[`matches/${id}/state/question/options`] = secret.options.map((option) => text(option, 300));
+    updates[`matches/${id}/state/question/promptHidden`] = null;
+    updates[`matches/${id}/state/question/optionsHidden`] = null;
+  }
   if (correct) {
     updates[`matches/${id}/teams/${teamCode}/score`] = team.score + points(state);
     updates[`matches/${id}/teams/${teamCode}/cardBalance`] = (team.cardBalance || 0) + cardReward(state);
@@ -690,11 +824,12 @@ async function advance(id, match) {
     await db.ref(`matches/${id}`).update({ totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false });
     return { ended: false, tieBreaker: true };
   }
-  await db.ref(`matches/${id}`).update({ status: "ended", "state/phase": "ended", turnIndex: match.turnIndex + 1 });
+  const endedAt = now();
+  await db.ref(`matches/${id}`).update({ status: "ended", endedAt, expiresAt: endedAt + ENDED_TTL_MS, "state/phase": "ended", turnIndex: match.turnIndex + 1 });
   return { ended: true };
 }
 
-async function playPowerCard(uid, data, id, initialMatch) {
+async function playPowerCard(uid, data, id, initialMatch, access) {
   const teamCode = code(data.teamCode);
   const card = text(data.card, 30);
   if (!POWER_CARD_BASE_COST[card]) return { accepted: false, reason: "unknown" };
@@ -706,7 +841,7 @@ async function playPowerCard(uid, data, id, initialMatch) {
   if (!await acquireClaim(claimRef, claimId)) return { accepted: false, reason: "busy" };
 
   try {
-    const match = (await matchRef.get()).val();
+    const match = attachAccess((await matchRef.get()).val(), access);
     const state = match?.state;
     const team = match?.teams?.[teamCode];
     if (!state || !team || !canPlayFor(match, uid, teamCode)) return { accepted: false, reason: "team" };
@@ -777,7 +912,7 @@ async function playPowerCard(uid, data, id, initialMatch) {
       const seconds = viewSeconds(question);
       const viewUntil = seconds ? started + seconds * 1000 : null;
       const isActing = question.type === "acting";
-      updates["state/question"] = publicQuestion(question);
+      updates["state/question"] = protectedQuestion(question);
       updates["state/usedIds"] = [...usedIds, question.id];
       updates["state/usedAssets"] = [...usedAssets, questionAssetKey(question)];
       updates["state/viewUntil"] = viewUntil;
@@ -789,7 +924,7 @@ async function playPowerCard(uid, data, id, initialMatch) {
       await db.ref().update({
         [`matches/${id}/teams/${teamCode}/cardBalance`]: balance - cost,
         [`matches/${id}/teams/${teamCode}/powerCards/${card}`]: false,
-        [`matches/${id}/state/question`]: publicQuestion(question),
+        [`matches/${id}/state/question`]: protectedQuestion(question),
         [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
         [`matches/${id}/state/usedAssets`]: [...usedAssets, questionAssetKey(question)],
         [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
@@ -802,7 +937,7 @@ async function playPowerCard(uid, data, id, initialMatch) {
         [`matches/${id}/state/cardUsedThisTurn`]: true,
         [`matches/${id}/state/cardClaimId`]: null,
         [`matches/${id}/state/cardEvent`]: event,
-        [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
+        [`matchSecrets/${id}`]: questionSecret(question),
         [`hostQuestionHistory/${match.hostUid || uid}/${dbKey(question.type)}/${question.level}/${question.id}`]: started,
         [`globalQuestionHistory/${dbKey(question.type)}/${question.level}/${question.id}`]: started,
       });
@@ -824,6 +959,7 @@ async function playPowerCard(uid, data, id, initialMatch) {
       updates["state/questionStartedAt"] = isActing ? null : (viewUntil || started);
       updates["state/questionDuration"] = isActing ? 120 : match.timer;
       updates["state/viewUntil"] = viewUntil;
+      updates["state/question"] = reprotectQuestionForAttempt(state.question);
       updates["state/assistUsed"] = false;
       updates["state/pointMultiplier"] = 1;
       updates["state/extraTimeUsed"] = false;
@@ -846,6 +982,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (!uid) fail("unauthenticated", "سجّل الدخول أولاً");
   const data = request.data || {};
   const action = text(data.action, 40);
+  await enforceRequestLimit(action, request, uid);
   if (action === "getUsageStats") {
     if (request.auth?.token?.admin !== true) fail("permission-denied", "هذه الإحصاءات للمدير فقط");
     const [totalsSnapshot, dailySnapshot] = await Promise.all([
@@ -865,18 +1002,52 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "submitHostAnswer") return submitHostAnswer(uid, data);
   if (action === "submitShowdownAnswer") return submitShowdownAnswer(uid, data);
   if (action === "finishShowdown") return finishShowdown(uid, data);
+  if (action === "getMatch") {
+    const snapshot = await db.ref(`matches/${code(data.matchCode)}`).get();
+    if (!snapshot.exists()) fail("not-found", "الميدان غير موجود");
+    return { match: publicMatch(snapshot.val()) };
+  }
 
-  const { id, match } = await loadMatch(data.matchCode);
-  if (action === "getMatch") return { match };
+  const { id, match, access } = await loadMatch(data.matchCode);
+  if (action === "getTeamInvites") {
+    const isHost = match.hostUid === uid;
+    const isViewer = access.viewerKey && safeEqual(data.viewerKey, access.viewerKey);
+    if (!isHost && !isViewer) fail("permission-denied", "روابط الفرق للمقدم وشاشة العرض المصرح بها فقط");
+    return {
+      teamKeys: access.teamKeys || {},
+      ...(isHost ? { viewerKey: access.viewerKey || null } : {}),
+    };
+  }
   if (action === "getHostAnswer") {
     requireHost(match, uid);
     const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
-    return { answer: secret?.questionId === match.state.question?.id ? secret.answer : null };
+    const valid = secret?.questionId === match.state.question?.id;
+    return {
+      answer: valid ? secret.answer : null,
+      answerText: valid && Array.isArray(secret.options) ? secret.options[secret.answer] ?? null : null,
+    };
+  }
+  if (action === "revealQuestionPrompt") {
+    const state = match.state;
+    if (state.phase !== "question" || !state.question?.promptHidden || !state.viewUntil || now() < state.viewUntil) {
+      return { accepted: false };
+    }
+    const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+    if (!secret || secret.questionId !== state.question.id || !Array.isArray(secret.options)) return { accepted: false };
+    await db.ref(`matches/${id}/state/question`).update({
+      question: text(secret.question, 500),
+      options: secret.options.map((option) => text(option, 300)),
+      promptHidden: null,
+    });
+    return { accepted: true };
   }
   if (action === "leaveMatch") {
     const playerId = text(data.playerId, 80);
     if (!playerForUid(match, uid, playerId) && match.hostUid !== uid) fail("permission-denied", "لا يمكنك حذف لاعب آخر");
-    await db.ref(`matches/${id}/players/${playerId}`).remove();
+    await db.ref().update({
+      [`matches/${id}/players/${playerId}`]: null,
+      [`matchAccess/${id}/playerUids/${playerId}`]: null,
+    });
     return { ok: true };
   }
   if (action === "useAssist") {
@@ -884,11 +1055,17 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     if (!canPlayFor(match, uid, teamCode) || match.state.targetTeam !== teamCode) fail("permission-denied", "المساعدة للفريق صاحب السؤال");
     const latestState = (await db.ref(`matches/${id}/state`).get()).val();
     if (!latestState || latestState.phase !== "question" || latestState.question?.type !== "flag" || latestState.assistUsed || latestState.targetTeam !== teamCode) return { accepted: false };
-    await db.ref(`matches/${id}/state/assistUsed`).set(true);
+    const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+    if (!secret || secret.questionId !== latestState.question.id || !Array.isArray(secret.options)) return { accepted: false };
+    await db.ref(`matches/${id}/state`).update({
+      assistUsed: true,
+      "question/options": secret.options.map((option) => text(option, 300)),
+      "question/optionsHidden": null,
+    });
     return { accepted: true };
   }
   if (action === "usePowerCard") {
-    return playPowerCard(uid, data, id, match);
+    return playPowerCard(uid, data, id, match, access);
   }
 
   requireHost(match, uid);
@@ -902,7 +1079,8 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
       });
       if (missing) fail("failed-precondition", "عيّن ممثلاً لكل فريق قبل بدء المسابقة");
     }
-    await db.ref(`matches/${id}`).update({ status: "playing", startedAt: now(), expiresAt: null, "state/phase": "choose", "state/targetTeam": first });
+    const startedAt = now();
+    await db.ref(`matches/${id}`).update({ status: "playing", startedAt, expiresAt: startedAt + ACTIVE_TTL_MS, "state/phase": "choose", "state/targetTeam": first });
     await safelyRecordUsage(() => recordMatchUsage("matchesStarted", id));
   } else if (action === "startQuestionTimer") {
     if (match.state.phase !== "question" || match.state.question?.type !== "acting" || match.state.questionStartedAt) {
@@ -935,7 +1113,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const seconds = match.state.question ? viewSeconds(match.state.question) : null;
     const until = seconds ? now() + seconds * 1000 : null;
     const isActing = match.state.question?.type === "acting";
-    await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, attemptedTeams, answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardClaimId: null });
+    await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, attemptedTeams, question: reprotectQuestionForAttempt(match.state.question), answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardClaimId: null });
   } else if (action === "advanceTurn") {
     return advance(id, match);
   } else if (action === "setCaptain") {
@@ -948,12 +1126,24 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     if (!["anyone", "representative", "host"].includes(answerMode)) fail("invalid-argument", "وضع الإجابة غير صالح");
     await db.ref(`matches/${id}/answerMode`).set(answerMode);
   } else if (action === "endMatch") {
-    await db.ref(`matches/${id}`).update({ status: "ended", "state/phase": "ended" });
+    const endedAt = now();
+    await db.ref(`matches/${id}`).update({ status: "ended", endedAt, expiresAt: endedAt + ENDED_TTL_MS, "state/phase": "ended" });
   } else if (action === "deleteMatch") {
-    await Promise.all([db.ref(`matches/${id}`).remove(), db.ref(`matchSecrets/${id}`).remove()]);
+    await Promise.all([
+      db.ref(`matches/${id}`).remove(),
+      db.ref(`matchSecrets/${id}`).remove(),
+      db.ref(`matchAccess/${id}`).remove(),
+    ]);
   } else fail("invalid-argument", "عملية غير معروفة");
   return { ok: true };
 });
+
+function matchExpiry(match, fallbackNow) {
+  if (Number.isFinite(Number(match?.expiresAt))) return Number(match.expiresAt);
+  if (match?.status === "playing") return Number(match.startedAt || match.createdAt || fallbackNow) + ACTIVE_TTL_MS;
+  if (match?.status === "ended") return Number(match.endedAt || match.startedAt || match.createdAt || fallbackNow) + ENDED_TTL_MS;
+  return Number(match?.createdAt || fallbackNow) + LOBBY_TTL_MS;
+}
 
 exports.expireUnusedMatches = onSchedule({
   region: "asia-southeast1",
@@ -962,18 +1152,17 @@ exports.expireUnusedMatches = onSchedule({
 }, async () => {
   const cutoff = now();
   const snapshot = await db.ref("matches").orderByChild("expiresAt").endAt(cutoff).get();
-  if (!snapshot.exists()) return;
 
   const expiredCodes = [];
   const removals = [];
   snapshot.forEach((child) => {
     const match = child.val();
-    const expiresAt = match?.expiresAt || ((match?.createdAt || cutoff) + LOBBY_TTL_MS);
-    if (match?.status !== "lobby" || expiresAt > cutoff) return;
+    const expiresAt = matchExpiry(match, cutoff);
+    if (expiresAt > cutoff) return;
     expiredCodes.push(child.key);
     removals.push(child.ref.transaction((current) => {
-      const currentExpiry = current?.expiresAt || ((current?.createdAt || cutoff) + LOBBY_TTL_MS);
-      if (current?.status === "lobby" && currentExpiry <= cutoff) return null;
+      const currentExpiry = matchExpiry(current, cutoff);
+      if (current && currentExpiry <= cutoff) return null;
       return;
     }, undefined, false));
   });
@@ -982,8 +1171,21 @@ exports.expireUnusedMatches = onSchedule({
   const secretRemovals = [];
   results.forEach((result, index) => {
     if (result.committed && !result.snapshot.exists()) {
-      secretRemovals.push(db.ref(`matchSecrets/${expiredCodes[index]}`).remove());
+      secretRemovals.push(
+        db.ref(`matchSecrets/${expiredCodes[index]}`).remove(),
+        db.ref(`matchAccess/${expiredCodes[index]}`).remove(),
+      );
     }
   });
   await Promise.all(secretRemovals);
+
+  const rateSnapshots = await Promise.all(RATE_LIMIT_SCOPES.map((scope) => (
+    db.ref(`securityRateLimits/${scope}`).orderByChild("expiresAt").endAt(cutoff).get()
+  )));
+  const expiredRateNodes = rateSnapshots.flatMap((rateSnapshot) => {
+    const nodes = [];
+    rateSnapshot.forEach((entrySnapshot) => nodes.push(entrySnapshot.ref.remove()));
+    return nodes;
+  });
+  await Promise.all(expiredRateNodes);
 });

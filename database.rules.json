@@ -9,7 +9,7 @@
         ".write": false,
         "questionWatch": {
           "$playerId": {
-            ".write": "auth != null && root.child('matches').child($code).child('players').child($playerId).child('authUid').val() === auth.uid",
+            ".write": "auth != null && (root.child('matchAccess').child($code).child('playerUids').child($playerId).val() === auth.uid || root.child('matches').child($code).child('players').child($playerId).child('authUid').val() === auth.uid)",
             ".validate": "!newData.exists() || ((root.child('matches').child($code).child('state').child('phase').val() === 'question' || root.child('matches').child($code).child('state').child('phase').val() === 'showdown') && newData.hasChildren(['questionId', 'status']) && (newData.child('questionId').isNumber() || newData.child('questionId').isString()) && newData.child('questionId').val() === root.child('matches').child($code).child('state').child('question').child('id').val() && (newData.child('status').val() === 'active' || newData.child('status').val() === 'away') && (!newData.child('awayAt').exists() || newData.child('awayAt').isNumber()))"
           }
         }
@@ -18,6 +18,17 @@
     "matchSecrets": {
       ".read": false,
       ".write": false
+    },
+    "matchAccess": {
+      ".read": false,
+      ".write": false
+    },
+    "securityRateLimits": {
+      ".read": false,
+      ".write": false,
+      "$scope": {
+        ".indexOn": ["expiresAt"]
+      }
     },
     "challengeSecrets": {
       ".read": false,

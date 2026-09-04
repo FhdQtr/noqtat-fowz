@@ -9,8 +9,9 @@ import {
   subscribeMatch, startMatch, revealAnswer, judgeVerbal,
   passToNextTeam, advanceTurn, endMatch, deleteMatch, setCaptain,
   setAnswerMode, submitHostAnswer, startQuestionTimer, useAssist as requestAssist,
-  getHostAnswer, finishShowdown, isShowdownDue,
+  getHostAnswer, finishShowdown, isShowdownDue, getTeamInvites, revealQuestionPrompt,
 } from "../lib/matchApi";
+import type { TeamInvites } from "../lib/matchApi";
 import type { AnswerMode, Match } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
@@ -33,11 +34,20 @@ export default function HostRoom() {
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [connErr, setConnErr] = useState("");
-  const [hostAnswer, setHostAnswer] = useState<number | null>(null);
+  const [hostAnswer, setHostAnswer] = useState<string | null>(null);
+  const [invites, setInvites] = useState<TeamInvites | null>(null);
   const prevPhase = useRef<string>("");
   const lastTimerSecond = useRef<number | null>(null);
 
   useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getTeamInvites(code)
+      .then((result) => { if (!cancelled) setInvites(result); })
+      .catch(() => { if (!cancelled) setInvites(null); });
+    return () => { cancelled = true; };
+  }, [code]);
 
   const questionId = match?.state.question?.id ?? null;
   useEffect(() => {
@@ -80,6 +90,15 @@ export default function HostRoom() {
   const now = useNow(
     stv?.viewUntil && (stv.phase === "question" || stv.phase === "locked") ? 250 : null
   );
+
+  useEffect(() => {
+    if (!stv?.question?.promptHidden || !stv.viewUntil) return;
+    const timer = window.setTimeout(
+      () => { void revealQuestionPrompt(code); },
+      Math.max(0, stv.viewUntil - Date.now() + 100),
+    );
+    return () => window.clearTimeout(timer);
+  }, [code, stv?.question?.id, stv?.question?.promptHidden, stv?.viewUntil]);
 
   // مؤقت السؤال (اختياري)
   useEffect(() => {
@@ -192,7 +211,8 @@ export default function HostRoom() {
   };
 
   const shareTv = () => {
-    const url = `${PUBLIC_GAME_ORIGIN}/tv/${code}`;
+    const viewerKey = invites?.viewerKey;
+    const url = `${PUBLIC_GAME_ORIGIN}/tv/${code}${viewerKey ? `?key=${encodeURIComponent(viewerKey)}` : ""}`;
     navigator.clipboard?.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -261,7 +281,7 @@ export default function HostRoom() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3 justify-center">
-          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}`, "_blank")} className="btn-gold flex items-center gap-2">
+          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}${invites?.viewerKey ? `?key=${encodeURIComponent(invites.viewerKey)}` : ""}`, "_blank", "noopener,noreferrer")} className="btn-gold flex items-center gap-2">
             <Tv className="w-5 h-5" />
             افتح شاشة العرض (التلفزيون)
           </button>
@@ -291,8 +311,16 @@ export default function HostRoom() {
                   <span className="w-4 h-4 rounded-full" style={{ background: c.light, boxShadow: `0 0 10px ${c.light}` }} />
                   <h3 className="font-cairo font-black text-xl" style={{ color: c.light }}>{t.name}</h3>
                 </div>
-                <p className="text-xs text-muted-foreground mb-3" dir="ltr">{t.code}</p>
-                <QrCode value={`${PUBLIC_GAME_ORIGIN}/play/${t.code}`} size={130} label="امسح للدخول" />
+                {invites?.teamKeys[t.code] ? (
+                  <>
+                    <p className="mb-3 text-xs text-muted-foreground" dir="ltr">{t.code}-{invites.teamKeys[t.code]}</p>
+                    <QrCode value={`${PUBLIC_GAME_ORIGIN}/play/${t.code}?key=${encodeURIComponent(invites.teamKeys[t.code])}`} size={130} label="امسح للدخول الآمن" />
+                  </>
+                ) : (
+                  <div className="flex h-[166px] items-center justify-center text-sm text-muted-foreground">
+                    <Loader2 className="ml-2 h-5 w-5 animate-spin" /> جاري تجهيز رابط الفريق
+                  </div>
+                )}
                 <div className="mt-4 w-full">
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
                     <Users className="w-3.5 h-3.5" />
@@ -365,7 +393,7 @@ export default function HostRoom() {
         </div>
         <ScoreBoard match={match} highlight={st.targetTeam} />
         <div className="flex gap-2">
-          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}`, "_blank")} className="btn-ghost-gold !p-2" title="شاشة العرض">
+          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}${invites?.viewerKey ? `?key=${encodeURIComponent(invites.viewerKey)}` : ""}`, "_blank", "noopener,noreferrer")} className="btn-ghost-gold !p-2" title="شاشة العرض">
             <Tv className="w-4 h-4" />
           </button>
           <button onClick={() => act(() => endMatch(code))} className="btn-ghost-gold !p-2 !border-maroon/50 !text-maroon-light" title="إنهاء">
@@ -585,7 +613,7 @@ export default function HostRoom() {
             {/* المقدم يشوف الإجابة للحكم الشفهي في الأعلام */}
             {st.question.type === "flag" && st.phase !== "revealed" && (
               <p className="mt-3 text-center text-sm font-cairo font-bold text-emerald2-light">
-                الإجابة الصحيحة: {hostAnswer === null ? "جاري التحميل…" : st.question.options[hostAnswer]}
+                الإجابة الصحيحة: {hostAnswer === null ? "جاري التحميل…" : hostAnswer}
               </p>
             )}
             {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة — والتمثيل بلا خيارات أصلاً */}

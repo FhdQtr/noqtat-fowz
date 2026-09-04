@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
   HelpCircle, MessageSquare, ListChecks, Eye, Drama, Zap,
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
-  trackQuestionVisibility, submitShowdownAnswer, finishShowdown,
+  trackQuestionVisibility, submitShowdownAnswer, finishShowdown, revealQuestionPrompt,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
@@ -26,7 +26,9 @@ const STORAGE_KEY = "al_midan_player";
 export default function Play() {
   const { teamCode = "" } = useParams();
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const matchCode = teamCode.split("-")[0]?.toUpperCase() ?? "";
+  const inviteKey = searchParams.get("key")?.trim().toUpperCase() ?? "";
 
   const [match, setMatch] = useState<Match | null | undefined>(undefined);
   const [player, setPlayer] = useState<Player | null>(() => {
@@ -38,6 +40,7 @@ export default function Play() {
     }
   });
   const [name, setName] = useState("");
+  const [joinError, setJoinError] = useState("");
   const [busy, setBusy] = useState(false);
   const [myPick, setMyPick] = useState<number | null>(null);
   const [status, setStatus] = useState<"" | "accepted" | "late">("");
@@ -85,6 +88,15 @@ export default function Play() {
     if (!player || activeQuestionId === null) return;
     return trackQuestionVisibility(matchCode, player.id, activeQuestionId);
   }, [activeQuestionId, matchCode, player]);
+
+  useEffect(() => {
+    if (!st?.question?.promptHidden || !st.viewUntil) return;
+    const timer = window.setTimeout(
+      () => { void revealQuestionPrompt(matchCode); },
+      Math.max(0, st.viewUntil - Date.now() + 100),
+    );
+    return () => window.clearTimeout(timer);
+  }, [matchCode, st?.question?.id, st?.question?.promptHidden, st?.viewUntil]);
 
   // في وضع ممثل الفريق، الممثل وحده يختار النوع ويثبت الإجابة.
   const allPlayers = Object.values(match?.players ?? {});
@@ -138,14 +150,19 @@ export default function Play() {
   const members = players.filter((p) => p.teamCode === teamCode);
 
   const join = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !inviteKey) return;
     setBusy(true);
+    setJoinError("");
     unlockAudio();
     try {
-      const p = await joinTeam(matchCode, teamCode, name);
+      const p = await joinTeam(matchCode, teamCode, name, inviteKey);
       setPlayer(p);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+      nav(`/play/${teamCode}`, { replace: true });
       sfx.join();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "تعذّر دخول الفريق";
+      setJoinError(message.includes("أُغلق") ? "انتهى وقت دخول الفرق لأن المسابقة بدأت" : "رابط الفريق غير صالح أو انتهى وقت الدخول");
     } finally {
       setBusy(false);
     }
@@ -246,6 +263,16 @@ export default function Play() {
 
   const c = TEAM_COLORS[team.color];
 
+  if (!player && !inviteKey)
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <Lock className="h-14 w-14 text-gold" />
+        <p className="font-cairo text-xl font-black">رابط الفريق غير مكتمل</p>
+        <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">امسح QR الخاص بفريقك من شاشة المقدم، أو اكتب كود الفريق الكامل في الصفحة الرئيسية.</p>
+        <button onClick={() => nav("/")} className="btn-ghost-gold">العودة للرئيسية</button>
+      </div>
+    );
+
   // ═══ شاشة الدخول ═══
   if (!player)
     return (
@@ -273,6 +300,7 @@ export default function Play() {
             {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Crown className="w-5 h-5" />}
             ادخل المسابقة
           </button>
+          {joinError ? <p className="mt-3 text-sm font-bold text-maroon-light" role="alert">{joinError}</p> : null}
         </div>
       </div>
     );

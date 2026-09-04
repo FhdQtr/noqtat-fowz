@@ -38,13 +38,13 @@ export default function Home() {
     setErrField(null);
     unlockAudio();
     try {
-      const { findMatchByTeamCode } = await import("../lib/matchApi");
-      const matchCode = await findMatchByTeamCode(code);
-      if (matchCode) {
+      const { parseTeamInviteCode } = await import("../lib/matchApi");
+      const invite = parseTeamInviteCode(code);
+      if (invite) {
         sfx.click();
-        nav(`/play/${code}`);
+        nav(`/play/${invite.teamCode}?key=${encodeURIComponent(invite.inviteKey)}`);
       } else {
-        setErr("ما لقينا فريق بهذا الكود — تأكد منه وحاول مرة ثانية");
+        setErr("كود الفريق غير مكتمل — اكتبه كما يظهر عند المقدم");
         setErrField("team");
       }
     } catch {
@@ -139,9 +139,9 @@ export default function Home() {
                     onFocus={warmGameConnection}
                     value={joinCode}
                     onChange={(event) => updateJoinCode(event.target.value)}
-                    placeholder="A482-1"
+                    placeholder="A482-1-K7P9M2Q4"
                     dir="ltr"
-                    maxLength={8}
+                    maxLength={15}
                     autoComplete="off"
                     inputMode="text"
                     aria-invalid={errField === "team"}

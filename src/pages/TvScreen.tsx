@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
 import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap } from "lucide-react";
-import { subscribeMatch } from "../lib/matchApi";
+import { getTeamInvites, revealQuestionPrompt, subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
@@ -17,7 +17,10 @@ import ShowdownPanel from "../components/ShowdownPanel";
 
 export default function TvScreen() {
   const { code = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const viewerKey = searchParams.get("key")?.trim().toUpperCase() ?? "";
   const [match, setMatch] = useState<Match | null | undefined>(undefined);
+  const [teamKeys, setTeamKeys] = useState<Record<string, string>>({});
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [portrait, setPortrait] = useState(false);
   const [connErr, setConnErr] = useState("");
@@ -25,6 +28,18 @@ export default function TvScreen() {
   const lastTickSecond = useRef<number | null>(null);
 
   useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
+
+  useEffect(() => {
+    if (!viewerKey) {
+      setTeamKeys({});
+      return;
+    }
+    let cancelled = false;
+    void getTeamInvites(code, viewerKey)
+      .then((result) => { if (!cancelled) setTeamKeys(result.teamKeys); })
+      .catch(() => { if (!cancelled) setTeamKeys({}); });
+    return () => { cancelled = true; };
+  }, [code, viewerKey]);
 
   useEffect(() => {
     const check = () => setPortrait(window.innerHeight > window.innerWidth);
@@ -40,6 +55,15 @@ export default function TvScreen() {
   const now = useNow(
     stv?.viewUntil && (stv.phase === "question" || stv.phase === "locked") ? 200 : null
   );
+
+  useEffect(() => {
+    if (!stv?.question?.promptHidden || !stv.viewUntil) return;
+    const timer = window.setTimeout(
+      () => { void revealQuestionPrompt(code); },
+      Math.max(0, stv.viewUntil - Date.now() + 100),
+    );
+    return () => window.clearTimeout(timer);
+  }, [code, stv?.question?.id, stv?.question?.promptHidden, stv?.viewUntil]);
 
   useEffect(() => {
     const duration = match ? questionTimerSeconds(match) : 0;
@@ -180,7 +204,9 @@ export default function TvScreen() {
                     >
                       {t.name}
                     </div>
-                    <QrCode value={`${location.origin}/play/${t.code}`} size={150} />
+                    {teamKeys[t.code] ? (
+                      <QrCode value={`${location.origin}/play/${t.code}?key=${encodeURIComponent(teamKeys[t.code])}`} size={150} />
+                    ) : null}
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Users className="w-4 h-4" />
                       {members.length > 0 ? members.map((m) => m.name).join("، ") : "بانتظار اللاعبين…"}
@@ -189,6 +215,7 @@ export default function TvScreen() {
                 );
               })}
             </div>
+            {!viewerKey ? <p className="text-sm text-gold-light/80">لإظهار رموز QR للفرق، افتح شاشة الجمهور من جهاز المقدم</p> : null}
             <p className="text-muted-foreground font-cairo animate-pulse">بانتظار المقدم يبدأ المسابقة…</p>
           </div>
         )}

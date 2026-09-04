@@ -23,5 +23,5 @@ export default function QuestionTypeIcon({ type, className = "h-12 w-12" }: Ques
   if (!src) {
     return <span className={`inline-flex items-center justify-center rounded-2xl bg-gold/10 text-gold ${className}`}><Sparkles className="h-1/2 w-1/2" /></span>;
   }
-  return <img src={src} alt="" width={256} height={256} className={`object-contain ${className}`} draggable={false} />;
+  return <img src={src} alt="" width={256} height={256} loading="lazy" decoding="async" className={`object-contain ${className}`} draggable={false} />;
 }

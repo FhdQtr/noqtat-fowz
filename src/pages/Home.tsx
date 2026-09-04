@@ -2,8 +2,19 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Gamepad2, Menu, MonitorPlay, Trophy, UsersRound } from "lucide-react";
 import { unlockAudio, sfx } from "../lib/sounds";
-import { findMatchByTeamCode } from "../lib/matchApi";
 import "./Home.css";
+
+function warmGameConnection() {
+  void Promise.all([
+    import("../lib/matchApi"),
+    import("../lib/firebase").then(({ ensureAuth }) => ensureAuth()),
+  ]).catch(() => undefined);
+}
+
+function warmHostSetup() {
+  warmGameConnection();
+  void import("./HostSetup");
+}
 
 export default function Home() {
   const nav = useNavigate();
@@ -27,6 +38,7 @@ export default function Home() {
     setErrField(null);
     unlockAudio();
     try {
+      const { findMatchByTeamCode } = await import("../lib/matchApi");
       const matchCode = await findMatchByTeamCode(code);
       if (matchCode) {
         sfx.click();
@@ -96,7 +108,7 @@ export default function Home() {
         </section>
 
         <section className="am-action-grid" aria-label="خيارات اللعب">
-          <button type="button" onClick={openMatch} className="am-new-match" data-state="default">
+          <button type="button" onClick={openMatch} onPointerEnter={warmHostSetup} onPointerDown={warmHostSetup} onFocus={warmHostSetup} className="am-new-match" data-state="default">
             <span className="am-new-match__icon" aria-hidden="true">
               <Gamepad2 />
             </span>
@@ -124,6 +136,7 @@ export default function Home() {
                 <div className="am-code-controls">
                   <input
                     id="team-code"
+                    onFocus={warmGameConnection}
                     value={joinCode}
                     onChange={(event) => updateJoinCode(event.target.value)}
                     placeholder="A482-1"
@@ -173,6 +186,7 @@ export default function Home() {
                 <div className="am-code-controls">
                   <input
                     id="tv-code"
+                    onFocus={warmGameConnection}
                     value={tvCode}
                     onChange={(event) => updateTvCode(event.target.value)}
                     placeholder="A482"

@@ -20,7 +20,11 @@ function code(value) { return text(value, 12).toUpperCase(); }
 function dbKey(value) { return text(value, 50).replace(/[.#$\[\]\/]/g, "_"); }
 function now() { return Date.now(); }
 function matchCode() { return LETTERS[randomInt(LETTERS.length)] + Array.from({ length: 3 }, () => DIGITS[randomInt(DIGITS.length)]).join(""); }
-function levelForPick(n, difficulty = "mixed") {
+function levelForPick(n, difficulty = "mixed", difficultyLevels = null) {
+  const selected = Array.isArray(difficultyLevels)
+    ? [...new Set(difficultyLevels.filter((level) => ["easy", "medium", "hard"].includes(level)))]
+    : [];
+  if (selected.length) return selected[(Math.max(1, n) - 1) % selected.length];
   if (["easy", "medium", "hard"].includes(difficulty)) return difficulty;
   return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
 }
@@ -122,6 +126,12 @@ async function createMatch(uid, options) {
     : Math.min(40, Math.max(4, Number(options.totalRounds) || 12));
   const timer = Math.min(120, Math.max(0, Number(options.timer) || 0));
   const difficulty = ["easy", "medium", "hard", "mixed"].includes(options.difficulty) ? options.difficulty : "medium";
+  const requestedLevels = Array.isArray(options.difficultyLevels)
+    ? [...new Set(options.difficultyLevels.map((level) => text(level, 10)).filter((level) => ["easy", "medium", "hard"].includes(level)))]
+    : [];
+  const difficultyLevels = requestedLevels.length
+    ? requestedLevels.slice(0, 3)
+    : difficulty === "mixed" ? ["easy", "medium", "hard"] : [difficulty];
   const answerMode = ["anyone", "representative", "host"].includes(options.answerMode) ? options.answerMode : "representative";
   for (let attempt = 0; attempt < 8; attempt++) {
     const id = matchCode();
@@ -146,7 +156,7 @@ async function createMatch(uid, options) {
     const match = {
       hostUid: uid,
       hostName: text(options.hostName, 20) || "المقدم",
-      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, difficulty, answerMode, enabledTypes, teams,
+      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, difficulty, difficultyLevels, answerMode, enabledTypes, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     await db.ref(`matches/${id}`).set(match);
@@ -221,7 +231,7 @@ async function chooseType(uid, data) {
   } else candidates = QUESTIONS;
   const usedIds = new Set(match.state.usedIds || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
-  const level = levelForPick(usedCount + 1, match.difficulty || "mixed");
+  const level = levelForPick(usedCount + 1, match.difficulty || "mixed", match.difficultyLevels);
   const teamPool = candidates.filter((q) => q.type === type && q.level === level && !q.disabled && !teamUsedIds.has(q.id));
   if (!teamPool.length) return { status: "empty" };
   // نعطي الأولوية لسؤال لم يظهر لأي فريق. إذا انتهت الأسئلة المشتركة يبقى

@@ -11,6 +11,7 @@ export interface CreateMatchOptions {
   questionsPerTeam: number;
   timer: number;
   difficulty: DifficultyMode;
+  difficultyLevels: QuestionLevel[];
   answerMode: AnswerMode;
   enabledTypes: QuestionType[];
 }
@@ -22,7 +23,9 @@ type ActionName =
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer";
 
-function levelForPick(n: number, difficulty: DifficultyMode = "mixed"): QuestionLevel {
+function levelForPick(n: number, difficulty: DifficultyMode = "mixed", difficultyLevels?: QuestionLevel[]): QuestionLevel {
+  const selected = [...new Set((difficultyLevels ?? []).filter((level): level is QuestionLevel => ["easy", "medium", "hard"].includes(level)))];
+  if (selected.length) return selected[(Math.max(1, n) - 1) % selected.length];
   if (difficulty !== "mixed") return difficulty;
   return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
 }
@@ -189,7 +192,7 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
     used,
     cap,
     left: Math.max(0, cap - used),
-    nextLevel: levelForPick(used + 1, match.difficulty ?? "mixed"),
+    nextLevel: levelForPick(used + 1, match.difficulty ?? "mixed", match.difficultyLevels),
     nextPoints: pointsForPick(used + 1),
     available: used < cap,
   };

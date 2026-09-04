@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ArrowRight, Minus, Plus, Crown, Timer, TimerOff, Layers, Loader2,
-  HelpCircle,
+  Check, HelpCircle, Shuffle,
 } from "lucide-react";
 import ArenaBackdrop from "../components/ArenaBackdrop";
 import BrandLogo from "../components/BrandLogo";
@@ -10,7 +10,7 @@ import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import { createMatch } from "../lib/matchApi";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useCustomTypes } from "../lib/useCustomBank";
-import type { AnswerMode, DifficultyMode, QuestionType } from "../types/game";
+import type { AnswerMode, DifficultyMode, QuestionLevel, QuestionType } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 
 const TEAM_COLOR_ORDER = ["maroon", "emerald", "royal", "gold"] as const;
@@ -29,12 +29,12 @@ const TYPE_OPTIONS: { id: QuestionType; label: string }[] = [
 
 const QUESTIONS_PER_TEAM_OPTIONS = [4, 6, 8, 10, 12];
 const TIMER_OPTIONS = [10, 15, 20, 30, 40, 50, 60];
-const DIFFICULTY_OPTIONS: { id: DifficultyMode; label: string }[] = [
+const LEVEL_OPTIONS: { id: QuestionLevel; label: string }[] = [
   { id: "easy", label: "سهل" },
   { id: "medium", label: "متوسط" },
   { id: "hard", label: "صعب" },
-  { id: "mixed", label: "متنوع" },
 ];
+const ALL_LEVELS: QuestionLevel[] = LEVEL_OPTIONS.map(({ id }) => id);
 const ANSWER_MODE_OPTIONS: { id: AnswerMode; label: string; hint: string }[] = [
   { id: "representative", label: "ممثل الفريق", hint: "شخص واحد من كل فريق يثبت الإجابة" },
   { id: "host", label: "المقدم فقط", hint: "الفرق تختار النوع والمقدم يثبت الإجابة" },
@@ -49,7 +49,8 @@ export default function HostSetup() {
   const [teamNames, setTeamNames] = useState<string[]>(["", ""]);
   const [questionsPerTeam, setQuestionsPerTeam] = useState(8);
   const [timer, setTimer] = useState(0);
-  const [difficulty, setDifficulty] = useState<DifficultyMode>("medium");
+  const [difficultyLevels, setDifficultyLevels] = useState<QuestionLevel[]>(["medium"]);
+  const [mixedDifficulty, setMixedDifficulty] = useState(false);
   const [answerMode, setAnswerMode] = useState<AnswerMode>("representative");
   const [types, setTypes] = useState<QuestionType[]>(TYPE_OPTIONS.map((t) => t.id));
   const [busy, setBusy] = useState(false);
@@ -81,6 +82,19 @@ export default function HostSetup() {
     setTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
   };
 
+  const toggleLevel = (level: QuestionLevel) => {
+    if (mixedDifficulty) {
+      setMixedDifficulty(false);
+      setDifficultyLevels([level]);
+      return;
+    }
+    setDifficultyLevels((current) => {
+      if (current.includes(level)) return current.length > 1 ? current.filter((item) => item !== level) : current;
+      if (current.length >= 2) return current;
+      return [...current, level];
+    });
+  };
+
   const create = async () => {
     if (types.length === 0) {
       setErr("اختر نوع سؤال واحد على الأقل");
@@ -97,7 +111,8 @@ export default function HostSetup() {
           teamNames: teamNames.map((n, i) => n.trim() || `فريق ${["العنابي", "الأخضر", "الأزرق", "الذهبي"][i]}`),
           questionsPerTeam,
           timer,
-          difficulty,
+          difficulty: mixedDifficulty || difficultyLevels.length > 1 ? "mixed" : difficultyLevels[0] as DifficultyMode,
+          difficultyLevels: mixedDifficulty ? ALL_LEVELS : difficultyLevels,
           answerMode,
           enabledTypes: types,
         }),
@@ -203,21 +218,39 @@ export default function HostSetup() {
 
           {/* مستوى المسابقة */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90">مستوى الأسئلة</label>
-          <div className="grid grid-cols-4 gap-2 mb-6">
-            {DIFFICULTY_OPTIONS.map(({ id, label }) => (
+          <p className="mb-3 text-xs text-muted-foreground">اختر مستوى واحدًا أو مستويين، أو اختر «منوع» لكل المستويات</p>
+          <div className="grid grid-cols-3 gap-2">
+            {LEVEL_OPTIONS.map(({ id, label }) => {
+              const selected = !mixedDifficulty && difficultyLevels.includes(id);
+              const unavailable = !mixedDifficulty && difficultyLevels.length >= 2 && !selected;
+              return (
               <button
                 key={id}
-                onClick={() => setDifficulty(id)}
-                className={`rounded-xl py-2.5 font-cairo font-bold border transition-all ${
-                  difficulty === id
-                    ? "bg-gold/20 border-gold text-gold-light"
-                    : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
+                type="button"
+                onClick={() => toggleLevel(id)}
+                disabled={unavailable}
+                aria-pressed={selected}
+                className={`flex min-h-12 items-center justify-center gap-1.5 rounded-xl border py-2.5 font-cairo font-bold transition-all disabled:cursor-not-allowed disabled:opacity-30 ${
+                  selected ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
                 }`}
               >
+                {selected ? <Check className="h-4 w-4" /> : null}
                 {label}
               </button>
-            ))}
+              );
+            })}
           </div>
+          <button
+            type="button"
+            onClick={() => setMixedDifficulty(true)}
+            aria-pressed={mixedDifficulty}
+            className={`mt-2 mb-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border py-2.5 font-cairo font-bold transition-all ${
+              mixedDifficulty ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
+            }`}
+          >
+            <Shuffle className="h-4 w-4" />
+            منوع: سهل ومتوسط وصعب
+          </button>
 
           {/* من يثبت الإجابة */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90">من يثبت الإجابة؟</label>

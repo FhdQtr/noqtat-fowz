@@ -146,6 +146,7 @@ export interface Match {
   questionsPerTeam?: number; // عدد الأسئلة لكل فريق
   timer: number; // ثواني لكل سؤال (0 = يدوي)
   difficulty?: DifficultyMode;
+  difficultyLevels?: QuestionLevel[]; // مستوى واحد أو مستويان، والمنوع يستخدم المستويات الثلاثة
   answerMode?: AnswerMode;
   enabledTypes: QuestionType[];
   state: GameState;

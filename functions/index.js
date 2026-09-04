@@ -183,7 +183,12 @@ function canPlayFor(match, uid, teamCode) {
 function canChoose(match, uid, teamCode) {
   if (!uid || match.hostUid === uid) return false;
   const players = Object.values(match.players || {}).filter((player) => player.authUid === uid && player.teamCode === teamCode);
-  return players.length > 0;
+  if (!players.length) return false;
+  if (match.answerMode === "representative") {
+    const representativeId = match.teams?.[teamCode]?.captainId;
+    return Boolean(representativeId && players.some((player) => player.id === representativeId));
+  }
+  return true;
 }
 async function acquireClaim(claimRef, claimId) {
   const transaction = await claimRef.transaction((currentClaim) => {

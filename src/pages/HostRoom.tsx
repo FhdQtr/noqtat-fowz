@@ -476,7 +476,9 @@ export default function HostRoom() {
                 </span>
               </div>
               <p className="mt-3 text-sm text-gold-light/90 font-cairo font-bold">
-                اختيار نوع السؤال متاح فقط لأعضاء الفريق من أجهزتهم
+                {match.answerMode === "representative"
+                  ? "اختيار نوع السؤال متاح فقط لممثل الفريق من جهازه"
+                  : "اختيار نوع السؤال متاح فقط لأعضاء الفريق من أجهزتهم"}
               </p>
             </div>
           )}

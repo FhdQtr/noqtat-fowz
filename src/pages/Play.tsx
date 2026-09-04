@@ -55,7 +55,6 @@ export default function Play() {
   const team = match?.teams?.[teamCode];
   const st = match?.state;
   const isMyTurn = st?.phase === "question" && st.targetTeam === teamCode;
-  const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
   const activeQuestionId = st?.phase === "question" || st?.phase === "showdown"
     ? st.question?.id ?? null
     : null;
@@ -87,13 +86,15 @@ export default function Play() {
     return trackQuestionVisibility(matchCode, player.id, activeQuestionId);
   }, [activeQuestionId, matchCode, player]);
 
-  // ممثل الفريق يثبت الإجابة فقط؛ اختيار نوع السؤال متاح لكل أعضاء الفريق.
+  // في وضع ممثل الفريق، الممثل وحده يختار النوع ويثبت الإجابة.
   const allPlayers = Object.values(match?.players ?? {});
   const captainIdRaw = team?.captainId ?? null;
   const captain = captainIdRaw ? allPlayers.find((p) => p.id === captainIdRaw) ?? null : null;
   const captainId = captain ? captainIdRaw : null; // لو القائد غادر نعتبرها بدون قائد
   const captainName = captain?.name ?? null;
   const answerMode = match?.answerMode ?? "anyone";
+  const canChooseType = answerMode !== "representative" || captainId === player?.id;
+  const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode && canChooseType;
   const modeAllowsAnswer = answerMode === "host"
     ? false
     : answerMode === "representative"
@@ -414,7 +415,9 @@ export default function Play() {
             <div className="text-center animate-fade-up">
               <Hourglass className="w-10 h-10 text-gold-light mx-auto mb-3 animate-pulse" />
               <p className="font-cairo text-lg text-muted-foreground">
-                {st!.targetTeam && match.teams[st!.targetTeam]
+                {st!.targetTeam === teamCode && answerMode === "representative"
+                  ? <>ممثل فريقكم <strong style={{ color: c.light }}>{captainName ?? "لم يُعيّن"}</strong> يختار نوع السؤال…</>
+                  : st!.targetTeam && match.teams[st!.targetTeam]
                   ? <>فريق <strong style={{ color: TEAM_COLORS[match.teams[st!.targetTeam].color].light }}>{match.teams[st!.targetTeam].name}</strong> يختار نوع السؤال…</>
                   : "استعدوا للسؤال القادم…"}
               </p>

@@ -20,6 +20,14 @@ function code(value) { return text(value, 12).toUpperCase(); }
 function dbKey(value) { return text(value, 50).replace(/[.#$\[\]\/]/g, "_"); }
 function now() { return Date.now(); }
 function matchCode() { return LETTERS[randomInt(LETTERS.length)] + Array.from({ length: 3 }, () => DIGITS[randomInt(DIGITS.length)]).join(""); }
+function randomOrder(values) {
+  const result = [...values];
+  for (let index = result.length - 1; index > 0; index--) {
+    const swapWith = randomInt(index + 1);
+    [result[index], result[swapWith]] = [result[swapWith], result[index]];
+  }
+  return result;
+}
 function levelForPick(n, difficulty = "mixed", difficultyLevels = null) {
   const selected = Array.isArray(difficultyLevels)
     ? [...new Set(difficultyLevels.filter((level) => ["easy", "medium", "hard"].includes(level)))]
@@ -27,6 +35,18 @@ function levelForPick(n, difficulty = "mixed", difficultyLevels = null) {
   if (selected.length) return selected[(Math.max(1, n) - 1) % selected.length];
   if (["easy", "medium", "hard"].includes(difficulty)) return difficulty;
   return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
+}
+function teamQuestionCount(match, teamCode) {
+  return Object.values(match.typeCounts?.[teamCode] || {}).reduce((total, count) => total + (Number(count) || 0), 0);
+}
+function oldestWindow(pool, history) {
+  if (!pool.length) return [];
+  const unseen = pool.filter((question) => !history[question.id]);
+  if (unseen.length) return unseen;
+  const count = Math.max(1, Math.min(8, Math.ceil(pool.length * 0.05)));
+  return [...pool]
+    .sort((left, right) => (Number(history[left.id]) || 0) - (Number(history[right.id]) || 0))
+    .slice(0, count);
 }
 function pointsForPick(n) { return Math.min(250, Math.max(50, n * 50)); }
 function powerCardCost(card, questionsPerTeam = 8) {
@@ -129,9 +149,9 @@ async function createMatch(uid, options) {
   const requestedLevels = Array.isArray(options.difficultyLevels)
     ? [...new Set(options.difficultyLevels.map((level) => text(level, 10)).filter((level) => ["easy", "medium", "hard"].includes(level)))]
     : [];
-  const difficultyLevels = requestedLevels.length
+  const difficultyLevels = randomOrder(requestedLevels.length
     ? requestedLevels.slice(0, 3)
-    : difficulty === "mixed" ? ["easy", "medium", "hard"] : [difficulty];
+    : difficulty === "mixed" ? ["easy", "medium", "hard"] : [difficulty]);
   const answerMode = ["anyone", "representative", "host"].includes(options.answerMode) ? options.answerMode : "representative";
   for (let attempt = 0; attempt < 8; attempt++) {
     const id = matchCode();
@@ -231,7 +251,9 @@ async function chooseType(uid, data) {
   } else candidates = QUESTIONS;
   const usedIds = new Set(match.state.usedIds || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
-  const level = levelForPick(usedCount + 1, match.difficulty || "mixed", match.difficultyLevels);
+  // المستوى يتدرج حسب إجمالي أسئلة الفريق، لا حسب مرات اختيار القسم.
+  // بذلك لا يبدأ كل قسم من المستوى نفسه في كل مسابقة.
+  const level = levelForPick(teamQuestionCount(match, teamCode) + 1, match.difficulty || "mixed", match.difficultyLevels);
   const teamPool = candidates.filter((q) => q.type === type && q.level === level && !q.disabled && !teamUsedIds.has(q.id));
   if (!teamPool.length) return { status: "empty" };
   // نعطي الأولوية لسؤال لم يظهر لأي فريق. إذا انتهت الأسئلة المشتركة يبقى
@@ -242,12 +264,14 @@ async function chooseType(uid, data) {
   // سجل دائم للمقدم: لا نكرر السؤال بين المسابقات حتى ينتهي مخزون النوع/المستوى.
   const historyOwner = match.hostUid || uid;
   const historyRef = db.ref(`hostQuestionHistory/${historyOwner}/${typeKey}/${level}`);
-  const history = (await historyRef.get()).val() || {};
-  let available = pool.filter((q) => !history[q.id]);
-  if (!available.length) {
-    await historyRef.remove();
-    available = pool;
-  }
+  const globalHistoryRef = db.ref(`globalQuestionHistory/${typeKey}/${level}`);
+  const [historySnapshot, globalHistorySnapshot] = await Promise.all([historyRef.get(), globalHistoryRef.get()]);
+  const history = historySnapshot.val() || {};
+  const globalHistory = globalHistorySnapshot.val() || {};
+  // لا نمسح السجل بعد اكتمال البنك. نختار أقدم الأسئلة استخداماً، وهذا يمنع
+  // العودة المفاجئة لأسئلة البداية. السجل العام يحمي أيضاً عند تغير دخول الضيف.
+  let available = oldestWindow(pool, history);
+  available = oldestWindow(available, globalHistory);
 
   // «مثّل المثل»: القطري غير المستخدم أولاً، ثم الخليجي.
   if (type === "acting") {
@@ -312,6 +336,7 @@ async function chooseType(uid, data) {
       [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
       [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
       [`hostQuestionHistory/${historyOwner}/${typeKey}/${level}/${question.id}`]: started,
+      [`globalQuestionHistory/${typeKey}/${level}/${question.id}`]: started,
     });
     return { status: "accepted" };
   } catch (error) {
@@ -543,6 +568,8 @@ async function playPowerCard(uid, data, id, initialMatch) {
         [`matches/${id}/state/cardClaimId`]: null,
         [`matches/${id}/state/cardEvent`]: event,
         [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
+        [`hostQuestionHistory/${match.hostUid || uid}/${dbKey(question.type)}/${question.level}/${question.id}`]: started,
+        [`globalQuestionHistory/${dbKey(question.type)}/${question.level}/${question.id}`]: started,
       });
       return { accepted: true };
     } else if (card === "steal") {

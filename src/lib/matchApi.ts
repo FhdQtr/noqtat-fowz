@@ -187,12 +187,14 @@ export interface TypeProgress {
 
 export function typeProgress(match: Match, teamCode: string, type: QuestionType): TypeProgress {
   const used = match.typeCounts?.[teamCode]?.[type] ?? 0;
+  const teamUsed = Object.values(match.typeCounts?.[teamCode] ?? {})
+    .reduce<number>((total, count) => total + (Number(count) || 0), 0);
   const cap = typeCap(match);
   return {
     used,
     cap,
     left: Math.max(0, cap - used),
-    nextLevel: levelForPick(used + 1, match.difficulty ?? "mixed", match.difficultyLevels),
+    nextLevel: levelForPick(teamUsed + 1, match.difficulty ?? "mixed", match.difficultyLevels),
     nextPoints: pointsForPick(used + 1),
     available: used < cap,
   };

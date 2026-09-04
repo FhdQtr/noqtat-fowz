@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
-  trackQuestionVisibility, submitShowdownAnswer,
+  trackQuestionVisibility, submitShowdownAnswer, finishShowdown,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
@@ -59,6 +59,28 @@ export default function Play() {
   const activeQuestionId = st?.phase === "question" || st?.phase === "showdown"
     ? st.question?.id ?? null
     : null;
+  const showdownClosesAt = st?.phase === "showdown" ? st.showdown?.closesAt ?? null : null;
+
+  // لا نعتمد على بقاء شاشة المقدم نشطة لإنهاء المواجهة بعد انتهاء الوقت.
+  useEffect(() => {
+    if (!player || !showdownClosesAt) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const finish = async () => {
+      if (cancelled) return;
+      try {
+        const completed = await finishShowdown(matchCode);
+        if (!completed && !cancelled) timer = window.setTimeout(finish, 700);
+      } catch {
+        if (!cancelled) timer = window.setTimeout(finish, 1000);
+      }
+    };
+    timer = window.setTimeout(finish, Math.max(0, showdownClosesAt - Date.now() + 500));
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [matchCode, player, showdownClosesAt]);
 
   useEffect(() => {
     if (!player || activeQuestionId === null) return;

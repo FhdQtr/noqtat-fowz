@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Lock, Radio, Timer, Trophy, Zap } from "lucide-react";
+import { CheckCircle2, Lock, Radio, Timer, Trophy, XCircle, Zap } from "lucide-react";
 import type { Match } from "../types/game";
 import { ANSWER_LETTERS } from "../lib/answers";
 import { TEAM_COLORS } from "../types/game";
@@ -19,18 +19,22 @@ export default function ShowdownPanel({ match, teamCode, submitting = false, onA
   const question = state.question;
   const now = useServerNow(showdown ? 100 : null);
   const revealed = state.phase === "showdown_revealed";
+  const waiting = Boolean(showdown && now < showdown.opensAt && !revealed);
+  const expired = Boolean(showdown && now > showdown.closesAt && !revealed);
   const open = Boolean(showdown && now >= showdown.opensAt && now <= showdown.closesAt && !revealed);
   const countdown = showdown ? Math.max(0, Math.ceil((showdown.opensAt - now) / 1000)) : 0;
   const timeLeft = showdown ? Math.max(0, Math.ceil((showdown.closesAt - now) / 1000)) : 0;
   const teamAnswer = teamCode ? showdown?.answers?.[teamCode] : undefined;
   const winner = showdown?.winnerTeam ? match.teams[showdown.winnerTeam] : null;
   const large = size === "large";
+  const questionImage = question?.image;
+  const showdownNumber = showdown?.number;
 
   useEffect(() => {
-    if (!question?.image || !showdown) return;
+    if (!questionImage || !showdownNumber) return;
     const image = new Image();
-    image.src = question.image;
-  }, [question?.image, showdown?.number]);
+    image.src = questionImage;
+  }, [questionImage, showdownNumber]);
 
   if (!showdown || !question) return null;
 
@@ -49,20 +53,20 @@ export default function ShowdownPanel({ match, teamCode, submitting = false, onA
         </div>
       </div>
 
-      {!open && !revealed ? (
+      {waiting ? (
         <div className={`flex flex-col items-center justify-center text-center ${large ? "min-h-[420px]" : "min-h-[340px]"}`}>
           <Radio className="mb-5 h-12 w-12 animate-pulse text-gold-light" />
           <p className="font-cairo text-xl font-black text-foreground">السؤال محمّل عند الجميع</p>
           <p className="mt-2 text-sm text-muted-foreground">لا تعتمد البداية على سرعة تحميل جهازك</p>
           <div className="mt-7 flex h-24 w-24 items-center justify-center rounded-full border-4 border-gold/60 bg-gold/10 font-cairo text-5xl font-black text-gold-light animate-pulse-gold">
-            {countdown || 1}
+            {Math.max(1, countdown)}
           </div>
         </div>
       ) : (
         <div className="mt-5 animate-fade-up">
           <div className="mb-4 flex items-center justify-center gap-2 font-cairo font-black text-gold-light">
             <Timer className="h-5 w-5" />
-            {revealed ? "انتهت المواجهة" : `${timeLeft} ثانية`}
+            {revealed ? "انتهت المواجهة" : expired ? "جاري حساب النتيجة…" : `${timeLeft} ثانية`}
           </div>
           {question.image ? (
             <div className="mx-auto mb-4 overflow-hidden rounded-2xl border-2 border-gold/45 bg-black/30">
@@ -107,8 +111,28 @@ export default function ShowdownPanel({ match, teamCode, submitting = false, onA
             <p className="mt-4 flex items-center justify-center gap-2 text-center font-cairo font-bold text-gold-light"><Lock className="h-4 w-4" />ثبتت إجابة فريقكم بواسطة {teamAnswer.playerName}</p>
           ) : null}
           {revealed ? (
-            <div className={`mt-5 rounded-2xl border px-4 py-4 text-center font-cairo font-black ${winner ? "border-emerald2/60 bg-emerald2/10 text-emerald2-light" : "border-maroon/60 bg-maroon/10 text-maroon-light"}`}>
-              {winner ? `الأسرع بالإجابة الصحيحة: فريق ${winner.name} · +${showdown.points} نقطة` : "لم يجب أي فريق إجابة صحيحة"}
+            <div className="mt-5 space-y-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {match.teamOrder.map((code) => {
+                  const result = showdown.answers?.[code];
+                  const correct = Boolean(result && result.choice === question.answer);
+                  return (
+                    <div key={code} className={`rounded-xl border px-3 py-3 text-right ${correct ? "border-emerald2/45 bg-emerald2/10" : "border-maroon/35 bg-maroon/10"}`}>
+                      <p className="flex items-center gap-2 font-cairo font-black">
+                        {correct ? <CheckCircle2 className="h-4 w-4 text-emerald2-light" /> : <XCircle className="h-4 w-4 text-maroon-light" />}
+                        فريق {match.teams[code].name}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {result ? `${result.playerName}: ${question.options[result.choice]} · ${correct ? "صحيحة" : "خاطئة"}` : "لم يرسل إجابة"}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className={`rounded-2xl border px-4 py-4 text-center font-cairo font-black ${winner ? "border-emerald2/60 bg-emerald2/10 text-emerald2-light" : "border-maroon/60 bg-maroon/10 text-maroon-light"}`}>
+                {winner ? `الأسرع بالإجابة الصحيحة: فريق ${winner.name} · +${showdown.points} نقطة` : "لم يجب أي فريق إجابة صحيحة"}
+              </div>
+              {teamCode ? <p className="text-center text-xs font-bold text-muted-foreground">المقدم سيعيدكم للمسابقة بعد مشاهدة النتيجة</p> : null}
             </div>
           ) : null}
         </div>

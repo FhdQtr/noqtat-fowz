@@ -14220,8 +14220,178 @@
    "باكستان",
    "سريلانكا"
   ],
+ "answer": 0,
+ "image": "https://flagcdn.com/w320/in.png"
+ },
+ {
+  "id": 1200,
+  "type": "flag",
+  "category": "flags",
+  "level": "medium",
+  "question": "أي دولة يمثّل هذا العلم الأحمر والأصفر؟",
+  "options": ["إسبانيا", "البرتغال", "رومانيا", "بلجيكا"],
   "answer": 0,
-  "image": "https://flagcdn.com/w320/in.png"
+  "image": "https://flagcdn.com/w320/es.png"
+ },
+ {
+  "id": 1201,
+  "type": "flag",
+  "category": "flags",
+  "level": "medium",
+  "question": "إلى أي دولة يعود هذا العلم ثلاثي الألوان؟",
+  "options": ["إيطاليا", "المكسيك", "إيرلندا", "المجر"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/it.png"
+ },
+ {
+  "id": 1202,
+  "type": "flag",
+  "category": "flags",
+  "level": "medium",
+  "question": "ما الدولة التي يظهر نسرها في وسط هذا العلم؟",
+  "options": ["المكسيك", "الإكوادور", "بوليفيا", "إسبانيا"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/mx.png"
+ },
+ {
+  "id": 1203,
+  "type": "flag",
+  "category": "flags",
+  "level": "medium",
+  "question": "علم أي دولة يظهر فيه نجوم وصليب الاتحاد؟",
+  "options": ["أستراليا", "نيوزيلندا", "فيجي", "ساموا"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/au.png"
+ },
+ {
+  "id": 1204,
+  "type": "flag",
+  "category": "flags",
+  "level": "medium",
+  "question": "أي دولة إفريقية تستخدم هذا العلم متعدد الألوان؟",
+  "options": ["جنوب إفريقيا", "كينيا", "غانا", "إثيوبيا"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/za.png"
+ },
+ {
+  "id": 1205,
+  "type": "flag",
+  "category": "flags",
+  "level": "medium",
+  "question": "لأي دولة أوروبية ينتمي هذا العلم الأزرق والأبيض؟",
+  "options": ["اليونان", "فنلندا", "إسكتلندا", "إسرائيل"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/gr.png"
+ },
+ {
+  "id": 1206,
+  "type": "flag",
+  "category": "flags",
+  "level": "medium",
+  "question": "ما الدولة صاحبة العلم الأحمر ذي الصليب الأبيض؟",
+  "options": ["سويسرا", "الدنمارك", "إنجلترا", "النمسا"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/ch.png"
+ },
+ {
+  "id": 1207,
+  "type": "flag",
+  "category": "flags",
+  "level": "medium",
+  "question": "إلى أي دولة إسكندنافية يعود هذا العلم؟",
+  "options": ["السويد", "النرويج", "فنلندا", "آيسلندا"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/se.png"
+ },
+ {
+  "id": 1208,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "أي دولة آسيوية تملك العلم الوحيد غير المستطيل؟",
+  "options": ["نيبال", "بوتان", "منغوليا", "سريلانكا"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/np.png"
+ },
+ {
+  "id": 1209,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "علم أي دولة يظهر عليه تنين أبيض؟",
+  "options": ["بوتان", "نيبال", "ميانمار", "كمبوديا"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/bt.png"
+ },
+ {
+  "id": 1210,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "لأي دولة من آسيا الوسطى ينتمي هذا العلم السماوي؟",
+  "options": ["كازاخستان", "أوزبكستان", "قرغيزستان", "طاجيكستان"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/kz.png"
+ },
+ {
+  "id": 1211,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "ما الدولة صاحبة العلم الأحمر الذي تتوسطه شمس صفراء؟",
+  "options": ["قرغيزستان", "كازاخستان", "منغوليا", "طاجيكستان"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/kg.png"
+ },
+ {
+  "id": 1212,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "إلى أي دولة يعود هذا العلم ذو التاج والنجوم؟",
+  "options": ["طاجيكستان", "تركمانستان", "أوزبكستان", "أذربيجان"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/tj.png"
+ },
+ {
+  "id": 1213,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "أي دولة يظهر في علمها شريط زخرفي قرب السارية؟",
+  "options": ["تركمانستان", "بيلاروسيا", "طاجيكستان", "إيران"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/tm.png"
+ },
+ {
+  "id": 1214,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "علم أي دولة قوقازية يحمل خمسة صلبان؟",
+  "options": ["جورجيا", "أرمينيا", "ألبانيا", "صربيا"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/ge.png"
+ },
+ {
+  "id": 1215,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "ما الدولة القوقازية صاحبة هذا العلم الثلاثي الأفقي؟",
+  "options": ["أرمينيا", "ليتوانيا", "بلغاريا", "المجر"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/am.png"
+ },
+ {
+  "id": 1216,
+  "type": "flag",
+  "category": "flags",
+  "level": "hard",
+  "question": "إلى أي دولة قوقازية يعود علم الهلال والنجمة هذا؟",
+  "options": ["أذربيجان", "أوزبكستان", "تركيا", "تركمانستان"],
+  "answer": 0,
+  "image": "https://flagcdn.com/w320/az.png"
  },
  {
   "id": 2000,
@@ -14402,6 +14572,246 @@
   ],
   "answer": 0,
   "image": "/img/landmarks/bluemosque.jpg"
+ },
+ {
+  "id": 2200,
+  "type": "image",
+  "category": "landmarks",
+  "level": "easy",
+  "question": "ما اسم المتحف القطري الظاهر في الصورة؟",
+  "options": ["متحف الفن الإسلامي", "متحف قطر الوطني", "متحف اللوفر", "المتحف العربي للفن الحديث"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/mia-doha.webp"
+ },
+ {
+  "id": 2201,
+  "type": "image",
+  "category": "landmarks",
+  "level": "easy",
+  "question": "في أي مدينة يقع تمثال المسيح الفادي الظاهر؟",
+  "options": ["ريو دي جانيرو", "ساو باولو", "بوينس آيرس", "ليما"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/christ-redeemer.webp"
+ },
+ {
+  "id": 2202,
+  "type": "image",
+  "category": "landmarks",
+  "level": "easy",
+  "question": "ما اسم الجسر الأحمر الشهير في الصورة؟",
+  "options": ["جسر البوابة الذهبية", "جسر بروكلين", "جسر البرج", "جسر البوسفور"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/golden-gate.webp"
+ },
+ {
+  "id": 2203,
+  "type": "image",
+  "category": "landmarks",
+  "level": "easy",
+  "question": "في أي إمارة يقع المبنى ذو القبة الفضية الظاهر؟",
+  "options": ["أبوظبي", "دبي", "الشارقة", "رأس الخيمة"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/louvre-abu-dhabi.webp"
+ },
+ {
+  "id": 2204,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "ما اسم المسجد الأبيض الكبير الظاهر في الصورة؟",
+  "options": ["جامع الشيخ زايد الكبير", "جامع السلطان قابوس الأكبر", "مسجد الحسن الثاني", "المسجد الأزرق"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/sheikh-zayed.webp"
+ },
+ {
+  "id": 2205,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "في أي دولة تقع الأبراج الثلاثة المتصلة بسفينة علوية؟",
+  "options": ["سنغافورة", "ماليزيا", "تايلاند", "إندونيسيا"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/marina-bay.webp"
+ },
+ {
+  "id": 2206,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "ما اسم الكنيسة ذات الأبراج المتعددة الظاهرة في الصورة؟",
+  "options": ["ساغرادا فاميليا", "كاتدرائية نوتردام", "كاتدرائية كولونيا", "بازيليك القديس بطرس"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/sagrada.webp"
+ },
+ {
+  "id": 2207,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "في أي مدينة يقع مجسم الكرات المعدنية الظاهر؟",
+  "options": ["بروكسل", "أمستردام", "برلين", "فيينا"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/atomium.webp"
+ },
+ {
+  "id": 2208,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "في أي دولة تقع قلعة نويشفانشتاين الظاهرة؟",
+  "options": ["ألمانيا", "النمسا", "سويسرا", "فرنسا"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/neuschwanstein.webp"
+ },
+ {
+  "id": 2209,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "ما اسم الساحة التاريخية ذات المدارس المزخرفة الظاهرة؟",
+  "options": ["ساحة ريجستان", "ساحة نقش جهان", "الميدان الأحمر", "ساحة السلطان أحمد"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/registan.webp"
+ },
+ {
+  "id": 2210,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "ما اسم الجزيرة الصخرية الفرنسية الظاهرة في الصورة؟",
+  "options": ["مون سان ميشيل", "جزيرة سكاي", "سانتوريني", "كابري"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/mont-saint-michel.webp"
+ },
+ {
+  "id": 2211,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "في أي دولة يقع سهل باغان المليء بالمعابد؟",
+  "options": ["ميانمار", "كمبوديا", "تايلاند", "لاوس"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/bagan.webp"
+ },
+ {
+  "id": 2212,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "ما اسم التماثيل الحجرية العملاقة الظاهرة؟",
+  "options": ["تماثيل مواي", "تماثيل الأولمك", "محاربو التيراكوتا", "تماثيل أبو سمبل"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/moai.webp"
+ },
+ {
+  "id": 2213,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "في أي دولة تقع أديرة ميتيورا فوق الصخور؟",
+  "options": ["اليونان", "بلغاريا", "جورجيا", "رومانيا"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/meteora.webp"
+ },
+ {
+  "id": 2214,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "ما اسم المعبد البوذي ذي القباب الحجرية الظاهر؟",
+  "options": ["بوروبودور", "أنغكور وات", "باغان", "فات فو"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/borobudur.webp"
+ },
+ {
+  "id": 2215,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "في أي دولة يقع معبد أنغكور وات الظاهر؟",
+  "options": ["كمبوديا", "فيتنام", "تايلاند", "ميانمار"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/angkor-wat.webp"
+ },
+ {
+  "id": 2216,
+  "type": "image",
+  "category": "landmarks",
+  "level": "easy",
+  "question": "ما اسم المبنى القطري المستوحى من وردة الصحراء؟",
+  "options": ["متحف قطر الوطني", "متحف الفن الإسلامي", "مكتبة قطر الوطنية", "مركز قطر الوطني للمؤتمرات"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/qatar-national-museum.webp"
+ },
+ {
+  "id": 2217,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "في أي مدينة يقع برجا بتروناس التوأم؟",
+  "options": ["كوالالمبور", "سنغافورة", "جاكرتا", "بانكوك"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/petronas.webp"
+ },
+ {
+  "id": 2218,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "ما اسم النصب المنحوت في الجبل والظاهر في الصورة؟",
+  "options": ["جبل راشمور", "نصب كريزي هورس", "جبل رشمور الكندي", "وادي الرؤساء"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/mount-rushmore.webp"
+ },
+ {
+  "id": 2219,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "في أي مدينة إسبانية يقع قصر الحمراء؟",
+  "options": ["غرناطة", "إشبيلية", "قرطبة", "طليطلة"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/alhambra.webp"
+ },
+ {
+  "id": 2220,
+  "type": "image",
+  "category": "landmarks",
+  "level": "medium",
+  "question": "ما اسم البرج الطويل الظاهر في أفق تورونتو؟",
+  "options": ["برج سي إن", "برج سبيس نيدل", "برج أوستانكينو", "برج كانتون"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/cn-tower.webp"
+ },
+ {
+  "id": 2221,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "في أي دولة تقع كنيسة القديس جورج المنحوتة في الصخر؟",
+  "options": ["إثيوبيا", "إريتريا", "جورجيا", "أرمينيا"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/lalibela.webp"
+ },
+ {
+  "id": 2222,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "ما اسم الهرم المدرج الشهير الظاهر في الصورة؟",
+  "options": ["إل كاستيو في تشيتشن إيتزا", "هرم الشمس في تيوتيهواكان", "هرم كوكولكان في تولوم", "هرم الساحر في أوشمال"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/chichen-itza.webp"
+ },
+ {
+  "id": 2223,
+  "type": "image",
+  "category": "landmarks",
+  "level": "hard",
+  "question": "ما اسم القصر المرتفع فوق مدينة لاسا؟",
+  "options": ["قصر بوتالا", "قصر الصيف", "قصر غيونغبوك", "قصر لاهور"],
+  "answer": 0,
+  "image": "/img/landmarks-v2/potala-palace.webp"
  },
  {
   "id": 3001,

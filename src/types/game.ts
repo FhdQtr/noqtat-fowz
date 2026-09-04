@@ -113,6 +113,7 @@ export interface ShowdownState {
   closesAt: number;
   answers?: Record<string, ShowdownAnswer>;
   winnerTeam?: string | null;
+  pointsAwarded?: boolean;
 }
 
 export interface GameState {
@@ -130,6 +131,7 @@ export interface GameState {
   questionDuration?: number; // مدة خاصة بالسؤال؛ «مثّل المثل» دقيقتان
   selectionRequestId?: string | null; // يمنع تكرار اختيار النوع عند إعادة الطلب
   usedIds: number[]; // الأسئلة المستخدمة
+  usedAssets?: string[]; // الصور والأسئلة المستخدمة لمنع تكرار الأصل نفسه بين الفرق
   questionValue?: number; // قيمة السؤال الأساسية (٥٠ × رقم اختيار النوع)
   viewUntil?: number | null; // للصور/الأعلام: وقت إخفاء الصورة (مللي ثانية)
   assistUsed?: boolean; // الأعلام: الفريق طلب "اختيار من الإجابات" (ربع النقاط)
@@ -169,6 +171,7 @@ export interface Match {
   difficultyLevels?: QuestionLevel[]; // مستوى واحد أو مستويان، والمنوع يستخدم المستويات الثلاثة
   answerMode?: AnswerMode;
   enabledTypes: QuestionType[];
+  typeCaps?: Record<string, number>; // الحصة العادلة لكل قسم بحسب حجم البنك وعدد الفرق
   state: GameState;
   teams: Record<string, Team>;
   players: Record<string, Player>;

@@ -226,8 +226,9 @@ export async function getUsageStats(): Promise<UsageStats> {
   return gameAction<UsageStats>("getUsageStats", {});
 }
 
-export function typeCap(match: Pick<Match, "totalRounds" | "teamOrder" | "enabledTypes">): number {
-  if (match.enabledTypes.length <= 1) return 99;
+export function typeCap(match: Pick<Match, "totalRounds" | "teamOrder" | "enabledTypes" | "questionsPerTeam" | "typeCaps">, type?: QuestionType): number {
+  if (type && Number.isFinite(match.typeCaps?.[type])) return match.typeCaps![type];
+  if (match.enabledTypes.length <= 1) return match.questionsPerTeam ?? Math.ceil(match.totalRounds / Math.max(1, match.teamOrder.length));
   const perTeam = Math.ceil(match.totalRounds / Math.max(1, match.teamOrder.length));
   return Math.max(3, Math.ceil(perTeam / 2));
 }
@@ -245,7 +246,7 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
   const used = match.typeCounts?.[teamCode]?.[type] ?? 0;
   const teamUsed = Object.values(match.typeCounts?.[teamCode] ?? {})
     .reduce<number>((total, count) => total + (Number(count) || 0), 0);
-  const cap = typeCap(match);
+  const cap = typeCap(match, type);
   return {
     used,
     cap,

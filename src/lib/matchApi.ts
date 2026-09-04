@@ -21,7 +21,8 @@ type ActionName =
   | "submitAnswer" | "useAssist" | "judgeVerbal" | "revealAnswer"
   | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
-  | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer";
+  | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
+  | "submitShowdownAnswer" | "finishShowdown";
 
 function levelForPick(n: number, difficulty: DifficultyMode = "mixed", difficultyLevels?: QuestionLevel[]): QuestionLevel {
   const selected = [...new Set((difficultyLevels ?? []).filter((level): level is QuestionLevel => ["easy", "medium", "hard"].includes(level)))];
@@ -255,6 +256,30 @@ export async function submitAnswer(matchCode: string, playerId: string, playerNa
   } catch {
     return "error";
   }
+}
+
+export async function submitShowdownAnswer(
+  matchCode: string,
+  playerId: string,
+  choice: number,
+): Promise<{ status: "accepted" | "early" | "late" | "error"; correct?: boolean }> {
+  try {
+    return await gameAction("submitShowdownAnswer", { matchCode, playerId, choice });
+  } catch {
+    return { status: "error" };
+  }
+}
+
+export async function finishShowdown(matchCode: string): Promise<boolean> {
+  const result = await gameAction<{ finished: boolean }>("finishShowdown", { matchCode });
+  return result.finished;
+}
+
+export function isShowdownDue(match: Match): boolean {
+  if (match.tieBreaker?.active || !match.state.round) return false;
+  const interval = 3 * Math.max(1, match.teamOrder.length);
+  return match.state.round % interval === 0
+    && (match.showdownCount ?? 0) < Math.floor(match.state.round / interval);
 }
 
 export async function useAssist(matchCode: string, teamCode: string): Promise<boolean> {

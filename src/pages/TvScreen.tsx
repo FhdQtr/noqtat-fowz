@@ -13,6 +13,7 @@ import TimerRing from "../components/TimerRing";
 import { sfx } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 import PowerCardEvent from "../components/PowerCardEvent";
+import ShowdownPanel from "../components/ShowdownPanel";
 
 export default function TvScreen() {
   const { code = "" } = useParams();
@@ -145,7 +146,7 @@ export default function TvScreen() {
         <div className="w-28 text-left">
           {match.status === "playing" && (
             <span className="text-sm text-muted-foreground font-cairo">
-              سؤال {st.round} / {match.totalRounds}
+              {st.phase === "showdown" || st.phase === "showdown_revealed" ? "مواجهة الجميع" : `سؤال ${st.round} / ${match.totalRounds}`}
             </span>
           )}
         </div>
@@ -158,6 +159,9 @@ export default function TvScreen() {
             <Zap className="h-5 w-5" /> ساحة الحسم · الجولة الفاصلة {match.tieBreaker.cycle}
           </div>
         )}
+        {(st.phase === "showdown" || st.phase === "showdown_revealed") ? (
+          <ShowdownPanel match={match} size="large" />
+        ) : null}
         {/* ═══ اللوبي ═══ */}
         {match.status === "lobby" && (
           <div className="flex flex-col items-center gap-6 animate-fade-up w-full">
@@ -190,7 +194,7 @@ export default function TvScreen() {
         )}
 
         {/* ═══ بين الأسئلة / اختيار النوع ═══ */}
-        {match.status === "playing" && (st.phase === "lobby" || st.phase === "choose" || !st.question) && (
+        {match.status === "playing" && (st.phase === "lobby" || st.phase === "choose" || !st.question) && st.phase !== "showdown" && st.phase !== "showdown_revealed" && (
           <div className="text-center animate-fade-up">
             <p className="text-muted-foreground text-xl mb-4">
               {st.phase === "choose" ? "الفريق يختار نوع السؤال من أجهزتهم…" : "استعدوا… السؤال القادم لفريق"}
@@ -216,7 +220,7 @@ export default function TvScreen() {
         )}
 
         {/* ═══ السؤال ═══ */}
-        {q && st.phase !== "lobby" && st.phase !== "choose" && st.phase !== "ended" && (
+        {q && st.phase !== "lobby" && st.phase !== "choose" && st.phase !== "showdown" && st.phase !== "showdown_revealed" && st.phase !== "ended" && (
           <div className="w-full max-w-5xl flex flex-col items-center gap-5 animate-fade-up">
             <div className="flex items-center gap-4 flex-wrap justify-center">
               <QuestionMeta q={q} />

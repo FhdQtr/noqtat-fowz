@@ -87,6 +87,8 @@ export type MatchPhase =
   | "question" // سؤال معروض وينتظر إجابة الفريق
   | "locked" // فريق جاوب — بانتظار المقدم يكشف
   | "revealed" // النتيجة ظاهرة
+  | "showdown" // سؤال سريع لكل الفرق
+  | "showdown_revealed" // نتيجة سؤال المواجهة
   | "ended"; // نهاية المسابقة
 
 export interface LiveAnswer {
@@ -94,6 +96,23 @@ export interface LiveAnswer {
   playerName: string;
   choice: number; // فهرس الخيار المختار
   at: number;
+}
+
+export interface ShowdownAnswer {
+  submissionId: string;
+  playerId: string;
+  playerName: string;
+  choice: number;
+  at: number;
+}
+
+export interface ShowdownState {
+  number: number;
+  points: number;
+  opensAt: number;
+  closesAt: number;
+  answers?: Record<string, ShowdownAnswer>;
+  winnerTeam?: string | null;
 }
 
 export interface GameState {
@@ -131,6 +150,7 @@ export interface GameState {
     targetPlayerName?: string | null;
     at: number;
   } | null;
+  showdown?: ShowdownState | null;
 }
 
 export interface Match {
@@ -152,6 +172,7 @@ export interface Match {
   state: GameState;
   teams: Record<string, Team>;
   players: Record<string, Player>;
+  showdownCount?: number;
   questionWatch?: Record<string, {
     questionId: string | number;
     status: "active" | "away";

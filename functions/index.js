@@ -13,6 +13,9 @@ const DIGITS = "23456789";
 const COLORS = ["maroon", "emerald", "royal", "gold"];
 const POWER_CARD_BASE_COST = { extraTime: 100, swapQuestion: 150, pickPlayer: 200, doublePoints: 200, freeze: 250, steal: 300 };
 const LOBBY_TTL_MS = 10 * 60 * 1000;
+const SHOWDOWN_POINTS = 200;
+const SHOWDOWN_OPEN_DELAY_MS = 4000;
+const SHOWDOWN_DURATION_MS = 20000;
 
 function fail(code, message) { throw new HttpsError(code, message); }
 function text(value, max = 30) { return String(value ?? "").trim().slice(0, max); }
@@ -93,6 +96,12 @@ function cardReward(state) {
   if (state.assistUsed) return Math.max(1, Math.round(base / 2));
   if (state.passCount > 0 && !state.stealFullValue) return Math.max(1, Math.round(base / 2));
   return base;
+}
+function showdownDue(match) {
+  if (match.tieBreaker?.active || !match.state?.round) return false;
+  const interval = 3 * Math.max(1, match.teamOrder.length);
+  const completedBlocks = Math.floor(match.state.round / interval);
+  return match.state.round % interval === 0 && (match.showdownCount || 0) < completedBlocks;
 }
 function playerForUid(match, uid, playerId) {
   const player = match.players?.[playerId];
@@ -345,6 +354,128 @@ async function chooseType(uid, data) {
   }
 }
 
+async function startShowdown(id, match) {
+  const showdownNumber = (match.showdownCount || 0) + 1;
+  const wantsImage = showdownNumber % 2 === 0;
+  const allowedTextTypes = new Set(["multiple_choice", "riddle", "completion"]);
+  const usedIds = new Set(match.state.usedIds || []);
+  const eligible = QUESTIONS.filter((question) =>
+    !question.disabled
+    && question.level === "hard"
+    && Array.isArray(question.options)
+    && question.options.length === 4
+    && (wantsImage ? Boolean(question.image) : allowedTextTypes.has(question.type))
+  );
+  const unseen = eligible.filter((question) => !usedIds.has(question.id));
+  const basePool = unseen.length ? unseen : eligible;
+  if (!basePool.length) fail("resource-exhausted", "لا توجد أسئلة مواجهة صعبة متاحة");
+
+  const kind = wantsImage ? "visual" : "text";
+  const historyOwner = match.hostUid || "shared";
+  const hostHistoryRef = db.ref(`hostQuestionHistory/${historyOwner}/showdown_${kind}/hard`);
+  const globalHistoryRef = db.ref(`globalQuestionHistory/showdown_${kind}/hard`);
+  const [hostSnapshot, globalSnapshot] = await Promise.all([hostHistoryRef.get(), globalHistoryRef.get()]);
+  let available = oldestWindow(basePool, hostSnapshot.val() || {});
+  available = oldestWindow(available, globalSnapshot.val() || {});
+  const question = shuffled(available[randomInt(available.length)]);
+  const createdAt = now();
+  const opensAt = createdAt + SHOWDOWN_OPEN_DELAY_MS;
+  const closesAt = opensAt + SHOWDOWN_DURATION_MS;
+
+  await db.ref().update({
+    [`matches/${id}/showdownCount`]: showdownNumber,
+    [`matches/${id}/state/phase`]: "showdown",
+    [`matches/${id}/state/question`]: publicQuestion(question),
+    [`matches/${id}/state/answer`]: null,
+    [`matches/${id}/state/isCorrect`]: null,
+    [`matches/${id}/state/targetTeam`]: null,
+    [`matches/${id}/state/originalTeam`]: null,
+    [`matches/${id}/state/viewUntil`]: null,
+    [`matches/${id}/state/questionStartedAt`]: opensAt,
+    [`matches/${id}/state/questionDuration`]: SHOWDOWN_DURATION_MS / 1000,
+    [`matches/${id}/state/showdown`]: { number: showdownNumber, points: SHOWDOWN_POINTS, opensAt, closesAt, answers: {}, winnerTeam: null },
+    [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
+    [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
+    [`hostQuestionHistory/${historyOwner}/showdown_${kind}/hard/${question.id}`]: createdAt,
+    [`globalQuestionHistory/showdown_${kind}/hard/${question.id}`]: createdAt,
+  });
+  return { showdown: true };
+}
+
+async function submitShowdownAnswer(uid, data) {
+  const id = code(data.matchCode);
+  const [matchSnapshot, secretSnapshot] = await Promise.all([
+    db.ref(`matches/${id}`).get(),
+    db.ref(`matchSecrets/${id}`).get(),
+  ]);
+  if (!matchSnapshot.exists()) fail("not-found", "الميدان غير موجود");
+  const match = matchSnapshot.val();
+  const player = playerForUid(match, uid, text(data.playerId, 80));
+  const choice = Number(data.choice);
+  const receivedAt = now();
+  const showdown = match.state.showdown;
+  if (!player || match.state.phase !== "showdown" || !showdown) return { status: "late" };
+  if (!Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
+  if (receivedAt < showdown.opensAt) return { status: "early" };
+  if (receivedAt > showdown.closesAt) return { status: "late" };
+  const secret = secretSnapshot.val();
+  if (!secret || secret.questionId !== match.state.question?.id) return { status: "late" };
+
+  const submissionId = `${uid}_${receivedAt}_${randomInt(100000, 999999)}`;
+  const matchRef = db.ref(`matches/${id}`);
+  const result = await matchRef.transaction((current) => {
+    const currentShowdown = current?.state?.showdown;
+    if (!current || current.state?.phase !== "showdown" || !currentShowdown) return;
+    if (receivedAt < currentShowdown.opensAt || receivedAt > currentShowdown.closesAt) return;
+    const currentPlayer = current.players?.[player.id];
+    if (!currentPlayer || currentPlayer.authUid !== uid || currentShowdown.answers?.[currentPlayer.teamCode]) return;
+
+    currentShowdown.answers = currentShowdown.answers || {};
+    currentShowdown.answers[currentPlayer.teamCode] = {
+      submissionId,
+      playerId: player.id,
+      playerName: player.name,
+      choice,
+      at: receivedAt,
+    };
+    if (choice === secret.answer) {
+      currentShowdown.winnerTeam = currentPlayer.teamCode;
+      current.state.phase = "showdown_revealed";
+      current.state.question.answer = secret.answer;
+      current.teams[currentPlayer.teamCode].score = (current.teams[currentPlayer.teamCode].score || 0) + currentShowdown.points;
+    } else if (Object.keys(currentShowdown.answers).length >= current.teamOrder.length) {
+      current.state.phase = "showdown_revealed";
+      current.state.question.answer = secret.answer;
+    }
+    return current;
+  }, undefined, false);
+  const savedAnswer = result.snapshot.val()?.state?.showdown?.answers?.[player.teamCode];
+  return savedAnswer?.submissionId === submissionId
+    ? { status: "accepted", correct: choice === secret.answer }
+    : { status: "late" };
+}
+
+async function finishShowdown(uid, data) {
+  const id = code(data.matchCode);
+  const [matchSnapshot, secretSnapshot] = await Promise.all([
+    db.ref(`matches/${id}`).get(),
+    db.ref(`matchSecrets/${id}`).get(),
+  ]);
+  if (!matchSnapshot.exists()) fail("not-found", "الميدان غير موجود");
+  const match = matchSnapshot.val();
+  requireHost(match, uid);
+  if (match.state.phase !== "showdown" || !match.state.showdown || now() < match.state.showdown.closesAt) return { finished: false };
+  const secret = secretSnapshot.val();
+  if (!secret || secret.questionId !== match.state.question?.id) return { finished: false };
+  await db.ref(`matches/${id}/state`).transaction((state) => {
+    if (!state || state.phase !== "showdown" || now() < state.showdown?.closesAt) return;
+    state.phase = "showdown_revealed";
+    state.question.answer = secret.answer;
+    return state;
+  }, undefined, false);
+  return { finished: true };
+}
+
 async function submitAnswer(uid, data) {
   const { id, match } = await loadMatch(data.matchCode);
   const player = playerForUid(match, uid, text(data.playerId, 80));
@@ -438,9 +569,10 @@ async function reveal(id, match, correctOverride) {
 
 async function advance(id, match) {
   const state = match.state;
+  if (state.phase !== "showdown_revealed" && showdownDue(match)) return startShowdown(id, match);
   if (state.round < match.totalRounds) {
     let nextTeam;
-    const updates = { turnIndex: match.turnIndex + 1, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false };
+    const updates = { turnIndex: match.turnIndex + 1, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/showdown": null, "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false };
     if (match.tieBreaker?.active) {
       const cursor = match.tieBreaker.cursor + 1;
       nextTeam = match.tieBreaker.teams[cursor % match.tieBreaker.teams.length];
@@ -618,6 +750,8 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "chooseType") return chooseType(uid, data);
   if (action === "submitAnswer") return submitAnswer(uid, data);
   if (action === "submitHostAnswer") return submitHostAnswer(uid, data);
+  if (action === "submitShowdownAnswer") return submitShowdownAnswer(uid, data);
+  if (action === "finishShowdown") return finishShowdown(uid, data);
 
   const { id, match } = await loadMatch(data.matchCode);
   if (action === "getMatch") return { match };

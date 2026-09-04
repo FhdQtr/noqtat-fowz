@@ -9,7 +9,7 @@ import {
   subscribeMatch, startMatch, revealAnswer, judgeVerbal,
   passToNextTeam, advanceTurn, endMatch, deleteMatch, setCaptain,
   setAnswerMode, submitHostAnswer, startQuestionTimer, useAssist as requestAssist,
-  getHostAnswer,
+  getHostAnswer, finishShowdown, isShowdownDue,
 } from "../lib/matchApi";
 import type { AnswerMode, Match } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
@@ -21,6 +21,7 @@ import { sfx, unlockAudio } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 import { ANSWER_LETTERS } from "../lib/answers";
 import PowerCardEvent from "../components/PowerCardEvent";
+import ShowdownPanel from "../components/ShowdownPanel";
 
 const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
 
@@ -52,6 +53,27 @@ export default function HostRoom() {
   }, [code, questionId]);
 
   const players = useMemo(() => Object.values(match?.players ?? {}), [match]);
+
+  const showdownClosesAt = match?.state.phase === "showdown" ? match.state.showdown?.closesAt ?? null : null;
+  useEffect(() => {
+    if (!showdownClosesAt) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const finish = async () => {
+      if (cancelled) return;
+      try {
+        const completed = await finishShowdown(code);
+        if (!completed && !cancelled) timer = window.setTimeout(finish, 700);
+      } catch {
+        if (!cancelled) timer = window.setTimeout(finish, 1000);
+      }
+    };
+    timer = window.setTimeout(finish, Math.max(0, showdownClosesAt - Date.now() + 500));
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [code, showdownClosesAt]);
 
   // ساعة حيّة لعدّاد معاينة الصور (الذاكرة/الأعلام)
   const stv = match?.state;
@@ -150,7 +172,7 @@ export default function HostRoom() {
     ? teams.some((team) => !team.captainId || !match.players?.[team.captainId])
     : false;
   const canPassAfterWrong = canPassQuestion(match);
-  const awayPlayers = st.phase === "question" && st.question
+  const awayPlayers = (st.phase === "question" || st.phase === "showdown") && st.question
     ? Object.entries(match.questionWatch ?? {}).flatMap(([playerId, watch]) => {
         if (watch.status !== "away" || watch.questionId !== st.question?.id) return [];
         const watchedPlayer = match.players?.[playerId];
@@ -339,7 +361,7 @@ export default function HostRoom() {
       {/* الشريط العلوي */}
       <div className="flex items-center justify-between mb-4">
         <div className="text-xs text-muted-foreground">
-          سؤال <span className="text-gold-light font-bold">{st.round}</span> من {match.totalRounds}
+          {st.phase === "showdown" || st.phase === "showdown_revealed" ? "مواجهة الجميع" : <>سؤال <span className="text-gold-light font-bold">{st.round}</span> من {match.totalRounds}</>}
         </div>
         <ScoreBoard match={match} highlight={st.targetTeam} />
         <div className="flex gap-2">
@@ -375,7 +397,7 @@ export default function HostRoom() {
         </div>
       ) : null}
 
-      <div className="mb-4">
+      <div className={st.phase === "showdown" || st.phase === "showdown_revealed" ? "hidden" : "mb-4"}>
         <AnswerModeControls
           value={match.answerMode ?? "anyone"}
           disabled={busy}
@@ -384,8 +406,20 @@ export default function HostRoom() {
         />
       </div>
 
+      {(st.phase === "showdown" || st.phase === "showdown_revealed") ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 pb-5">
+          <ShowdownPanel match={match} size="regular" />
+          {st.phase === "showdown_revealed" ? (
+            <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
+              <SkipForward className="h-5 w-5" />
+              {st.round >= match.totalRounds ? "إعلان الفائز" : "العودة للمسابقة"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* ممثلو الفرق — الحكم يقدر يغيّر الممثل في أي وقت */}
-      <details className="mb-4 glass-card !p-0 overflow-hidden">
+      <details className={`${st.phase === "showdown" || st.phase === "showdown_revealed" ? "hidden" : "mb-4"} glass-card !p-0 overflow-hidden`}>
         <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-cairo font-bold text-gold-light/90 flex items-center gap-2">
           <Crown className="w-3.5 h-3.5" />
           ممثلو الفرق — اضغط لتعيين أو تغيير من يثبت الإجابة
@@ -427,7 +461,7 @@ export default function HostRoom() {
       </details>
 
       {/* ═══ اختيار نوع السؤال ═══ */}
-      {(st.phase === "choose" || st.phase === "lobby" || !st.question) && (
+      {(st.phase === "choose" || st.phase === "lobby" || !st.question) && st.phase !== "showdown" && st.phase !== "showdown_revealed" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-6 animate-fade-up">
           {chooseTeam && (
             <div className="text-center">
@@ -460,7 +494,7 @@ export default function HostRoom() {
       )}
 
       {/* ═══ السؤال المعروض ═══ */}
-      {st.question && st.phase !== "lobby" && st.phase !== "choose" && (
+      {st.question && st.phase !== "lobby" && st.phase !== "choose" && st.phase !== "showdown" && st.phase !== "showdown_revealed" && (
         <div className="flex-1 flex flex-col gap-5 animate-fade-up">
           {/* شريط الدور */}
           <div className="flex items-center justify-center gap-3 flex-wrap">
@@ -677,7 +711,7 @@ export default function HostRoom() {
                 )}
                 <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
                   <SkipForward className="w-5 h-5" />
-                  {st.round >= match.totalRounds ? "إعلان الفائز" : "السؤال التالي"}
+                  {isShowdownDue(match) ? "مواجهة الجميع" : st.round >= match.totalRounds ? "إعلان الفائز" : "السؤال التالي"}
                 </button>
               </>
             )}

@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
-  trackQuestionVisibility,
+  trackQuestionVisibility, submitShowdownAnswer,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
@@ -19,6 +19,7 @@ import { ANSWER_LETTERS } from "../lib/answers";
 import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import PowerCardsWallet from "../components/PowerCardsWallet";
 import PowerCardEvent from "../components/PowerCardEvent";
+import ShowdownPanel from "../components/ShowdownPanel";
 
 const STORAGE_KEY = "al_midan_player";
 
@@ -44,6 +45,8 @@ export default function Play() {
   const [choosingType, setChoosingType] = useState<QuestionType | null>(null);
   const [cardMsg, setCardMsg] = useState("");
   const [connErr, setConnErr] = useState("");
+  const [showdownSubmitting, setShowdownSubmitting] = useState(false);
+  const [showdownMsg, setShowdownMsg] = useState("");
   const prevPhase = useRef("");
   const prevQid = useRef<number | null>(null);
 
@@ -53,7 +56,9 @@ export default function Play() {
   const st = match?.state;
   const isMyTurn = st?.phase === "question" && st.targetTeam === teamCode;
   const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
-  const activeQuestionId = st?.phase === "question" ? st.question?.id ?? null : null;
+  const activeQuestionId = st?.phase === "question" || st?.phase === "showdown"
+    ? st.question?.id ?? null
+    : null;
 
   useEffect(() => {
     if (!player || activeQuestionId === null) return;
@@ -127,6 +132,19 @@ export default function Play() {
     const res = await submitAnswer(matchCode, player.id, player.name, i);
     setStatus(res === "accepted" ? "accepted" : "late");
     if (res === "accepted") sfx.lock();
+  };
+
+  const answerShowdown = async (choice: number) => {
+    if (!player || showdownSubmitting || st?.showdown?.answers?.[teamCode]) return;
+    setShowdownSubmitting(true);
+    setShowdownMsg("");
+    unlockAudio();
+    const result = await submitShowdownAnswer(matchCode, player.id, choice);
+    if (result.status === "early") setShowdownMsg("المواجهة لم تبدأ بعد");
+    else if (result.status === "late") setShowdownMsg("سبقك لاعب من فريقك أو انتهت المواجهة");
+    else if (result.status === "error") setShowdownMsg("تعذّر إرسال الإجابة، اضغط مرة ثانية");
+    else sfx.lock();
+    setShowdownSubmitting(false);
   };
 
   const pickType = async (t: QuestionType) => {
@@ -277,7 +295,9 @@ export default function Play() {
   return (
     <div className="min-h-dvh flex flex-col">
       <PowerCardEvent match={match} />
-      <PowerCardsWallet match={match} teamCode={teamCode} onUse={activateCard} />
+      {st!.phase !== "showdown" && st!.phase !== "showdown_revealed" ? (
+        <PowerCardsWallet match={match} teamCode={teamCode} onUse={activateCard} />
+      ) : null}
       {/* شريط النتائج */}
       <header className="sticky top-0 z-30 bg-night/90 backdrop-blur-md border-b border-gold-faint/30 px-3 py-2.5">
         <ScoreBoard match={match} highlight={st!.targetTeam} />
@@ -289,6 +309,12 @@ export default function Play() {
             <Zap className="h-5 w-5" /> ساحة الحسم — كل نقطة تصنع الفارق
           </div>
         )}
+        {(st!.phase === "showdown" || st!.phase === "showdown_revealed") ? (
+          <div className="flex w-full flex-col items-center gap-3">
+            <ShowdownPanel match={match} teamCode={teamCode} submitting={showdownSubmitting} onAnswer={answerShowdown} />
+            {showdownMsg ? <p className="text-center text-sm font-cairo font-bold text-maroon-light">{showdownMsg}</p> : null}
+          </div>
+        ) : null}
         {/* هوية اللاعب */}
         <div className="flex items-center gap-2 text-sm">
           <span className="w-3 h-3 rounded-full" style={{ background: c.light }} />
@@ -372,7 +398,7 @@ export default function Play() {
         )}
 
         {/* السؤال */}
-        {q && st!.phase !== "lobby" && st!.phase !== "choose" && (
+        {q && st!.phase !== "lobby" && st!.phase !== "choose" && st!.phase !== "showdown" && st!.phase !== "showdown_revealed" && (
           <>
             {isMyTurn ? (
               <div className="w-full flex flex-col gap-4 animate-fade-up">

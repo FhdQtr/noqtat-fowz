@@ -3,7 +3,7 @@ const { randomInt } = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
-const { getDatabase } = require("firebase-admin/database");
+const { getDatabase, ServerValue } = require("firebase-admin/database");
 
 initializeApp({ databaseURL: "https://noqtat-fowz-d13aa-default-rtdb.asia-southeast1.firebasedatabase.app" });
 const db = getDatabase();
@@ -22,6 +22,56 @@ function text(value, max = 30) { return String(value ?? "").trim().slice(0, max)
 function code(value) { return text(value, 12).toUpperCase(); }
 function dbKey(value) { return text(value, 50).replace(/[.#$\[\]\/]/g, "_"); }
 function now() { return Date.now(); }
+function qatarBucket(timestamp = now()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Qatar",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(timestamp).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parts.hour };
+}
+async function recordMatchUsage(metric, matchId) {
+  const timestamp = now();
+  const claim = await db.ref(`usageSeen/${metric}/${dbKey(matchId)}`).transaction(
+    (value) => value == null ? timestamp : undefined,
+    undefined,
+    false,
+  );
+  if (!claim.committed) return;
+  const { date, hour } = qatarBucket(timestamp);
+  await db.ref().update({
+    [`usageStats/totals/${metric}`]: ServerValue.increment(1),
+    [`usageStats/daily/${date}/${metric}`]: ServerValue.increment(1),
+    [`usageStats/daily/${date}/hours/${hour}/${metric}`]: ServerValue.increment(1),
+    [`usageStats/totals/${metric}LastAt`]: timestamp,
+  });
+}
+async function recordPlayerUsage(uid) {
+  const timestamp = now();
+  const { date, hour } = qatarBucket(timestamp);
+  const safeUid = dbKey(uid);
+  const [allTimeClaim, dailyClaim] = await Promise.all([
+    db.ref(`usageSeen/players/${safeUid}`).transaction((value) => value == null ? timestamp : undefined, undefined, false),
+    db.ref(`usageSeen/daily/${date}/players/${safeUid}`).transaction((value) => value == null ? timestamp : undefined, undefined, false),
+  ]);
+  const updates = { "usageStats/totals/playerLastAt": timestamp };
+  if (allTimeClaim.committed) updates["usageStats/totals/uniquePlayers"] = ServerValue.increment(1);
+  if (dailyClaim.committed) {
+    updates[`usageStats/daily/${date}/activePlayers`] = ServerValue.increment(1);
+    updates[`usageStats/daily/${date}/hours/${hour}/activePlayers`] = ServerValue.increment(1);
+  }
+  await db.ref().update(updates);
+}
+async function safelyRecordUsage(operation) {
+  try {
+    await operation();
+  } catch (error) {
+    console.error("Usage tracking failed", error);
+  }
+}
 function matchCode() { return LETTERS[randomInt(LETTERS.length)] + Array.from({ length: 3 }, () => DIGITS[randomInt(DIGITS.length)]).join(""); }
 function randomOrder(values) {
   const result = [...values];
@@ -189,6 +239,7 @@ async function createMatch(uid, options) {
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     await db.ref(`matches/${id}`).set(match);
+    await safelyRecordUsage(() => recordMatchUsage("matchesCreated", id));
     return { code: id };
   }
   fail("resource-exhausted", "تعذّر إنشاء كود جديد، حاول مرة ثانية");
@@ -201,6 +252,7 @@ async function joinTeam(uid, data) {
   if (match.status === "ended") fail("failed-precondition", "انتهى هذا الميدان");
   const player = { id: `p_${now()}_${randomInt(100000, 999999)}`, name: text(data.name, 20) || "لاعب", teamCode, joinedAt: now(), authUid: uid };
   await db.ref(`matches/${id}/players/${player.id}`).set(player);
+  await safelyRecordUsage(() => recordPlayerUsage(uid));
   return { player };
 }
 
@@ -743,6 +795,16 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (!uid) fail("unauthenticated", "سجّل الدخول أولاً");
   const data = request.data || {};
   const action = text(data.action, 40);
+  if (action === "getUsageStats") {
+    if (request.auth?.token?.admin !== true) fail("permission-denied", "هذه الإحصاءات للمدير فقط");
+    const [totalsSnapshot, dailySnapshot] = await Promise.all([
+      db.ref("usageStats/totals").get(),
+      db.ref("usageStats/daily").orderByKey().limitToLast(30).get(),
+    ]);
+    const daily = [];
+    dailySnapshot.forEach((child) => daily.push({ date: child.key, ...child.val() }));
+    return { totals: totalsSnapshot.val() || {}, daily: daily.reverse() };
+  }
   if (action === "startChallenge") return startChallenge(uid);
   if (action === "answerChallenge") return answerChallenge(uid, data);
   if (action === "createMatch") return createMatch(uid, data.options || {});
@@ -790,6 +852,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
       if (missing) fail("failed-precondition", "عيّن ممثلاً لكل فريق قبل بدء المسابقة");
     }
     await db.ref(`matches/${id}`).update({ status: "playing", startedAt: now(), expiresAt: null, "state/phase": "choose", "state/targetTeam": first });
+    await safelyRecordUsage(() => recordMatchUsage("matchesStarted", id));
   } else if (action === "startQuestionTimer") {
     if (match.state.phase !== "question" || match.state.question?.type !== "acting" || match.state.questionStartedAt) {
       fail("failed-precondition", "لا يوجد مؤقت تمثيل بانتظار البدء");

@@ -37,6 +37,7 @@ let ready: Promise<User> | null = null;
 
 /** دخول ضيف تلقائي — يشتغل مرة وحدة وننتظره قبل أي عملية */
 export function ensureAuth(): Promise<User> {
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
   if (!ready) {
     ready = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("تعذّر تسجيل الدخول الآمن — تحقق من الاتصال")), 30000);

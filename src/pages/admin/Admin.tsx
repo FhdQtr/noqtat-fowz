@@ -6,7 +6,7 @@ import { useNavigate } from "react-router";
 import { getIdTokenResult, signInAnonymously, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import {
   ShieldCheck, Lock, Loader2, PlusCircle, Database, ClipboardList,
-  Save, KeyRound, LogOut, ArrowRight,
+  Save, KeyRound, LogOut, ArrowRight, BarChart3,
 } from "lucide-react";
 import { type CustomQuestion } from "../../lib/customBank";
 import { auth } from "../../lib/firebase";
@@ -14,11 +14,13 @@ import QuestionForm from "./QuestionForm";
 import ManageBank from "./ManageBank";
 import BulkImport from "./BulkImport";
 import BackupAndPassword from "./BackupAndPassword";
+import UsageStats from "./UsageStats";
 
 type GateState = "loading" | "login" | "authed";
-type Tab = "add" | "manage" | "bulk" | "backup" | "password";
+type Tab = "stats" | "add" | "manage" | "bulk" | "backup" | "password";
 
 const TABS: { id: Tab; label: string; icon: typeof PlusCircle }[] = [
+  { id: "stats", label: "الإحصاءات", icon: BarChart3 },
   { id: "add", label: "إضافة سؤال", icon: PlusCircle },
   { id: "manage", label: "إدارة البنك", icon: Database },
   { id: "bulk", label: "إضافة جماعية", icon: ClipboardList },
@@ -33,7 +35,7 @@ export default function Admin() {
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<Tab>("add");
+  const [tab, setTab] = useState<Tab>("stats");
   const [editTarget, setEditTarget] = useState<CustomQuestion | null>(null);
 
   useEffect(() => {
@@ -174,6 +176,7 @@ export default function Admin() {
           ))}
         </div>
 
+        {tab === "stats" && <UsageStats />}
         {tab === "add" && (
           <QuestionForm
             editTarget={editTarget}

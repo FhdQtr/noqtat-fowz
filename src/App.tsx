@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router";
 import SoundToggle from "./components/SoundToggle";
+import SiteAnalytics from "./components/SiteAnalytics";
 
 const Home = lazy(() => import("./pages/Home"));
 const HostSetup = lazy(() => import("./pages/HostSetup"));
@@ -15,6 +16,7 @@ export default function App() {
   return (
     <>
     <SoundToggle />
+    <SiteAnalytics />
     <Suspense fallback={<div className="grid min-h-dvh place-items-center"><div className="brand-loader" aria-label="جاري فتح الميدان" /></div>}>
       <Routes>
       <Route path="/" element={<Home />} />

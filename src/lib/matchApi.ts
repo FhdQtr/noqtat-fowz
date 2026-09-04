@@ -22,7 +22,30 @@ type ActionName =
   | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
-  | "submitShowdownAnswer" | "finishShowdown";
+  | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats";
+
+export interface UsageHour {
+  activePlayers?: number;
+  matchesCreated?: number;
+  matchesStarted?: number;
+}
+
+export interface UsageDay extends UsageHour {
+  date: string;
+  hours?: Record<string, UsageHour>;
+}
+
+export interface UsageStats {
+  totals: {
+    uniquePlayers?: number;
+    matchesCreated?: number;
+    matchesStarted?: number;
+    playerLastAt?: number;
+    matchesCreatedLastAt?: number;
+    matchesStartedLastAt?: number;
+  };
+  daily: UsageDay[];
+}
 
 function levelForPick(n: number, difficulty: DifficultyMode = "mixed", difficultyLevels?: QuestionLevel[]): QuestionLevel {
   const selected = [...new Set((difficultyLevels ?? []).filter((level): level is QuestionLevel => ["easy", "medium", "hard"].includes(level)))];
@@ -197,6 +220,10 @@ export async function leaveMatch(matchCode: string, playerId: string) {
 
 export async function startMatch(matchCode: string, firstTeamCode: string) {
   await gameAction("startMatch", { matchCode, firstTeamCode });
+}
+
+export async function getUsageStats(): Promise<UsageStats> {
+  return gameAction<UsageStats>("getUsageStats", {});
 }
 
 export function typeCap(match: Pick<Match, "totalRounds" | "teamOrder" | "enabledTypes">): number {

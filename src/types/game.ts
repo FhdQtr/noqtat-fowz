@@ -153,6 +153,8 @@ export interface Match {
   players: Record<string, Player>;
   // كم مرة كل فريق اختار كل نوع (للتصعيد والسقف) — Firebase يحذف الكائنات الفارغة
   typeCounts?: Record<string, Partial<Record<QuestionType, number>>>;
+  /** الأسئلة التي شاهدها كل فريق؛ حصة الأقسام مستقلة بين الفرق. */
+  usedIdsByTeam?: Record<string, number[]>;
   tieBreaker?: {
     active: boolean;
     teams: string[];

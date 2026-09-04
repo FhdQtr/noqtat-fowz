@@ -1040,10 +1040,46 @@ body::before {
 .power-card.is-ready .power-card-state { color: color-mix(in oklch, var(--m-success) 76%, white); }
 .power-card-lock { position: absolute; z-index: 1; inset-inline-end: .7rem; inset-block-end: .65rem; width: .85rem; color: rgb(255 255 255 / 27%); }
 
+.power-card-dialog-layer { position: fixed; z-index: 4; inset: 0; display: grid; place-items: center; padding: 1rem; }
+.power-card-dialog-scrim { position: absolute; inset: 0; width: 100%; border: 0; background: rgb(0 0 0 / 68%); animation: power-fade-in .16s ease-out both; }
+.power-card-dialog {
+  --power-dialog-color: var(--m-warning);
+  position: relative;
+  width: min(100%, 26rem);
+  max-height: min(88dvh, 42rem);
+  overflow: auto;
+  padding: 1.2rem;
+  border: 1px solid color-mix(in oklch, var(--power-dialog-color) 48%, transparent);
+  border-radius: 1.5rem;
+  background: linear-gradient(150deg, color-mix(in oklch, var(--power-dialog-color) 10%, var(--m-paper-2)), var(--m-paper));
+  box-shadow: 0 2rem 6rem rgb(0 0 0 / 72%), 0 0 2rem color-mix(in oklch, var(--power-dialog-color) 12%, transparent), inset 0 1px 0 rgb(255 255 255 / 12%);
+  animation: power-materialize .2s var(--m-ease-out) both;
+}
+.power-card-dialog.is-ready { --power-dialog-color: var(--m-success); }
+.power-card-dialog.is-locked, .power-card-dialog.is-used { --power-dialog-color: var(--m-muted); }
+.power-card-dialog-close { position: absolute; inset-block-start: .8rem; inset-inline-end: .8rem; display: grid; width: 2.35rem; height: 2.35rem; place-items: center; border: 1px solid rgb(255 255 255 / 10%); border-radius: 999px; background: rgb(255 255 255 / 6%); color: var(--m-ivory); }
+.power-card-dialog-close svg { width: 1rem; }
+.power-card-dialog-icon { display: grid; width: 3.5rem; height: 3.5rem; margin-bottom: .7rem; place-items: center; border: 1px solid color-mix(in oklch, var(--power-dialog-color) 42%, transparent); border-radius: 1.1rem; background: color-mix(in oklch, var(--power-dialog-color) 14%, transparent); color: color-mix(in oklch, var(--power-dialog-color) 78%, white); box-shadow: 0 0 1.2rem color-mix(in oklch, var(--power-dialog-color) 15%, transparent); }
+.power-card-dialog-icon svg { width: 1.75rem; }
+.power-card-dialog-kicker { margin: 0; color: color-mix(in oklch, var(--power-dialog-color) 76%, white); font-family: var(--m-font-body); font-size: .68rem; font-weight: 900; }
+.power-card-dialog h3 { margin: .1rem 0 0; color: var(--m-ivory); font-family: var(--m-font-display); font-size: 1.45rem; font-weight: 950; }
+.power-card-dialog-detail { margin: .5rem 0 0; color: var(--m-ink-soft); font-family: var(--m-font-body); font-size: .8rem; line-height: 1.75; }
+.power-card-dialog-facts { display: grid; gap: .45rem; margin: .9rem 0 0; }
+.power-card-dialog-facts div { display: grid; grid-template-columns: 6.25rem minmax(0, 1fr); gap: .6rem; padding: .55rem .65rem; border: 1px solid rgb(255 255 255 / 7%); border-radius: .75rem; background: rgb(255 255 255 / 3%); }
+.power-card-dialog-facts dt { color: var(--m-muted); font-size: .68rem; font-weight: 800; }
+.power-card-dialog-facts dd { margin: 0; color: var(--m-ivory); font-size: .7rem; font-weight: 850; line-height: 1.55; }
+.power-card-dialog-warning, .power-card-dialog-ready { display: flex; align-items: flex-start; gap: .6rem; margin-top: .85rem; padding: .75rem; border-radius: .85rem; font-family: var(--m-font-body); }
+.power-card-dialog-warning { border: 1px solid color-mix(in oklch, var(--m-danger) 30%, transparent); background: color-mix(in oklch, var(--m-danger) 9%, transparent); color: color-mix(in oklch, var(--m-danger) 72%, white); }
+.power-card-dialog-ready { align-items: center; border: 1px solid color-mix(in oklch, var(--m-success) 32%, transparent); background: color-mix(in oklch, var(--m-success) 10%, transparent); color: color-mix(in oklch, var(--m-success) 74%, white); font-size: .75rem; font-weight: 900; }
+.power-card-dialog-warning > svg, .power-card-dialog-ready > svg { width: 1.1rem; flex: 0 0 auto; }
+.power-card-dialog-warning b { display: block; color: var(--m-ivory); font-size: .78rem; }
+.power-card-dialog-warning p { margin: .2rem 0 0; font-size: .7rem; line-height: 1.6; }
+
 .power-card-confirm { margin-top: .8rem; padding: .85rem; border: 1px solid color-mix(in oklch, var(--m-gold) 35%, transparent); border-radius: 1.1rem; background: color-mix(in oklch, var(--m-gold) 7%, rgb(0 0 0 / 24%)); animation: power-materialize .2s ease-out both; }
 .power-card-confirm b { color: var(--m-gold); font-family: var(--m-font-display); font-size: 1rem; }
 .power-card-confirm p { margin: .2rem 0 0; color: color-mix(in oklch, white 56%, transparent); font-size: .7rem; }
 .power-player-list { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .75rem; }
+.power-player-list > p { width: 100%; margin: 0 0 .15rem; color: var(--m-ivory); font-size: .72rem; font-weight: 900; }
 .power-player-list button { min-height: 2.5rem; padding: .4rem .8rem; border: 1px solid rgb(255 255 255 / 11%); border-radius: .75rem; background: rgb(255 255 255 / 5%); color: var(--m-ivory); font-size: .78rem; font-weight: 800; }
 .power-player-list button.is-selected { border-color: var(--m-gold); background: var(--m-gold-low); color: var(--m-gold); box-shadow: 0 0 1rem color-mix(in oklch, var(--m-gold) 18%, transparent); }
 .power-confirm-actions { display: grid; grid-template-columns: .8fr 1.2fr; gap: .5rem; margin-top: .8rem; }
@@ -1051,6 +1087,7 @@ body::before {
 .power-confirm-actions button:last-child { border-color: color-mix(in oklch, var(--m-gold) 50%, transparent); background: linear-gradient(135deg, var(--m-gold), var(--m-gold-low)); color: #241809; }
 .power-confirm-actions button:active { transform: scale(.97); }
 .power-confirm-actions button:disabled { opacity: .45; }
+.power-confirm-actions.is-single { grid-template-columns: 1fr; }
 .power-wallet-message { margin: .7rem 0 0; color: var(--m-danger); font-family: var(--m-font-body); font-size: .75rem; font-weight: 800; text-align: center; }
 
 .power-event-layer { position: fixed; z-index: 190; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 36%); pointer-events: none; animation: power-fade-in .15s ease-out both; }

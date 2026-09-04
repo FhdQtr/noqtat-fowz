@@ -220,9 +220,14 @@ async function chooseType(uid, data) {
     candidates = Object.values(custom);
   } else candidates = QUESTIONS;
   const usedIds = new Set(match.state.usedIds || []);
+  const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
   const level = levelForPick(usedCount + 1, match.difficulty || "mixed");
-  const pool = candidates.filter((q) => q.type === type && q.level === level && !q.disabled && !usedIds.has(q.id));
-  if (!pool.length) return { status: "empty" };
+  const teamPool = candidates.filter((q) => q.type === type && q.level === level && !q.disabled && !teamUsedIds.has(q.id));
+  if (!teamPool.length) return { status: "empty" };
+  // نعطي الأولوية لسؤال لم يظهر لأي فريق. إذا انتهت الأسئلة المشتركة يبقى
+  // لكل فريق رصيده المستقل، فلا يمنعه استهلاك فريق آخر من اختيار القسم.
+  const globallyUnseen = teamPool.filter((q) => !usedIds.has(q.id));
+  const pool = globallyUnseen.length ? globallyUnseen : teamPool;
 
   // سجل دائم للمقدم: لا نكرر السؤال بين المسابقات حتى ينتهي مخزون النوع/المستوى.
   const historyOwner = match.hostUid || uid;
@@ -287,7 +292,7 @@ async function chooseType(uid, data) {
       cardsFrozenTeam: latestState.cardsFrozenTeam || null,
       cardUsedThisTurn: Boolean(latestState.cardUsedThisTurn),
       questionValue: pointsForPick(usedCount + 1),
-      usedIds: [...(latestState.usedIds || []), question.id],
+      usedIds: [...new Set([...(latestState.usedIds || []), question.id])],
     };
 
     // السؤال وإجابته السرية والعدادات تُثبّت معاً، فلا تصل الواجهة إلى سؤال بلا سر.
@@ -295,6 +300,7 @@ async function chooseType(uid, data) {
       [`matches/${id}/state`]: nextState,
       [`matchSecrets/${id}`]: { questionId: question.id, answer: question.answer },
       [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
+      [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
       [`hostQuestionHistory/${historyOwner}/${typeKey}/${level}/${question.id}`]: started,
     });
     return { status: "accepted" };
@@ -493,8 +499,11 @@ async function playPowerCard(uid, data, id, initialMatch) {
         candidates = Object.values(custom);
       } else candidates = QUESTIONS;
       const usedIds = new Set(state.usedIds || []);
-      const pool = candidates.filter((question) => question.type === state.question.type && question.level === state.question.level && !question.disabled && !usedIds.has(question.id));
-      if (!pool.length) return { accepted: false, reason: "empty" };
+      const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
+      const teamPool = candidates.filter((question) => question.type === state.question.type && question.level === state.question.level && !question.disabled && !teamUsedIds.has(question.id));
+      if (!teamPool.length) return { accepted: false, reason: "empty" };
+      const globallyUnseen = teamPool.filter((question) => !usedIds.has(question.id));
+      const pool = globallyUnseen.length ? globallyUnseen : teamPool;
       const question = shuffled(pool[randomInt(pool.length)]);
       const started = now();
       const seconds = viewSeconds(question);
@@ -513,6 +522,7 @@ async function playPowerCard(uid, data, id, initialMatch) {
         [`matches/${id}/teams/${teamCode}/powerCards/${card}`]: false,
         [`matches/${id}/state/question`]: publicQuestion(question),
         [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
+        [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
         [`matches/${id}/state/viewUntil`]: viewUntil,
         [`matches/${id}/state/questionStartedAt`]: isActing ? null : (viewUntil || started),
         [`matches/${id}/state/questionDuration`]: isActing ? 120 : match.timer,

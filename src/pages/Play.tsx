@@ -94,7 +94,7 @@ export default function Play() {
   const captainName = captain?.name ?? null;
   const answerMode = match?.answerMode ?? "anyone";
   const canChooseType = answerMode !== "representative" || captainId === player?.id;
-  const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode && canChooseType;
+  const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
   const modeAllowsAnswer = answerMode === "host"
     ? false
     : answerMode === "representative"
@@ -373,9 +373,13 @@ export default function Play() {
                 <span className="inline-flex items-center gap-2 rounded-full px-5 py-2 border-2 font-cairo font-black animate-pulse-gold"
                   style={{ borderColor: c.hex, color: c.light, background: `${c.hex}22` }}>
                   <Crown className="w-4 h-4" />
-                  دوركم — اختاروا نوع السؤال!
+                  {canChooseType ? "دوركم — اختاروا نوع السؤال!" : `ممثل الفريق ${captainName ?? "لم يُعيّن"} هو الذي يختار`}
                 </span>
-                <p className="text-xs text-muted-foreground mt-2">أول واحد يضغط من فريقكم يحدد — كل نوع يصعب ونقاطه تزيد كل ما كررتوه</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {canChooseType
+                    ? "اختر نوع السؤال — كل نوع يصعب ونقاطه تزيد كل ما كررتموه"
+                    : "تقدرون تشوفون الأنواع، لكن الاختيار من جهاز ممثل الفريق فقط"}
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {match.enabledTypes.map((t) => {
@@ -384,7 +388,7 @@ export default function Play() {
                     <button
                       key={t}
                       onClick={() => pickType(t)}
-                      disabled={!pr.available || choosingType !== null}
+                      disabled={!canChooseType || !pr.available || choosingType !== null}
                       className="glass-card p-4 flex flex-col items-center gap-1.5 transition-all hover:!border-gold/70 active:scale-[0.97] disabled:opacity-35 touch-manipulation"
                       style={{ borderColor: `${c.hex}66` }}
                     >

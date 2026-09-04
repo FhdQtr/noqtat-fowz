@@ -152,6 +152,11 @@ export interface Match {
   state: GameState;
   teams: Record<string, Team>;
   players: Record<string, Player>;
+  questionWatch?: Record<string, {
+    questionId: string | number;
+    status: "active" | "away";
+    awayAt?: number;
+  }>;
   // كم مرة كل فريق اختار كل نوع (للتصعيد والسقف) — Firebase يحذف الكائنات الفارغة
   typeCounts?: Record<string, Partial<Record<QuestionType, number>>>;
   /** الأسئلة التي شاهدها كل فريق؛ حصة الأقسام مستقلة بين الفرق. */

@@ -1,5 +1,5 @@
 // الميدان — واجهة اللعب الآمنة. جميع التغييرات الحساسة تُنفّذ في Cloud Functions.
-import { get, onValue, ref, type Unsubscribe } from "firebase/database";
+import { get, onDisconnect, onValue, ref, remove, serverTimestamp, set, type Unsubscribe } from "firebase/database";
 import { httpsCallable } from "firebase/functions";
 import { db, ensureAuth, functions } from "./firebase";
 import type { AnswerMode, DifficultyMode, Match, Player, PowerCardId, QuestionLevel, QuestionType, TeamColor } from "../types/game";
@@ -145,6 +145,34 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
     stopPolling();
     if (timeout !== undefined) window.clearTimeout(timeout);
     unsubscribe();
+  };
+}
+
+/** يراقب مغادرة اللاعب للصفحة أثناء السؤال فقط، بلا عقوبة أو تغيير في اللعب. */
+export function trackQuestionVisibility(matchCode: string, playerId: string, questionId: string | number): Unsubscribe {
+  const watchRef = ref(db, `matches/${matchCode.toUpperCase()}/questionWatch/${playerId}`);
+  const disconnect = onDisconnect(watchRef);
+  let stopped = false;
+
+  const active = () => ({ questionId, status: "active" });
+  const away = () => ({ questionId, status: "away", awayAt: serverTimestamp() });
+  const write = (value: ReturnType<typeof active> | ReturnType<typeof away>) => {
+    if (!stopped) void set(watchRef, value).catch(() => undefined);
+  };
+  const markAway = () => write(away());
+  const handleVisibility = () => write(document.visibilityState === "hidden" ? away() : active());
+
+  void disconnect.set(away()).catch(() => undefined);
+  handleVisibility();
+  document.addEventListener("visibilitychange", handleVisibility);
+  window.addEventListener("pagehide", markAway);
+
+  return () => {
+    stopped = true;
+    document.removeEventListener("visibilitychange", handleVisibility);
+    window.removeEventListener("pagehide", markAway);
+    void disconnect.cancel().catch(() => undefined);
+    void remove(watchRef).catch(() => undefined);
   };
 }
 

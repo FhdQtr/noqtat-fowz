@@ -150,6 +150,14 @@ export default function HostRoom() {
     ? teams.some((team) => !team.captainId || !match.players?.[team.captainId])
     : false;
   const canPassAfterWrong = canPassQuestion(match);
+  const awayPlayers = st.phase === "question" && st.question
+    ? Object.entries(match.questionWatch ?? {}).flatMap(([playerId, watch]) => {
+        if (watch.status !== "away" || watch.questionId !== st.question?.id) return [];
+        const watchedPlayer = match.players?.[playerId];
+        const watchedTeam = watchedPlayer ? match.teams[watchedPlayer.teamCode] : null;
+        return watchedPlayer && watchedTeam ? [{ player: watchedPlayer, team: watchedTeam, awayAt: watch.awayAt ?? 0 }] : [];
+      }).sort((left, right) => right.awayAt - left.awayAt)
+    : [];
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -350,6 +358,22 @@ export default function HostRoom() {
           ساحة الحسم — جولة فاصلة رقم {match.tieBreaker.cycle}
         </div>
       )}
+
+      {awayPlayers.length > 0 ? (
+        <div role="status" aria-live="assertive" className="mb-4 rounded-2xl border border-maroon-light/70 bg-maroon/20 px-4 py-3 shadow-[0_0_24px_rgba(176,32,71,0.18)] animate-scale-in">
+          <div className="flex items-center gap-2 font-cairo font-black text-maroon-light">
+            <EyeOff className="h-5 w-5" />
+            تنبيه: مغادرة صفحة المسابقة أثناء السؤال
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {awayPlayers.map(({ player: awayPlayer, team: awayTeam }) => (
+              <span key={awayPlayer.id} className="rounded-full border border-maroon-light/35 bg-black/20 px-3 py-1 text-sm font-cairo font-bold text-foreground">
+                {awayPlayer.name} خرج من الصفحة · فريق {awayTeam.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="mb-4">
         <AnswerModeControls

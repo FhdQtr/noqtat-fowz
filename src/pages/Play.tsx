@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
+  trackQuestionVisibility,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
@@ -52,6 +53,12 @@ export default function Play() {
   const st = match?.state;
   const isMyTurn = st?.phase === "question" && st.targetTeam === teamCode;
   const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
+  const activeQuestionId = st?.phase === "question" ? st.question?.id ?? null : null;
+
+  useEffect(() => {
+    if (!player || activeQuestionId === null) return;
+    return trackQuestionVisibility(matchCode, player.id, activeQuestionId);
+  }, [activeQuestionId, matchCode, player]);
 
   // ممثل الفريق يثبت الإجابة فقط؛ اختيار نوع السؤال متاح لكل أعضاء الفريق.
   const allPlayers = Object.values(match?.players ?? {});

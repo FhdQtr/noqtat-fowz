@@ -403,9 +403,27 @@ export async function getHostAnswer(matchCode: string): Promise<string | null> {
   return null;
 }
 
+/**
+ * إظهار نص سؤال الذاكرة بعد انتهاء المعاينة.
+ * الطلب قد يصل قبل الوقت بفارق بسيط أو يفشل لحظياً، لذلك نعيد المحاولة
+ * بدلاً من ترك جميع الشاشات في حالة سؤال مخفي بلا محتوى.
+ */
 export async function revealQuestionPrompt(matchCode: string): Promise<boolean> {
-  const result = await gameAction<{ accepted: boolean }>("revealQuestionPrompt", { matchCode });
-  return result.accepted;
+  const maxAttempts = 12;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const result = await gameAction<{ accepted: boolean }>("revealQuestionPrompt", { matchCode });
+      if (result.accepted) return true;
+    } catch {
+      // انقطاع لحظي أو مهلة من Cloud Functions: نعيد المحاولة تلقائياً.
+    }
+
+    if (attempt < maxAttempts - 1) {
+      const delay = Math.min(1500, 250 + attempt * 125);
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+    }
+  }
+  return false;
 }
 
 export async function startSoloChallenge(): Promise<{ sessionId: string; questions: import("../types/game").Question[] }> {

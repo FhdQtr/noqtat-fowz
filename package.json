@@ -10,7 +10,8 @@
     "validate:questions": "node scripts/validate-questions.mjs",
     "prepare:functions": "node scripts/prepare-functions.mjs",
     "check:functions": "npm run prepare:functions && node --check functions/index.js",
-    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run build",
+    "test:showdown": "npm run prepare:functions && node --test scripts/showdown.test.mjs",
+    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run test:showdown && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {

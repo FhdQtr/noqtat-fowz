@@ -616,6 +616,8 @@ async function startShowdown(id, match) {
 }
 
 async function submitShowdownAnswer(uid, data) {
+  // Measure arrival before database reads so their latency cannot reorder players.
+  const receivedAt = now();
   const id = code(data.matchCode);
   const [{ match, access }, secretSnapshot] = await Promise.all([
     loadMatch(id),
@@ -623,20 +625,24 @@ async function submitShowdownAnswer(uid, data) {
   ]);
   const player = playerForUid(match, uid, text(data.playerId, 80));
   const choice = Number(data.choice);
-  const receivedAt = now();
   const showdown = match.state.showdown;
   if (!player || match.state.phase !== "showdown" || !showdown) return { status: "late" };
+  if (data.questionId != null && data.questionId !== match.state.question?.id) return { status: "stale" };
   if (!Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
   if (receivedAt < showdown.opensAt) return { status: "early" };
   if (receivedAt > showdown.closesAt) return { status: "late" };
   const secret = secretSnapshot.val();
-  if (!secret || secret.questionId !== match.state.question?.id) return { status: "late" };
+  if (!secret || secret.questionId !== match.state.question?.id) fail("failed-precondition", "تعذّر التحقق من سؤال المواجهة، أعد المحاولة");
 
   const submissionId = `${uid}_${receivedAt}_${randomInt(100000, 999999)}`;
   const matchRef = db.ref(`matches/${id}`);
   const result = await matchRef.transaction((current) => {
+    // A cold RTDB cache starts at null. Return null to fetch/retry against the
+    // server; undefined would abort before either recording or scoring an answer.
+    if (current === null) return null;
     const currentShowdown = current?.state?.showdown;
     if (!current || current.state?.phase !== "showdown" || !currentShowdown) return;
+    if (current.state.question?.id !== secret.questionId || currentShowdown.number !== showdown.number) return;
     if (receivedAt < currentShowdown.opensAt || receivedAt > currentShowdown.closesAt) return;
     const currentPlayer = current.players?.[player.id];
     const currentPlayerUid = access.playerUids?.[player.id] || currentPlayer?.authUid;
@@ -680,11 +686,15 @@ async function finishShowdown(uid, data) {
   const isParticipant = match.hostUid === uid
     || Object.values(match.players || {}).some((player) => player.authUid === uid);
   if (!isParticipant) fail("permission-denied", "هذه العملية للمشاركين في الميدان فقط");
+  if (data.questionId != null && data.questionId !== match.state.question?.id) return { finished: false };
+  if (match.state.phase === "showdown_revealed") return { finished: true };
   if (match.state.phase !== "showdown" || !match.state.showdown || now() < match.state.showdown.closesAt) return { finished: false };
   const secret = secretSnapshot.val();
-  if (!secret || secret.questionId !== match.state.question?.id) return { finished: false };
+  if (!secret || secret.questionId !== match.state.question?.id) fail("failed-precondition", "تعذّر التحقق من سؤال المواجهة، أعد المحاولة");
   const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (current === null) return null;
     if (!current || current.state?.phase !== "showdown" || now() < current.state.showdown?.closesAt) return;
+    if (current.state.question?.id !== secret.questionId || current.state.showdown.number !== match.state.showdown.number) return;
     const fastestCorrect = Object.entries(current.state.showdown.answers || {})
       .filter(([, answer]) => answer.choice === secret.answer)
       .sort(([, left], [, right]) => left.at - right.at)[0];

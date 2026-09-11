@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
-  trackQuestionVisibility, submitShowdownAnswer, finishShowdown, revealQuestionPrompt,
+  trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
@@ -20,6 +20,7 @@ import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import PowerCardsWallet from "../components/PowerCardsWallet";
 import PowerCardEvent from "../components/PowerCardEvent";
 import ShowdownPanel from "../components/ShowdownPanel";
+import { useShowdownFinish } from "../lib/useShowdownFinish";
 
 const STORAGE_KEY = "al_midan_player";
 
@@ -61,28 +62,9 @@ export default function Play() {
   const activeQuestionId = st?.phase === "question" || st?.phase === "showdown"
     ? st.question?.id ?? null
     : null;
-  const showdownClosesAt = st?.phase === "showdown" ? st.showdown?.closesAt ?? null : null;
+  const showdownFinish = useShowdownFinish(matchCode, match, Boolean(player));
 
   // لا نعتمد على بقاء شاشة المقدم نشطة لإنهاء المواجهة بعد انتهاء الوقت.
-  useEffect(() => {
-    if (!player || !showdownClosesAt) return;
-    let cancelled = false;
-    let timer: number | undefined;
-    const finish = async () => {
-      if (cancelled) return;
-      try {
-        const completed = await finishShowdown(matchCode);
-        if (!completed && !cancelled) timer = window.setTimeout(finish, 700);
-      } catch {
-        if (!cancelled) timer = window.setTimeout(finish, 1000);
-      }
-    };
-    timer = window.setTimeout(finish, Math.max(0, showdownClosesAt - Date.now() + 500));
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [matchCode, player, showdownClosesAt]);
 
   useEffect(() => {
     if (!player || activeQuestionId === null) return;
@@ -178,13 +160,14 @@ export default function Play() {
   };
 
   const answerShowdown = async (choice: number) => {
-    if (!player || showdownSubmitting || st?.showdown?.answers?.[teamCode]) return;
+    if (!player || showdownSubmitting || st?.showdown?.answers?.[teamCode] || !st?.question) return;
     setShowdownSubmitting(true);
     setShowdownMsg("");
     unlockAudio();
-    const result = await submitShowdownAnswer(matchCode, player.id, choice);
+    const result = await submitShowdownAnswer(matchCode, player.id, choice, st.question.id);
     if (result.status === "early") setShowdownMsg("المواجهة لم تبدأ بعد");
     else if (result.status === "late") setShowdownMsg("سبقك لاعب من فريقك أو انتهت المواجهة");
+    else if (result.status === "stale") setShowdownMsg("تغيّر سؤال المواجهة، انتظر تحديث الشاشة");
     else if (result.status === "error") setShowdownMsg("تعذّر إرسال الإجابة، اضغط مرة ثانية");
     else sfx.lock();
     setShowdownSubmitting(false);
@@ -365,8 +348,9 @@ export default function Play() {
         )}
         {(st!.phase === "showdown" || st!.phase === "showdown_revealed") ? (
           <div className="flex w-full flex-col items-center gap-3">
-            <ShowdownPanel match={match} teamCode={teamCode} submitting={showdownSubmitting} onAnswer={answerShowdown} />
-            {showdownMsg ? <p className="text-center text-sm font-cairo font-bold text-maroon-light">{showdownMsg}</p> : null}
+            <ShowdownPanel match={match} teamCode={teamCode} submitting={showdownSubmitting} onAnswer={answerShowdown}
+              finishError={showdownFinish.error} finishing={showdownFinish.pending} onRetryFinish={showdownFinish.retry} />
+            {showdownMsg && st!.phase === "showdown" ? <p className="text-center text-sm font-cairo font-bold text-maroon-light">{showdownMsg}</p> : null}
           </div>
         ) : null}
         {/* هوية اللاعب */}

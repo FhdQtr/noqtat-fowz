@@ -304,16 +304,17 @@ export async function submitShowdownAnswer(
   matchCode: string,
   playerId: string,
   choice: number,
-): Promise<{ status: "accepted" | "early" | "late" | "error"; correct?: boolean }> {
+  questionId: number | string,
+): Promise<{ status: "accepted" | "early" | "late" | "stale" | "error"; correct?: boolean }> {
   try {
-    return await gameAction("submitShowdownAnswer", { matchCode, playerId, choice });
+    return await gameAction("submitShowdownAnswer", { matchCode, playerId, choice, questionId });
   } catch {
     return { status: "error" };
   }
 }
 
-export async function finishShowdown(matchCode: string): Promise<boolean> {
-  const result = await gameAction<{ finished: boolean }>("finishShowdown", { matchCode });
+export async function finishShowdown(matchCode: string, questionId?: number | string): Promise<boolean> {
+  const result = await gameAction<{ finished: boolean }>("finishShowdown", { matchCode, questionId: questionId ?? null });
   return result.finished;
 }
 

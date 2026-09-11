@@ -9,7 +9,7 @@ import {
   subscribeMatch, startMatch, revealAnswer, judgeVerbal,
   passToNextTeam, advanceTurn, endMatch, deleteMatch, setCaptain,
   setAnswerMode, submitHostAnswer, startQuestionTimer, useAssist as requestAssist,
-  getHostAnswer, finishShowdown, isShowdownDue, getTeamInvites, revealQuestionPrompt,
+  getHostAnswer, isShowdownDue, getTeamInvites, revealQuestionPrompt,
 } from "../lib/matchApi";
 import type { TeamInvites } from "../lib/matchApi";
 import type { AnswerMode, Match } from "../types/game";
@@ -23,6 +23,7 @@ import { useNow } from "../lib/useNow";
 import { ANSWER_LETTERS } from "../lib/answers";
 import PowerCardEvent from "../components/PowerCardEvent";
 import ShowdownPanel from "../components/ShowdownPanel";
+import { useShowdownFinish } from "../lib/useShowdownFinish";
 
 const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
 
@@ -64,26 +65,7 @@ export default function HostRoom() {
 
   const players = useMemo(() => Object.values(match?.players ?? {}), [match]);
 
-  const showdownClosesAt = match?.state.phase === "showdown" ? match.state.showdown?.closesAt ?? null : null;
-  useEffect(() => {
-    if (!showdownClosesAt) return;
-    let cancelled = false;
-    let timer: number | undefined;
-    const finish = async () => {
-      if (cancelled) return;
-      try {
-        const completed = await finishShowdown(code);
-        if (!completed && !cancelled) timer = window.setTimeout(finish, 700);
-      } catch {
-        if (!cancelled) timer = window.setTimeout(finish, 1000);
-      }
-    };
-    timer = window.setTimeout(finish, Math.max(0, showdownClosesAt - Date.now() + 500));
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [code, showdownClosesAt]);
+  const showdownFinish = useShowdownFinish(code, match);
 
   // ساعة حيّة لعدّاد معاينة الصور (الذاكرة/الأعلام)
   const stv = match?.state;
@@ -436,7 +418,8 @@ export default function HostRoom() {
 
       {(st.phase === "showdown" || st.phase === "showdown_revealed") ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 pb-5">
-          <ShowdownPanel match={match} size="regular" />
+          <ShowdownPanel match={match} size="regular" finishError={showdownFinish.error}
+            finishing={showdownFinish.pending} onRetryFinish={showdownFinish.retry} />
           {st.phase === "showdown_revealed" ? (
             <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
               <SkipForward className="h-5 w-5" />

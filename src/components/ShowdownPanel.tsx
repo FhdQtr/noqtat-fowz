@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { CheckCircle2, Lock, Radio, Timer, Trophy, XCircle, Zap } from "lucide-react";
+import { CheckCircle2, Lock, Radio, RotateCw, Timer, Trophy, XCircle, Zap } from "lucide-react";
 import type { Match } from "../types/game";
 import { ANSWER_LETTERS } from "../lib/answers";
 import { TEAM_COLORS } from "../types/game";
@@ -11,9 +11,12 @@ interface ShowdownPanelProps {
   submitting?: boolean;
   onAnswer?: (choice: number) => void;
   size?: "regular" | "large";
+  finishError?: string;
+  finishing?: boolean;
+  onRetryFinish?: () => void;
 }
 
-export default function ShowdownPanel({ match, teamCode, submitting = false, onAnswer, size = "regular" }: ShowdownPanelProps) {
+export default function ShowdownPanel({ match, teamCode, submitting = false, onAnswer, size = "regular", finishError, finishing, onRetryFinish }: ShowdownPanelProps) {
   const { state } = match;
   const showdown = state.showdown;
   const question = state.question;
@@ -101,11 +104,24 @@ export default function ShowdownPanel({ match, teamCode, submitting = false, onA
               return (
                 <span key={code} className="rounded-full border px-3 py-1 text-xs font-cairo font-bold"
                   style={{ borderColor: `${color.hex}88`, color: color.light, background: `${color.hex}22` }}>
-                  {team.name}: {answer ? (revealed ? answer.playerName : "تمت الإجابة") : "ينتظر"}
+                  {team.name}: {answer ? (revealed ? answer.playerName : "تمت الإجابة") : expired || revealed ? "لم يسجل إجابة" : "ينتظر"}
                 </span>
               );
             })}
           </div>
+
+          {expired && onRetryFinish ? (
+            <div className="mt-5 space-y-3 text-center">
+              <p className="text-sm font-bold text-gold-light" role="status">
+                {finishError || "انتهى الوقت. ننتظر تأكيد النتيجة من الخادم."}
+              </p>
+              <button type="button" onClick={onRetryFinish} disabled={finishing}
+                className="btn-gold mx-auto flex items-center gap-2 disabled:opacity-60">
+                <RotateCw className={`h-4 w-4 ${finishing ? "animate-spin" : ""}`} />
+                {finishing ? "جارٍ جلب النتيجة…" : "إعادة حساب النتيجة"}
+              </button>
+            </div>
+          ) : null}
 
           {teamAnswer && !revealed ? (
             <p className="mt-4 flex items-center justify-center gap-2 text-center font-cairo font-bold text-gold-light"><Lock className="h-4 w-4" />ثبتت إجابة فريقكم بواسطة {teamAnswer.playerName}</p>

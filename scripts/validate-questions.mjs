@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 
 const questions = JSON.parse(
   await readFile(new URL("../src/data/questions.json", import.meta.url), "utf8")
@@ -7,6 +7,18 @@ const questions = JSON.parse(
 const errors = [];
 const ids = new Set();
 const activeTexts = new Map();
+const builtinTypes = new Set([
+  "multiple_choice",
+  "true_false",
+  "image",
+  "flag",
+  "completion",
+  "ordering",
+  "riddle",
+  "memory",
+  "acting",
+]);
+const visualTypes = new Set(["image", "flag", "memory"]);
 
 function normalizedQuestion(value) {
   return String(value)
@@ -20,29 +32,66 @@ function normalizedQuestion(value) {
     .trim();
 }
 
+async function imageExists(image) {
+  if (!image || typeof image !== "string") return false;
+  if (/^(https?:|data:)/i.test(image)) return true;
+  if (!image.startsWith("/")) return false;
+  try {
+    await access(new URL(`../public${image}`, import.meta.url));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 for (const [index, q] of questions.entries()) {
   const at = `السؤال ${q.id ?? `عند الصف ${index + 1}`}`;
   if (!Number.isInteger(q.id)) errors.push(`${at}: المعرّف غير صحيح`);
   if (ids.has(q.id)) errors.push(`${at}: المعرّف مكرر`);
   ids.add(q.id);
+
   if (!q.question?.trim()) errors.push(`${at}: نص السؤال فارغ`);
   if (!q.type?.trim()) errors.push(`${at}: نوع السؤال فارغ`);
+  if (q.type && !builtinTypes.has(q.type)) errors.push(`${at}: نوع السؤال غير معروف (${q.type})`);
   if (!q.category?.trim()) errors.push(`${at}: التصنيف فارغ`);
   if (!["easy", "medium", "hard"].includes(q.level)) {
     errors.push(`${at}: مستوى الصعوبة غير صحيح`);
   }
+
   if (!Array.isArray(q.options)) errors.push(`${at}: الخيارات ليست قائمة`);
+
   if (q.type !== "acting") {
     if (!q.options?.length) errors.push(`${at}: لا توجد خيارات`);
-    if (!Number.isInteger(q.answer) || q.answer < 0 || q.answer >= q.options.length) {
+    if (!Number.isInteger(q.answer) || q.answer < 0 || q.answer >= (q.options?.length ?? 0)) {
       errors.push(`${at}: فهرس الإجابة خارج الخيارات`);
+    }
+    if (q.options?.some((option) => typeof option !== "string" || !option.trim())) {
+      errors.push(`${at}: يوجد خيار فارغ أو غير نصي`);
     }
   } else if (!q.disabled && !["qatari", "gulf"].includes(q.region)) {
     errors.push(`${at}: المثل المفعّل يجب تصنيفه قطرياً أو خليجياً`);
   }
+
+  if (!q.disabled) {
+    if (q.type === "true_false" && q.options?.length !== 2) {
+      errors.push(`${at}: سؤال صح أو خطأ يجب أن يحتوي خيارين فقط`);
+    }
+    if (["multiple_choice", "image", "flag", "completion", "ordering", "riddle", "memory"].includes(q.type)
+      && q.options?.length < 2) {
+      errors.push(`${at}: هذا النوع يحتاج خيارين على الأقل`);
+    }
+    if (visualTypes.has(q.type)) {
+      if (!q.image) errors.push(`${at}: السؤال البصري لا يحتوي صورة`);
+      else if (!await imageExists(q.image)) errors.push(`${at}: ملف الصورة غير موجود (${q.image})`);
+    } else if (q.image && !await imageExists(q.image)) {
+      errors.push(`${at}: ملف الصورة المرفقة غير موجود (${q.image})`);
+    }
+  }
+
   if (q.video && (!q.video.youtubeId || q.video.end <= q.video.start)) {
     errors.push(`${at}: بيانات الفيديو غير صحيحة`);
   }
+
   if (!q.disabled && q.type !== "flag") {
     const textKey = `${q.type}:${normalizedQuestion(q.question)}`;
     const duplicateId = activeTexts.get(textKey);
@@ -59,4 +108,4 @@ if (errors.length) {
 
 const byType = Object.groupBy(questions, (q) => q.type);
 const activeCount = questions.filter((q) => !q.disabled).length;
-console.log(`بنك الأسئلة سليم: ${activeCount} سؤالاً مفعّلاً من أصل ${questions.length}، ${Object.keys(byType).length} أنواع، ولا توجد معرّفات أو نصوص مكررة.`);
+console.log(`بنك الأسئلة سليم: ${activeCount} سؤالاً مفعّلاً من أصل ${questions.length}، ${Object.keys(byType).length} أنواع، وكل الصور والخيارات والإجابات صالحة.`);

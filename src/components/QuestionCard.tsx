@@ -80,7 +80,7 @@ export function QuestionBody({
       >
         {q.question}
       </h2>
-      {reveal && showCorrect && q.type !== "acting" && q.options.length > 0 && (
+      {reveal && showCorrect && q.type !== "acting" && (q.options?.length ?? 0) > 0 && (
         <div className="text-sm text-muted-foreground">
           الإجابة الصحيحة: <span className="text-emerald2-light font-bold">{q.options[q.answer]}</span>
         </div>
@@ -104,8 +104,8 @@ export function OptionsDisplay({
   showCorrect?: boolean; // false = ما نعلّم الإجابة الصحيحة (عشان السؤال ينتقل لفريق ثاني)
 }) {
   return (
-    <div className="m-answer-grid" data-count={q.options.length} data-size={big ? "large" : "regular"}>
-      {q.options.map((opt, i) => {
+    <div className="m-answer-grid" data-count={q.options?.length ?? 0} data-size={big ? "large" : "regular"}>
+      {(q.options ?? []).map((opt, i) => {
         const isCorrect = reveal && showCorrect && i === q.answer;
         const isWrongChoice = reveal && chosen === i && i !== q.answer;
         const isChosen = chosen === i;

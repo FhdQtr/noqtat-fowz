@@ -23,8 +23,9 @@ const SHOWDOWN_DURATION_MS = 20000;
 const REQUEST_LIMITS = {
   createMatch: { uid: 5, ip: 20, window: 10 * 60 * 1000 },
   joinTeam: { uid: 8, ip: 60, window: 10 * 60 * 1000 },
-  startChallenge: { uid: 5, ip: 20, window: 60 * 60 * 1000 },
-  answerChallenge: { uid: 150, ip: 1000, window: 10 * 60 * 1000 },
+  // Limit bursts, not normal retries after losing a short solo run.
+  startChallenge: { uid: 10, ip: 120, window: 60 * 1000 },
+  answerChallenge: { uid: 120, ip: 1200, window: 60 * 1000 },
   getMatch: { uid: 180, ip: 600, window: 60 * 1000 },
   getTeamInvites: { uid: 60, ip: 180, window: 60 * 1000 },
 };
@@ -132,7 +133,7 @@ async function consumeRateLimit(scope, identity, limit, windowMs) {
   const timestamp = now();
   const rateRef = db.ref(`securityRateLimits/${dbKey(scope)}/${rateKey(identity)}`);
   const result = await rateRef.transaction((current) => {
-    if (!current || Number(current.expiresAt) <= timestamp) return { count: 1, expiresAt: timestamp + windowMs };
+    if (!current || Number(current.expiresAt) <= timestamp || Number(current.expiresAt) > timestamp + windowMs) return { count: 1, expiresAt: timestamp + windowMs };
     if ((Number(current.count) || 0) >= limit) return;
     return { count: (Number(current.count) || 0) + 1, expiresAt: current.expiresAt };
   }, undefined, false);

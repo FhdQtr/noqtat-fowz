@@ -39,13 +39,18 @@ export default function Challenge() {
   const [reached, setReached] = useState(0);
   const [sessionId, setSessionId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const requestPending = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const q = run[idx];
 
   const start = async () => {
+    if (requestPending.current) return;
+    requestPending.current = true;
     unlockAudio();
     setBusy(true);
+    setError("");
     try {
       const next = await startSoloChallenge();
       sfx.correct();
@@ -62,7 +67,13 @@ export default function Challenge() {
       setExtend(true);
       setTimeLeft(Q_TIME);
       setPhase("play");
+    } catch (cause) {
+      const code = (cause as { code?: string })?.code;
+      setError(code === "functions/resource-exhausted"
+        ? "المحاولات متقاربة جدًا. انتظر قليلًا ثم اضغط تحدي جديد."
+        : "تعذّر تجهيز التحدي. تحقق من الاتصال وأعد المحاولة.");
     } finally {
+      requestPending.current = false;
       setBusy(false);
     }
   };
@@ -95,9 +106,11 @@ export default function Challenge() {
   };
 
   const pick = async (i: number) => {
-    if (chosen !== null || reveal) return;
+    if (requestPending.current || reveal || (chosen !== null && chosen !== i)) return;
+    requestPending.current = true;
     setChosen(i);
     setBusy(true);
+    setError("");
     try {
       const result = await answerSoloChallenge(sessionId, idx, i);
       setRevealedAnswer(result.answer);
@@ -105,14 +118,17 @@ export default function Challenge() {
       if (result.correct) sfx.correct();
       else sfx.wrong();
       setTimeout(() => next(!result.correct), 1600);
+    } catch {
+      setError("تعذّر تثبيت الإجابة. تحقق من الاتصال ثم اضغط إعادة إرسال الإجابة.");
     } finally {
+      requestPending.current = false;
       setBusy(false);
     }
   };
 
   // المؤقت
   useEffect(() => {
-    if (phase !== "play" || reveal) return;
+    if (phase !== "play" || reveal || busy || error) return;
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
         if (t <= 1) return 0;
@@ -121,19 +137,13 @@ export default function Challenge() {
       });
     }, 1000);
     return () => clearInterval(timerRef.current!);
-  }, [phase, idx, reveal]);
+  }, [phase, idx, reveal, busy, error]);
 
   useEffect(() => {
-    if (phase !== "play" || timeLeft !== 0 || reveal || busy || !sessionId) return;
-    setBusy(true);
-    void answerSoloChallenge(sessionId, idx, -1).then((result) => {
-      setRevealedAnswer(result.answer);
-      setReveal(true);
-      sfx.wrong();
-      setTimeout(() => next(true), 1600);
-    }).finally(() => setBusy(false));
+    if (phase !== "play" || timeLeft !== 0 || reveal || busy || error || !sessionId) return;
+    void pick(-1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, phase, reveal, busy, sessionId, idx]);
+  }, [timeLeft, phase, reveal, busy, error, sessionId, idx]);
 
   const rank = rankFor(reached);
 
@@ -171,6 +181,7 @@ export default function Challenge() {
           {busy ? <Loader2 className="w-6 h-6 animate-spin" /> : <Crown className="w-6 h-6" />}
           {busy ? "جاري تجهيز الأسئلة…" : "ابدأ التحدي"}
         </button>
+        {error ? <p role="alert" className="mt-4 max-w-md text-center font-bold text-maroon-light">{error}</p> : null}
       </div>
     );
 
@@ -201,14 +212,15 @@ export default function Challenge() {
         </div>
         <div className="mt-10 flex gap-3 flex-wrap justify-center">
           <button onClick={() => void start()} disabled={busy} className="btn-gold flex items-center gap-2">
-            <RotateCcw className="w-5 h-5" />
-            تحدي جديد
+            {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <RotateCcw className="w-5 h-5" />}
+            {busy ? "جاري تجهيز الأسئلة…" : "تحدي جديد"}
           </button>
           <button onClick={() => nav("/")} className="btn-ghost-gold flex items-center gap-2">
             <Home className="w-5 h-5" />
             الرئيسية
           </button>
         </div>
+        {error ? <p role="alert" className="mt-4 max-w-md font-bold text-maroon-light">{error}</p> : null}
       </div>
     );
 
@@ -222,6 +234,14 @@ export default function Challenge() {
 
   return (
     <div className="min-h-dvh flex flex-col px-4 py-5 max-w-2xl mx-auto w-full">
+      {error ? (
+        <div role="alert" className="glass-card mb-4 p-4 text-center">
+          <p className="font-bold text-maroon-light">{error}</p>
+          <button onClick={() => void pick(chosen ?? -1)} disabled={busy} className="btn-gold mt-3">
+            إعادة إرسال الإجابة
+          </button>
+        </div>
+      ) : null}
       {/* الشريط العلوي */}
       <div className="flex items-center justify-between mb-3">
         <span className="font-cairo font-bold text-gold-light">

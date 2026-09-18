@@ -30,7 +30,7 @@ function fixture() {
 
 // Model RTDB's documented initial null cache and compare-and-retry behavior.
 // No Firebase project or production data is contacted by these tests.
-function harness() {
+function harness(firebaseEmptyNodes = false) {
   const data = fixture();
   let clock = 2000;
   let version = 0;
@@ -41,12 +41,20 @@ function harness() {
     const keys = path.split('/').filter(Boolean);
     const last = keys.pop();
     const parent = keys.reduce((node, key) => node[key] ??= {}, data);
+    const prune = (v) => {
+      if (v === null || typeof v !== 'object') return v;
+      const entries = Object.entries(v).map(([k, x]) => [k, prune(x)]).filter(([, x]) => x !== null);
+      if (!entries.length) return null;
+      return Array.isArray(v) ? entries.map(([, x]) => x) : Object.fromEntries(entries);
+    };
+    value = firebaseEmptyNodes ? prune(value) : value;
     if (value === null) delete parent[last]; else parent[last] = clone(value);
     version += 1;
   };
   const snapshot = (value) => ({ val: () => clone(value), exists: () => value !== null });
-  const ref = (path) => ({
+  const ref = (path = '') => ({
     get: async () => { const snap = snapshot(read(path)); afterRead?.(); return snap; },
+    set: async (value) => write(path, value),
     update: async (values) => { for (const [key, value] of Object.entries(values)) write(`${path}/${key}`, value); },
     transaction: async (update) => {
       beforeTransaction?.();
@@ -76,7 +84,7 @@ function harness() {
   const exports = {};
   runInNewContext(source, { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
-  const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, data: { action, matchCode: 'A234', ...extra } });
+  const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
   return { data, call, match: () => data.matches.A234,
     setClock: (value) => { clock = value; },
     beforeTransaction: (fn) => { beforeTransaction = fn; },
@@ -182,3 +190,56 @@ test('a missing answer secret reports an error instead of waiting forever', asyn
   const h = harness(); h.setClock(22000); delete h.data.matchSecrets.A234;
   await assert.rejects(h.call('finishShowdown'), { code: 'failed-precondition' });
 });
+
+test('three phones can each replay the solo challenge twelve times on shared Wi-Fi', async () => {
+  const h = harness();
+  for (let round = 0; round < 12; round += 1) {
+    h.setClock(2000 + round * 30000);
+    for (let phone = 1; phone <= 3; phone += 1) {
+      const session = await h.call('startChallenge', `phone${phone}`);
+      assert.equal(session.questions.length, 100);
+      assert.ok(session.questions.every((q) => q.answer === -1));
+    }
+  }
+});
+
+test('solo rapid-request limit still blocks flooding and expires after a minute', async () => {
+  const h = harness();
+  for (let i = 0; i < 10; i += 1) await h.call('startChallenge', 'phone');
+  await assert.rejects(h.call('startChallenge', 'phone'), { code: 'resource-exhausted' });
+  h.setClock(62001);
+  assert.equal((await h.call('startChallenge', 'phone')).questions.length, 100);
+});
+
+for (const type of ['multiple_choice', 'flag', 'memory']) {
+  test(`three-team ${type}: two passes, three wrong answers, then next question`, async () => {
+    const h = harness(true);
+    const match = h.match();
+    match.teamOrder.push('A234-3');
+    match.teams['A234-3'] = { score: 200 };
+    Object.values(match.teams).forEach((team) => Object.assign(team, { correctCount: 0, wrongCount: 0 }));
+    match.timer = 20;
+    match.state = { phase: 'question', round: 1, targetTeam: 'A234-1', originalTeam: 'A234-1', passCount: 0,
+      question: { id: 42, type, level: 'easy', question: 'اختبار', options: ['أ','ب','ج','د'], answer: -1 } };
+    h.data.matchSecrets.A234 = { questionId: 42, answer: 3, question: 'اختبار', options: ['أ','ب','ج','د'] };
+    for (let team = 1; team <= 3; team += 1) {
+      assert.equal(h.match().state.targetTeam, `A234-${team}`);
+      if (type === 'memory' && team > 1) {
+        assert.equal(h.match().state.question.options, undefined);
+        h.setClock(h.match().state.viewUntil + 100);
+        assert.equal((await h.call('revealQuestionPrompt')).accepted, true);
+      }
+      if (type === 'flag') await h.call('useAssist', 'host', { teamCode: `A234-${team}` });
+      await h.call('judgeVerbal', 'host', { correct: false });
+      if (team < 3) await h.call('passToNextTeam');
+    }
+    assert.equal(h.match().state.phase, 'revealed');
+    assert.equal(h.match().state.question.answer, 3);
+    assert.equal(h.match().state.attemptedTeams.length, 3);
+    assert.equal(h.match().state.passCount, 2);
+    assert.equal(Object.values(h.match().teams).reduce((sum, t) => sum + t.score, 0), 450);
+    await assert.rejects(h.call('passToNextTeam'), { code: 'failed-precondition' });
+    await h.call('advanceTurn');
+    assert.equal(h.match().state.phase, 'choose');
+  });
+}

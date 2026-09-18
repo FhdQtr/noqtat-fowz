@@ -4,6 +4,7 @@ import { httpsCallable } from "firebase/functions";
 import { db, ensureAuth, functions } from "./firebase";
 import type { AnswerMode, DifficultyMode, Match, Player, PowerCardId, QuestionLevel, QuestionType, TeamColor } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
+import { normalizeMatch } from "./normalizeMatch";
 
 export interface CreateMatchOptions {
   hostName: string;
@@ -141,7 +142,7 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
         received = true;
         if (timeout !== undefined) window.clearTimeout(timeout);
         onError?.("");
-        cb(match);
+        cb(normalizeMatch(match));
       } catch {
         // Keep retrying until the overall connection timeout reports the error.
       } finally {
@@ -164,7 +165,7 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
         stopPolling();
         if (timeout !== undefined) window.clearTimeout(timeout);
         onError?.("");
-        cb(snapshot.exists() ? snapshot.val() as Match : null);
+        cb(normalizeMatch(snapshot.exists() ? snapshot.val() as Match : null));
       },
       (error) => {
         void error;

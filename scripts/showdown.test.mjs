@@ -55,6 +55,7 @@ function harness(firebaseEmptyNodes = false) {
   const ref = (path = '') => ({
     get: async () => { const snap = snapshot(read(path)); afterRead?.(); return snap; },
     set: async (value) => write(path, value),
+    remove: async () => write(path, null),
     update: async (values) => { for (const [key, value] of Object.entries(values)) write(`${path}/${key}`, value); },
     transaction: async (update) => {
       beforeTransaction?.();
@@ -243,3 +244,40 @@ for (const type of ['multiple_choice', 'flag', 'memory']) {
     assert.equal(h.match().state.phase, 'choose');
   });
 }
+
+test('audience lobby gets unique short team codes that resolve to the right team', async () => {
+  const h = harness();
+  h.match().status = 'lobby';
+  h.match().expiresAt = 999999;
+  h.data.matchAccess.A234.teamKeys = { 'A234-1': 'SECRET11', 'A234-2': 'SECRET22' };
+  const invites = await h.call('getTeamInvites', 'audience');
+  const codes = Object.values(invites.shortTeamCodes);
+  assert.equal(new Set(codes).size, 2);
+  for (const value of codes) assert.match(value, /^[A-Z][0-9]{3}$/);
+  for (const [teamCode, shortCode] of Object.entries(invites.shortTeamCodes)) {
+    const result = await h.call('resolveTeamCode', 'guest', { shortCode });
+    assert.equal(result.teamCode, teamCode);
+    assert.equal(result.inviteKey, h.data.matchAccess.A234.teamKeys[teamCode]);
+  }
+  const again = await h.call('getTeamInvites', 'audience');
+  assert.deepEqual(again.shortTeamCodes, invites.shortTeamCodes);
+  h.match().status = 'ended';
+  await assert.rejects(h.call('resolveTeamCode', 'guest', { shortCode: codes[0] }), { code: 'not-found' });
+});
+
+test('simple audience code cannot obtain invites after lobby, authorized viewer still can', async () => {
+  const h = harness();
+  h.data.matchAccess.A234.teamKeys = { 'A234-1': 'SECRET11' };
+  h.data.matchAccess.A234.viewerKey = 'VIEWER11';
+  await assert.rejects(h.call('getTeamInvites', 'outsider'), { code: 'permission-denied' });
+  const invites = await h.call('getTeamInvites', 'viewer', { viewerKey: 'VIEWER11' });
+  assert.match(invites.shortTeamCodes['A234-1'], /^[A-Z][0-9]{3}$/);
+});
+
+test('concurrent invite loading keeps a stable code for each team', async () => {
+  const h = harness();
+  h.data.matchAccess.A234.teamKeys = { 'A234-1': 'SECRET11' };
+  const [a, b] = await Promise.all([h.call('getTeamInvites'), h.call('getTeamInvites')]);
+  assert.equal(a.shortTeamCodes['A234-1'], b.shortTeamCodes['A234-1']);
+  assert.equal(Object.keys(h.data.teamJoinCodes).length, 1);
+});

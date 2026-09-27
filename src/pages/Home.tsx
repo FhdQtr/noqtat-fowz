@@ -38,8 +38,8 @@ export default function Home() {
     setErrField(null);
     unlockAudio();
     try {
-      const { parseTeamInviteCode } = await import("../lib/matchApi");
-      const invite = parseTeamInviteCode(code);
+      const { resolveTeamCode } = await import("../lib/matchApi");
+      const invite = await resolveTeamCode(code);
       if (invite) {
         sfx.click();
         nav(`/play/${invite.teamCode}?key=${encodeURIComponent(invite.inviteKey)}`);
@@ -47,8 +47,11 @@ export default function Home() {
         setErr("كود الفريق غير مكتمل — اكتبه كما يظهر عند المقدم");
         setErrField("team");
       }
-    } catch {
-      setErr("تعذّر الاتصال بالميدان حالياً — جرّب مرة ثانية");
+    } catch (cause) {
+      const errorCode = (cause as { code?: string })?.code;
+      setErr(errorCode === "functions/not-found" || errorCode === "functions/invalid-argument"
+        ? "كود الفريق غير صحيح أو انتهت صلاحيته"
+        : "تعذّر الدخول الآن — تأكد من الاتصال وحاول بعد قليل");
       setErrField("team");
     } finally {
       setBusy(false);
@@ -139,7 +142,7 @@ export default function Home() {
                     onFocus={warmGameConnection}
                     value={joinCode}
                     onChange={(event) => updateJoinCode(event.target.value)}
-                    placeholder="A482-1-K7P9M2Q4"
+                    placeholder="B527"
                     dir="ltr"
                     maxLength={15}
                     autoComplete="off"

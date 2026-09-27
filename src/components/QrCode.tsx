@@ -16,8 +16,8 @@ export default function QrCode({
   useEffect(() => {
     QRCode.toDataURL(value, {
       width: size * 2,
-      margin: 1,
-      color: { dark: "#1a1a26", light: "#f3dd9a" },
+      margin: 4,
+      color: { dark: "#000000", light: "#ffffff" },
     }).then(setUrl).catch(() => {});
   }, [value, size]);
 
@@ -28,7 +28,7 @@ export default function QrCode({
         style={{ boxShadow: "0 0 24px rgba(212,175,55,0.18)" }}
       >
         {url ? (
-          <img src={url} alt="QR" width={size} height={size} className="rounded-lg" />
+          <img src={url} alt="رمز دخول الفريق" width={size} height={size} className="rounded-lg max-w-full h-auto" />
         ) : (
           <div style={{ width: size, height: size }} className="animate-pulse bg-night-600 rounded-lg" />
         )}

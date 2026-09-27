@@ -28,6 +28,7 @@ const REQUEST_LIMITS = {
   answerChallenge: { uid: 120, ip: 1200, window: 60 * 1000 },
   getMatch: { uid: 180, ip: 600, window: 60 * 1000 },
   getTeamInvites: { uid: 60, ip: 180, window: 60 * 1000 },
+  resolveTeamCode: { uid: 12, ip: 120, window: 60 * 1000 },
 };
 const RATE_LIMIT_SCOPES = Object.keys(REQUEST_LIMITS).flatMap((action) => [`${action}_uid`, `${action}_ip`]);
 
@@ -202,6 +203,30 @@ function fairTypeCaps(enabledTypes, levels, teamCount, questionsPerTeam) {
     return [type, Math.max(0, Math.min(base, fair))];
   }));
 }
+async function shortTeamCodes(id, access) {
+  const result = {};
+  for (const [teamCode, key] of Object.entries(access.teamKeys || {})) {
+    const saved = (await db.ref(`matchAccess/${id}/shortTeamCodes/${teamCode}`).get()).val();
+    if (saved) { result[teamCode] = saved; continue; }
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const candidate = `${LETTERS[randomInt(LETTERS.length)]}${String(randomInt(1000)).padStart(3, "0")}`;
+      const reserved = await db.ref(`teamJoinCodes/${candidate}`).transaction((current) => {
+        if (current && current.expiresAt > now()) return;
+        return { matchCode: id, teamCode, inviteKey: key, expiresAt: now() + 24 * 60 * 60 * 1000 };
+      }, undefined, false);
+      if (!reserved.committed) continue;
+      const assigned = await db.ref(`matchAccess/${id}/shortTeamCodes/${teamCode}`).transaction(
+        (current) => current || candidate, undefined, false,
+      );
+      result[teamCode] = assigned.snapshot.val();
+      if (result[teamCode] !== candidate) await db.ref(`teamJoinCodes/${candidate}`).remove();
+      break;
+    }
+    if (!result[teamCode]) fail("resource-exhausted", "تعذّر تجهيز كود الفريق، أعد المحاولة");
+  }
+  return result;
+}
+
 function publicQuestion(question) { return { ...question, answer: -1 }; }
 function protectedQuestion(question) {
   const visible = publicQuestion(question);
@@ -1019,13 +1044,26 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { match: publicMatch(snapshot.val()) };
   }
 
+  if (action === "resolveTeamCode") {
+    const shortCode = code(data.shortCode);
+    if (!/^[A-Z][0-9]{3}$/.test(shortCode)) fail("invalid-argument", "كود الفريق حرف وثلاثة أرقام");
+    const invite = (await db.ref(`teamJoinCodes/${shortCode}`).get()).val();
+    if (!invite || invite.expiresAt <= now()) fail("not-found", "كود الفريق غير صحيح أو انتهت صلاحيته");
+    const { match, access } = await loadMatch(invite.matchCode);
+    if (match.status === "ended" || match.expiresAt <= now() || access.teamKeys?.[invite.teamCode] !== invite.inviteKey) {
+      fail("not-found", "كود الفريق غير صحيح أو انتهت صلاحيته");
+    }
+    return { matchCode: invite.matchCode, teamCode: invite.teamCode, inviteKey: invite.inviteKey };
+  }
   const { id, match, access } = await loadMatch(data.matchCode);
   if (action === "getTeamInvites") {
     const isHost = match.hostUid === uid;
     const isViewer = access.viewerKey && safeEqual(data.viewerKey, access.viewerKey);
-    if (!isHost && !isViewer) fail("permission-denied", "روابط الفرق للمقدم وشاشة العرض المصرح بها فقط");
+    // The simple audience code permits joining during the waiting room only.
+    if (!isHost && !isViewer && match.status !== "lobby") fail("permission-denied", "روابط الفرق للمقدم وشاشة العرض المصرح بها فقط");
     return {
       teamKeys: access.teamKeys || {},
+      shortTeamCodes: await shortTeamCodes(id, access),
       ...(isHost ? { viewerKey: access.viewerKey || null } : {}),
     };
   }

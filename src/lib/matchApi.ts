@@ -24,10 +24,11 @@ type ActionName =
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
   | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats" | "getTeamInvites"
-  | "revealQuestionPrompt";
+  | "revealQuestionPrompt" | "resolveTeamCode";
 
 export interface TeamInvites {
   teamKeys: Record<string, string>;
+  shortTeamCodes?: Record<string, string>;
   viewerKey?: string | null;
 }
 
@@ -218,6 +219,12 @@ export function parseTeamInviteCode(value: string): ParsedTeamInvite | null {
   const matched = /^([A-HJKMNP-Z][2-9]{3}-[1-4])-([A-HJKMNP-Z2-9]{8})$/.exec(normalized);
   if (!matched) return null;
   return { matchCode: matched[1].split("-")[0], teamCode: matched[1], inviteKey: matched[2] };
+}
+
+export async function resolveTeamCode(value: string): Promise<ParsedTeamInvite> {
+  const legacy = parseTeamInviteCode(value);
+  if (legacy) return legacy;
+  return gameAction<ParsedTeamInvite>("resolveTeamCode", { shortCode: value.trim().toUpperCase() });
 }
 
 export async function joinTeam(matchCode: string, teamCode: string, name: string, inviteKey: string): Promise<Player> {

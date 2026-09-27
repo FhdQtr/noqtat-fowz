@@ -295,7 +295,7 @@ export default function HostRoom() {
                 </div>
                 {invites?.teamKeys[t.code] ? (
                   <>
-                    <p className="mb-3 text-xs text-muted-foreground" dir="ltr">{t.code}-{invites.teamKeys[t.code]}</p>
+                    <p className="mb-3 text-3xl font-black tracking-widest text-gold-light" dir="ltr">{invites.shortTeamCodes?.[t.code] ?? `${t.code}-${invites.teamKeys[t.code]}`}</p>
                     <QrCode value={`${PUBLIC_GAME_ORIGIN}/play/${t.code}?key=${encodeURIComponent(invites.teamKeys[t.code])}`} size={130} label="امسح للدخول الآمن" />
                   </>
                 ) : (

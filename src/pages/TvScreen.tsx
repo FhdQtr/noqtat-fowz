@@ -21,6 +21,9 @@ export default function TvScreen() {
   const viewerKey = searchParams.get("key")?.trim().toUpperCase() ?? "";
   const [match, setMatch] = useState<Match | null | undefined>(undefined);
   const [teamKeys, setTeamKeys] = useState<Record<string, string>>({});
+  const [shortCodes, setShortCodes] = useState<Record<string, string>>({});
+  const [inviteError, setInviteError] = useState(false);
+  const [inviteRetry, setInviteRetry] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [portrait, setPortrait] = useState(false);
   const [connErr, setConnErr] = useState("");
@@ -30,16 +33,14 @@ export default function TvScreen() {
   useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
 
   useEffect(() => {
-    if (!viewerKey) {
-      setTeamKeys({});
-      return;
-    }
+    if (!viewerKey && match?.status !== "lobby") return;
     let cancelled = false;
+    setInviteError(false);
     void getTeamInvites(code, viewerKey)
-      .then((result) => { if (!cancelled) setTeamKeys(result.teamKeys); })
-      .catch(() => { if (!cancelled) setTeamKeys({}); });
+      .then((result) => { if (!cancelled) { setTeamKeys(result.teamKeys); setShortCodes(result.shortTeamCodes ?? {}); } })
+      .catch(() => { if (!cancelled) setInviteError(true); });
     return () => { cancelled = true; };
-  }, [code, viewerKey]);
+  }, [code, viewerKey, match?.status, inviteRetry]);
 
   useEffect(() => {
     const check = () => setPortrait(window.innerHeight > window.innerWidth);
@@ -192,12 +193,12 @@ export default function TvScreen() {
             <h1 className="text-3xl sm:text-5xl font-black font-cairo text-gold-gradient drop-shadow-lg">
               امسح الكود وادخل مع فريقك
             </h1>
-            <div className="flex flex-wrap justify-center gap-8">
+            <div className="flex w-full flex-wrap justify-center gap-6 xl:gap-10">
               {teams.map((t) => {
                 const c = TEAM_COLORS[t.color];
                 const members = players.filter((p) => p.teamCode === t.code);
                 return (
-                  <div key={t.code} className="flex flex-col items-center gap-3 animate-scale-in">
+                  <div key={t.code} className="flex flex-col items-center gap-3 animate-scale-in max-w-full">
                     <div
                       className="rounded-2xl px-6 py-2 border-2 font-cairo font-black text-2xl"
                       style={{ borderColor: c.hex, color: c.light, background: `${c.hex}22` }}
@@ -205,8 +206,9 @@ export default function TvScreen() {
                       {t.name}
                     </div>
                     {teamKeys[t.code] ? (
-                      <QrCode value={`${location.origin}/play/${t.code}?key=${encodeURIComponent(teamKeys[t.code])}`} size={150} />
-                    ) : null}
+                      <QrCode value={`${location.origin}/play/${t.code}?key=${encodeURIComponent(teamKeys[t.code])}`} size={teams.length > 3 ? 240 : 300} />
+                    ) : <div className="h-60 flex items-center justify-center"><Loader2 className="h-10 w-10 animate-spin text-gold" /></div>}
+                    {shortCodes[t.code] ? <p dir="ltr" className="text-4xl font-black tracking-widest text-gold-light">{shortCodes[t.code]}</p> : null}
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Users className="w-4 h-4" />
                       {members.length > 0 ? members.map((m) => m.name).join("، ") : "بانتظار اللاعبين…"}
@@ -215,7 +217,7 @@ export default function TvScreen() {
                 );
               })}
             </div>
-            {!viewerKey ? <p className="text-sm text-gold-light/80">لإظهار رموز QR للفرق، افتح شاشة الجمهور من جهاز المقدم</p> : null}
+            {inviteError ? <div role="alert" className="text-center text-gold-light"><p>تعذّر تحميل رموز الفرق</p><button className="btn-gold mt-3" onClick={() => setInviteRetry((value) => value + 1)}>إعادة تحميل الرموز</button></div> : null}
             <p className="text-muted-foreground font-cairo animate-pulse">بانتظار المقدم يبدأ المسابقة…</p>
           </div>
         )}
@@ -308,7 +310,7 @@ export default function TvScreen() {
                   </span>
                 </div>
               </div>
-            ) : q.type === "acting" && st.phase !== "revealed" ? (
+            ) : q.type === "acting" && (st.phase !== "revealed" || canPassAfterWrong) ? (
               /* ═══ مثّل المثل: المثل سرّي — يقرأه الممثّل من شاشة الحكم فقط ═══ */
               <TimerRing startedAt={st.questionStartedAt ?? 0} total={timerTotal} active={timerRunning}>
                 <div className="glass-card w-full p-8 sm:p-10 flex flex-col items-center gap-6 animate-scale-in">
@@ -325,7 +327,9 @@ export default function TvScreen() {
                     <span className="text-gold-light">بدون كلام</span>
                   </p>
                   <p className="text-sm text-muted-foreground">الفريق يخمّن بصوت عالي — والحكم يحكم صح أو خطأ</p>
-                  {!st.questionStartedAt && (
+                  {st.phase === "revealed" ? (
+                    <p className="font-cairo font-bold text-gold-light">المثل مخفي حتى تنتهي محاولات الفرق</p>
+                  ) : !st.questionStartedAt && (
                     <p className="rounded-full border border-gold/60 bg-gold/15 px-6 py-2 font-cairo font-black text-gold-light">
                       استعدوا — بانتظار المقدم يبدأ دقيقتين
                     </p>

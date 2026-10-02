@@ -24,6 +24,7 @@ import { ANSWER_LETTERS } from "../lib/answers";
 import PowerCardEvent from "../components/PowerCardEvent";
 import ShowdownPanel from "../components/ShowdownPanel";
 import { useShowdownFinish } from "../lib/useShowdownFinish";
+import PunishmentPanel from "../components/PunishmentPanel";
 
 const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
 
@@ -507,7 +508,8 @@ export default function HostRoom() {
       )}
 
       {/* ═══ السؤال المعروض ═══ */}
-      {st.question && st.phase !== "lobby" && st.phase !== "choose" && st.phase !== "showdown" && st.phase !== "showdown_revealed" && (
+      {st.question?.type === "punishment" && st.punishment ? <div className="max-w-4xl mx-auto mt-6"><PunishmentPanel key={st.question.id} match={match} matchCode={code} host /></div> : null}
+      {st.question && st.question.type !== "punishment" && st.phase !== "lobby" && st.phase !== "choose" && st.phase !== "showdown" && st.phase !== "showdown_revealed" && (
         <div className="flex-1 flex flex-col gap-5 animate-fade-up">
           {/* شريط الدور */}
           <div className="flex items-center justify-center gap-3 flex-wrap">

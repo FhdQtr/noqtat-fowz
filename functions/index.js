@@ -3,6 +3,7 @@ const { createHash, randomInt, timingSafeEqual } = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 const { getDatabase, ServerValue } = require("firebase-admin/database");
 
 initializeApp({ databaseURL: "https://noqtat-fowz-d13aa-default-rtdb.asia-southeast1.firebasedatabase.app" });
@@ -29,6 +30,7 @@ const REQUEST_LIMITS = {
   getMatch: { uid: 180, ip: 600, window: 60 * 1000 },
   getTeamInvites: { uid: 60, ip: 180, window: 60 * 1000 },
   resolveTeamCode: { uid: 12, ip: 120, window: 60 * 1000 },
+  syncAdminAccess: { uid: 6, ip: 30, window: 60 * 1000 },
 };
 const RATE_LIMIT_SCOPES = Object.keys(REQUEST_LIMITS).flatMap((action) => [`${action}_uid`, `${action}_ip`]);
 
@@ -168,14 +170,129 @@ function levelForPick(n, difficulty = "mixed", difficultyLevels = null) {
 function teamQuestionCount(match, teamCode) {
   return Object.values(match.typeCounts?.[teamCode] || {}).reduce((total, count) => total + (Number(count) || 0), 0);
 }
-function oldestWindow(pool, history) {
-  if (!pool.length) return [];
-  const unseen = pool.filter((question) => !history[question.id]);
-  if (unseen.length) return unseen;
-  const count = Math.max(1, Math.min(8, Math.ceil(pool.length * 0.05)));
-  return [...pool]
-    .sort((left, right) => (Number(history[left.id]) || 0) - (Number(history[right.id]) || 0))
-    .slice(0, count);
+// Asset-based rotation across the last fifteen competitions, persisted on the server.
+async function rotateQuestion(pool, matchId, owner) {
+  const ref = db.ref(`questionRotation/${dbKey(owner)}`);
+  const draw = randomInt(1000000);
+  let selected;
+  let reused = false;
+  const result = await ref.transaction((current) => {
+    const games = Array.isArray(current?.games) ? current.games : Object.values(current?.games || {});
+    let game = games.find((entry) => entry.id === matchId);
+    if (!game) { game = { id: matchId, assets: [] }; games.push(game); }
+    const recent = games.slice(-15);
+    const currentAssets = new Set(Object.values(game.assets || {}));
+    const eligible = pool.filter((q) => !currentAssets.has(rotationAssetKey(q)));
+    if (!eligible.length) return;
+    const lastSeen = new Map();
+    recent.forEach((entry, index) => Object.values(entry.assets || {}).forEach((asset) => lastSeen.set(asset, index)));
+    const fresh = eligible.filter((q) => !lastSeen.has(rotationAssetKey(q)));
+    reused = false;
+    const available = fresh;
+    if (!available.length) return;
+    selected = available[draw % available.length];
+    game.assets = [...new Set([...Object.values(game.assets || {}), rotationAssetKey(selected)])];
+    return { games: recent };
+  }, undefined, false);
+  if (!result.committed || !selected) fail("resource-exhausted", "نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة؛ اختر قسمًا آخر أو أضف أسئلة جديدة");
+  return { question: shuffled(selected), reused };
+}
+function rotationGameId(id, match) { return `${id}_${match.createdAt || 0}`; }
+async function registerRotationMatch(owner, gameId) {
+  await db.ref(`questionRotation/${dbKey(owner)}`).transaction((current) => {
+    const games = Array.isArray(current?.games) ? current.games : Object.values(current?.games || {});
+    if (!games.some((game) => game.id === gameId)) games.push({ id: gameId, assets: [] });
+    return { games: games.slice(-15) };
+  }, undefined, false);
+}
+function rotationAssetKey(question) {
+  const normalized = (value) => String(value || "").normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+  const asset = question.image ? `image:${question.image}` : question.video
+    ? `video:${question.video.youtubeId}:${question.video.start}:${question.video.end}:${normalized(question.question)}`
+    : `text:${normalized(question.question)}`;
+  return createHash("sha256").update(asset).digest("hex");
+}
+
+async function questionBank() {
+  const custom = (await db.ref("customQuestions").get()).val() || {};
+  return [...QUESTIONS, ...Object.values(custom).map((q) => ({ ...q, options: q.options || [] }))];
+}
+
+async function beginPunishment(uid, data, id, match, teamCode, usedCount, requestId) {
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (!current) return current;
+    if (current.state.phase !== "choose" || current.state.question || current.state.targetTeam !== teamCode) return;
+    current.state = { ...current.state, phase: "question", round: current.state.round + 1,
+      question: { id: now(), type: "punishment", category: "general", level: "hard", question: "سؤال وعقاب", options: [], answer: -1 },
+      originalTeam: teamCode, targetTeam: teamCode, passCount: 0, attemptedTeams: [],
+      questionValue: 0, pointMultiplier: 1, answer: null, isCorrect: null,
+      questionStartedAt: null, questionDuration: 0, viewUntil: null, selectionRequestId: requestId,
+      punishment: { stage: "prepare", byTeam: teamCode, prepareUntil: now() + 60000 },
+    };
+    current.typeCounts ||= {};
+    current.typeCounts[teamCode] ||= {};
+    current.typeCounts[teamCode].punishment = usedCount + 1;
+    return current;
+  }, undefined, false);
+  return { status: result.committed && result.snapshot.val()?.state?.punishment ? "accepted" : "late" };
+}
+
+async function punishmentAction(uid, data, id, match) {
+  const action = data.action;
+  const st = match.state;
+  const p = st.punishment;
+  if (st.question?.type !== "punishment" || !p) fail("failed-precondition", "لا يوجد سؤال وعقاب");
+  if (Number(data.questionId) !== st.question.id) fail("failed-precondition", "هذا الطلب لسؤال قديم");
+  if (action === "preparePunishment") {
+    if (!canChoose(match, uid, p.byTeam)) fail("permission-denied", "ممثل الفريق فقط يجهّز السؤال");
+    if (p.stage !== "prepare" || now() > p.prepareUntil) fail("deadline-exceeded", "انتهت دقيقة تجهيز السؤال؛ المقدم ينهي الجولة");
+    const target = code(data.targetTeam);
+    const prompt = text(data.prompt, 500), answerText = text(data.answerText, 300), penalty = text(data.penalty, 200);
+    if (target === p.byTeam || !match.teams[target] || !prompt || !answerText || !penalty) fail("invalid-argument", "اختر المنافس واكتب السؤال والإجابة والعقاب");
+    const secret = await db.ref(`matchSecrets/${id}`).transaction((current) => {
+      if (current?.questionId === st.question.id && current.punishmentPrepared) return;
+      return { questionId: st.question.id, answer: -1, answerText, question: prompt, options: [], punishmentPrepared: true };
+    }, undefined, false);
+    if (!secret.committed) fail("failed-precondition", "تم تثبيت السؤال بالفعل");
+    const prepared = await db.ref(`matches/${id}`).transaction((current) => {
+      if (!current) return current;
+      if (current.state.question?.id !== st.question.id || current.state.punishment?.stage !== "prepare" || now() > p.prepareUntil) return;
+      current.state.targetTeam = target;
+      current.state.question.question = prompt;
+      current.state.punishment = { ...p, stage: "answering", targetTeam: target, penalty };
+      return current;
+    }, undefined, false);
+    if (!prepared.committed) fail("failed-precondition", "تغيّر السؤال أو انتهت دقيقة التجهيز");
+    return { ok: true };
+  }
+  if (action === "requestPunishmentOutcome") {
+    if (!canChoose(match, uid, p.targetTeam)) fail("permission-denied", "ممثل الفريق المستهدف يختار");
+    if (!["perform", "deduct"].includes(data.mode) || p.stage !== "failed") fail("failed-precondition", "الاختيار بعد الإجابة الخاطئة فقط");
+    await db.ref(`matches/${id}/state/punishment/requestedMode`).set(data.mode);
+    return { ok: true };
+  }
+  requireHost(match, uid);
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (!current) return current;
+    const state = current.state, penalty = state.punishment;
+    if (state.question?.id !== st.question.id || !penalty) return;
+    if (action === "judgePunishment") {
+      if (penalty.stage !== "answering" || typeof data.correct !== "boolean") return;
+      state.isCorrect = data.correct;
+      penalty.stage = data.correct ? "resolved" : "failed";
+      state.phase = data.correct ? "revealed" : "question";
+    } else if (action === "resolvePunishment") {
+      if (penalty.stage !== "failed" || !["perform", "deduct"].includes(data.mode)) return;
+      if (data.mode === "deduct") current.teams[penalty.targetTeam].score = (Number(current.teams[penalty.targetTeam].score) || 0) - 200;
+      penalty.stage = "resolved"; penalty.mode = data.mode; state.phase = "revealed";
+    } else if (action === "cancelPunishment") {
+      if (!["prepare", "submitting", "answering"].includes(penalty.stage)) return;
+      penalty.stage = "resolved"; penalty.mode = "cancelled"; state.phase = "revealed"; state.isCorrect = null;
+    } else return;
+    return current;
+  }, undefined, false);
+  if (!result.committed || !result.snapshot.val()) fail("failed-precondition", "تغيّرت الجولة أو تم تثبيت النتيجة بالفعل");
+  return { ok: true };
 }
 function pointsForPick(n) { return Math.min(250, Math.max(50, n * 50)); }
 function powerCardCost(card, questionsPerTeam = 8) {
@@ -191,10 +308,10 @@ function typeCap(match, type) {
   const saved = Number(match.typeCaps?.[type]);
   return Number.isFinite(saved) ? saved : defaultTypeCap(match);
 }
-function fairTypeCaps(enabledTypes, levels, teamCount, questionsPerTeam) {
+function fairTypeCaps(enabledTypes, levels, teamCount, questionsPerTeam, bank = QUESTIONS) {
   const base = enabledTypes.length <= 1 ? questionsPerTeam : Math.max(3, Math.ceil(questionsPerTeam / 2));
   return Object.fromEntries(enabledTypes.map((type) => {
-    const typeQuestions = QUESTIONS.filter((question) => question.type === type && !question.disabled);
+    const typeQuestions = bank.filter((question) => question.type === type && !question.disabled);
     if (!typeQuestions.length) return [type, base];
     const perLevel = levels.map((level) => new Set(
       typeQuestions.filter((question) => question.level === level).map(questionAssetKey),
@@ -354,7 +471,7 @@ async function createMatch(uid, options) {
   const difficultyLevels = randomOrder(requestedLevels.length
     ? requestedLevels.slice(0, 3)
     : difficulty === "mixed" ? ["easy", "medium", "hard"] : [difficulty]);
-  const typeCaps = fairTypeCaps(enabledTypes, difficultyLevels, names.length, questionsPerTeam);
+  const typeCaps = fairTypeCaps(enabledTypes, difficultyLevels, names.length, questionsPerTeam, await questionBank());
   if (Object.values(typeCaps).reduce((total, cap) => total + cap, 0) < questionsPerTeam) {
     fail("failed-precondition", "عدد الأقسام المختارة لا يكفي لإكمال المسابقة من دون تكرار؛ اختر أقساماً إضافية");
   }
@@ -491,10 +608,8 @@ async function chooseType(uid, data) {
   const usedCount = match.typeCounts?.[teamCode]?.[type] || 0;
   if (usedCount >= typeCap(match, type)) return { status: "cap" };
   let candidates;
-  if (type.startsWith("ct_")) {
-    const custom = (await db.ref("customQuestions").get()).val() || {};
-    candidates = Object.values(custom);
-  } else candidates = QUESTIONS;
+  candidates = await questionBank();
+  if (type === "punishment") return beginPunishment(uid, data, id, match, teamCode, usedCount, requestId);
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
@@ -509,31 +624,9 @@ async function chooseType(uid, data) {
 
   // سجل دائم للمقدم: لا نكرر السؤال بين المسابقات حتى ينتهي مخزون النوع/المستوى.
   const historyOwner = match.hostUid || uid;
-  const historyRef = db.ref(`hostQuestionHistory/${historyOwner}/${typeKey}/${level}`);
-  const globalHistoryRef = db.ref(`globalQuestionHistory/${typeKey}/${level}`);
-  const [historySnapshot, globalHistorySnapshot] = await Promise.all([historyRef.get(), globalHistoryRef.get()]);
-  const history = historySnapshot.val() || {};
-  const globalHistory = globalHistorySnapshot.val() || {};
-  // لا نمسح السجل بعد اكتمال البنك. نختار أقدم الأسئلة استخداماً، وهذا يمنع
-  // العودة المفاجئة لأسئلة البداية. السجل العام يحمي أيضاً عند تغير دخول الضيف.
-  let available = oldestWindow(pool, history);
-  available = oldestWindow(available, globalHistory);
 
-  // «مثّل المثل»: القطري غير المستخدم أولاً، ثم الخليجي.
-  if (type === "acting") {
-    const qatari = available.filter((q) => q.region === "qatari");
-    if (qatari.length) available = qatari;
-    else {
-      const gulf = available.filter((q) => q.region === "gulf");
-      if (gulf.length) available = gulf;
-    }
-  }
-
-  const question = shuffled(available[randomInt(available.length)]);
+  let question;
   const started = now();
-  const seconds = viewSeconds(question);
-  const viewUntil = seconds ? started + seconds * 1000 : null;
-  const isActing = question.type === "acting";
   const stateRef = db.ref(`matches/${id}/state`);
   const claimRef = stateRef.child("selectionRequestId");
   if (!await acquireClaim(claimRef, requestId)) return { status: "late", reason: "claimed" };
@@ -547,6 +640,11 @@ async function chooseType(uid, data) {
       await releaseClaim(claimRef, requestId);
       return { status: "late", reason: "state-changed" };
     }
+    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner);
+    question = rotated.question;
+    const seconds = viewSeconds(question);
+    const viewUntil = seconds ? started + seconds * 1000 : null;
+    const isActing = question.type === "acting";
 
     const nextState = {
       ...latestState,
@@ -572,6 +670,8 @@ async function chooseType(uid, data) {
       cardsFrozenTeam: latestState.cardsFrozenTeam || null,
       cardUsedThisTurn: Boolean(latestState.cardUsedThisTurn),
       questionValue: pointsForPick(usedCount + 1),
+      rotationReused: rotated.reused,
+      punishment: null,
       usedIds: [...new Set([...(latestState.usedIds || []), question.id])],
       usedAssets: [...new Set([...(latestState.usedAssets || []), questionAssetKey(question)])],
     };
@@ -588,6 +688,10 @@ async function chooseType(uid, data) {
     return { status: "accepted" };
   } catch (error) {
     await releaseClaim(claimRef, requestId);
+    if (error.code === "resource-exhausted") {
+      await db.ref(`matches/${id}/rotationBlocked/${teamCode}/${typeKey}/${level}`).set(true);
+      return { status: "rotation" };
+    }
     throw error;
   }
 }
@@ -598,7 +702,7 @@ async function startShowdown(id, match) {
   const allowedTextTypes = new Set(["multiple_choice", "riddle", "completion"]);
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
-  const eligible = QUESTIONS.filter((question) =>
+  const eligible = (await questionBank()).filter((question) =>
     !question.disabled
     && question.level === "hard"
     && Array.isArray(question.options)
@@ -606,16 +710,17 @@ async function startShowdown(id, match) {
     && (wantsImage ? Boolean(question.image) : allowedTextTypes.has(question.type))
   );
   const basePool = eligible.filter((question) => !usedIds.has(question.id) && !usedAssets.has(questionAssetKey(question)));
-  if (!basePool.length) fail("resource-exhausted", "لا توجد أسئلة مواجهة صعبة متاحة");
+  if (!basePool.length) return advance(id, match, true);
 
   const kind = wantsImage ? "visual" : "text";
   const historyOwner = match.hostUid || "shared";
-  const hostHistoryRef = db.ref(`hostQuestionHistory/${historyOwner}/showdown_${kind}/hard`);
-  const globalHistoryRef = db.ref(`globalQuestionHistory/showdown_${kind}/hard`);
-  const [hostSnapshot, globalSnapshot] = await Promise.all([hostHistoryRef.get(), globalHistoryRef.get()]);
-  let available = oldestWindow(basePool, hostSnapshot.val() || {});
-  available = oldestWindow(available, globalSnapshot.val() || {});
-  const question = shuffled(available[randomInt(available.length)]);
+  let rotated;
+  try { rotated = await rotateQuestion(basePool, rotationGameId(id, match), historyOwner); }
+  catch (error) {
+    if (error.code !== "resource-exhausted") throw error;
+    return advance(id, match, true);
+  }
+  const question = rotated.question;
   const createdAt = now();
   const opensAt = createdAt + SHOWDOWN_OPEN_DELAY_MS;
   const closesAt = opensAt + SHOWDOWN_DURATION_MS;
@@ -623,6 +728,8 @@ async function startShowdown(id, match) {
   await db.ref().update({
     [`matches/${id}/showdownCount`]: showdownNumber,
     [`matches/${id}/state/phase`]: "showdown",
+    [`matches/${id}/state/punishment`]: null,
+    [`matches/${id}/state/rotationReused`]: rotated.reused,
     [`matches/${id}/state/question`]: publicQuestion(question),
     [`matches/${id}/state/answer`]: null,
     [`matches/${id}/state/isCorrect`]: null,
@@ -837,9 +944,9 @@ async function reveal(id, match, correctOverride) {
   return { correct };
 }
 
-async function advance(id, match) {
+async function advance(id, match, skipShowdown = false) {
   const state = match.state;
-  if (state.phase !== "showdown_revealed" && showdownDue(match)) return startShowdown(id, match);
+  if (!skipShowdown && state.phase !== "showdown_revealed" && showdownDue(match)) return startShowdown(id, match);
   if (state.round < match.totalRounds) {
     let nextTeam;
     const updates = { turnIndex: match.turnIndex + 1, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/showdown": null, "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false };
@@ -849,6 +956,8 @@ async function advance(id, match) {
       updates["tieBreaker/cursor"] = cursor;
     } else nextTeam = match.teamOrder[(match.turnIndex + 1) % match.teamOrder.length];
     updates["state/targetTeam"] = nextTeam;
+    updates["state/punishment"] = null;
+    updates["state/rotationReused"] = null;
     await db.ref(`matches/${id}`).update(updates);
     return { ended: false };
   }
@@ -866,6 +975,7 @@ async function advance(id, match) {
 }
 
 async function playPowerCard(uid, data, id, initialMatch, access) {
+  if (initialMatch.state.question?.type === "punishment") return { accepted: false, reason: "timing" };
   const teamCode = code(data.teamCode);
   const card = text(data.card, 30);
   if (!POWER_CARD_BASE_COST[card]) return { accepted: false, reason: "unknown" };
@@ -931,11 +1041,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       event.targetPlayerName = targetPlayer.name;
     } else if (card === "swapQuestion") {
       if (state.phase !== "question" || targetTeam !== teamCode || state.answer || !state.question) return { accepted: false, reason: "timing" };
-      let candidates;
-      if (state.question.type.startsWith("ct_")) {
-        const custom = (await db.ref("customQuestions").get()).val() || {};
-        candidates = Object.values(custom);
-      } else candidates = QUESTIONS;
+      const candidates = await questionBank();
       const usedIds = new Set(state.usedIds || []);
       const usedAssets = new Set(state.usedAssets || []);
       const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
@@ -943,7 +1049,10 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       if (!teamPool.length) return { accepted: false, reason: "empty" };
       const pool = teamPool.filter((question) => !usedIds.has(question.id) && !usedAssets.has(questionAssetKey(question)));
       if (!pool.length) return { accepted: false, reason: "empty" };
-      const question = shuffled(pool[randomInt(pool.length)]);
+      let rotated;
+      try { rotated = await rotateQuestion(pool, rotationGameId(id, match), match.hostUid || uid); }
+      catch (error) { if (error.code === "resource-exhausted") return { accepted: false, reason: "empty" }; throw error; }
+      const question = rotated.question;
       const started = now();
       const seconds = viewSeconds(question);
       const viewUntil = seconds ? started + seconds * 1000 : null;
@@ -961,6 +1070,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
         [`matches/${id}/teams/${teamCode}/cardBalance`]: balance - cost,
         [`matches/${id}/teams/${teamCode}/powerCards/${card}`]: false,
         [`matches/${id}/state/question`]: protectedQuestion(question),
+        [`matches/${id}/state/rotationReused`]: rotated.reused,
         [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
         [`matches/${id}/state/usedAssets`]: [...usedAssets, questionAssetKey(question)],
         [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
@@ -1038,6 +1148,16 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "submitHostAnswer") return submitHostAnswer(uid, data);
   if (action === "submitShowdownAnswer") return submitShowdownAnswer(uid, data);
   if (action === "finishShowdown") return finishShowdown(uid, data);
+  if (action === "syncAdminAccess") {
+    const token = request.auth.token || {};
+    const owner = token.email === "fhd.alqahtani@gmail.com" && token.email_verified === true && token.firebase?.sign_in_provider === "google.com";
+    if (!owner && token.admin !== true) fail("permission-denied", "هذا الحساب لا يملك صلاحية الإدارة");
+    if (owner && token.admin !== true) {
+      const account = await getAuth().getUser(uid);
+      await getAuth().setCustomUserClaims(uid, { ...(account.customClaims || {}), admin: true });
+    }
+    return { admin: true };
+  }
   if (action === "getMatch") {
     const snapshot = await db.ref(`matches/${code(data.matchCode)}`).get();
     if (!snapshot.exists()) fail("not-found", "الميدان غير موجود");
@@ -1056,6 +1176,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { matchCode: invite.matchCode, teamCode: invite.teamCode, inviteKey: invite.inviteKey };
   }
   const { id, match, access } = await loadMatch(data.matchCode);
+  if (["preparePunishment", "judgePunishment", "requestPunishmentOutcome", "resolvePunishment", "cancelPunishment"].includes(action)) return punishmentAction(uid, data, id, match);
   if (action === "getTeamInvites") {
     const isHost = match.hostUid === uid;
     const isViewer = access.viewerKey && safeEqual(data.viewerKey, access.viewerKey);
@@ -1073,7 +1194,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const valid = secret?.questionId === match.state.question?.id;
     return {
       answer: valid ? secret.answer : null,
-      answerText: valid && Array.isArray(secret.options) ? secret.options[secret.answer] ?? null : null,
+      answerText: valid ? secret.answerText || (Array.isArray(secret.options) ? secret.options[secret.answer] ?? null : null) : null,
     };
   }
   if (action === "revealQuestionPrompt") {
@@ -1117,6 +1238,10 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return playPowerCard(uid, data, id, match, access);
   }
 
+  if (match.state.question?.type === "punishment" && ["judgeVerbal", "revealAnswer", "passToNextTeam"].includes(action)) {
+    fail("failed-precondition", "استخدم أزرار سؤال وعقاب لتثبيت نتيجته");
+  }
+
   requireHost(match, uid);
   if (action === "startMatch") {
     const first = code(data.firstTeamCode);
@@ -1129,6 +1254,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
       if (missing) fail("failed-precondition", "عيّن ممثلاً لكل فريق قبل بدء المسابقة");
     }
     const startedAt = now();
+    await registerRotationMatch(uid, rotationGameId(id, match));
     await db.ref(`matches/${id}`).update({ status: "playing", startedAt, expiresAt: startedAt + ACTIVE_TTL_MS, "state/phase": "choose", "state/targetTeam": first });
     await safelyRecordUsage(() => recordMatchUsage("matchesStarted", id));
   } else if (action === "startQuestionTimer") {
@@ -1164,6 +1290,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const isActing = match.state.question?.type === "acting";
     await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, attemptedTeams, question: reprotectQuestionForAttempt(match.state.question), answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardClaimId: null });
   } else if (action === "advanceTurn") {
+    if (match.state.punishment && match.state.punishment.stage !== "resolved") fail("failed-precondition", "ثبّت نتيجة سؤال وعقاب أولاً");
     return advance(id, match);
   } else if (action === "setCaptain") {
     const teamCode = code(data.teamCode);

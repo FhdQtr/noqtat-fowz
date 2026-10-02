@@ -14,7 +14,7 @@ import { useCustomTypes } from "../../lib/useCustomBank";
 import { TYPE_LABEL, LEVEL_LABEL, type Question } from "../../types/game";
 import { QuestionBody, OptionsDisplay } from "../../components/QuestionCard";
 
-const BUILTIN_TYPES = Object.entries(TYPE_LABEL).map(([id, label]) => ({ id, label }));
+const BUILTIN_TYPES = Object.entries(TYPE_LABEL).filter(([id]) => id !== "punishment").map(([id, label]) => ({ id, label }));
 const TF_OPTIONS = ["صح", "خطأ"];
 
 interface Props {
@@ -45,10 +45,10 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
     if (!editTarget) return;
     setTypeId(editTarget.type);
     setMedia(editTarget.video ? "video" : editTarget.image ? "image" : "none");
-    setAnswerFormat(editTarget.format === "tf" || editTarget.options.length === 2 ? "tf" : "mc");
+    setAnswerFormat(editTarget.format === "tf" || (editTarget.options || []).length === 2 ? "tf" : "mc");
     setLevel(editTarget.level);
     setText(editTarget.question);
-    const opts = [...editTarget.options];
+    const opts = [...(editTarget.options || [])];
     while (opts.length < 4) opts.push("");
     setOptions(opts.slice(0, 4));
     setCorrectIdx(editTarget.answer);
@@ -58,6 +58,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
     setVEnd(String(editTarget.video?.end ?? 25));
   }, [editTarget]);
 
+  const isActing = typeId === "acting";
   const ytId = videoUrl ? parseYoutubeId(videoUrl) : null;
 
   const validate = (): string => {
@@ -69,7 +70,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
       if (Number(vEnd) <= Number(vStart)) return "ثانية النهاية لازم تكون أكبر من البداية";
       if (Number(vEnd) - Number(vStart) > 90) return "خلي المقطع أقصر من ٩٠ ثانية";
     }
-    if (answerFormat === "mc" && options.some((o) => !o.trim())) return "عبّي الخيارات الأربعة كلها";
+    if (!isActing && answerFormat === "mc" && options.some((o) => !o.trim())) return "عبّي الخيارات الأربعة كلها";
     return "";
   };
 
@@ -80,10 +81,10 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
         category: "custom",
         level,
         question: text,
-        options: answerFormat === "tf" ? TF_OPTIONS : options.map((o) => o || "…"),
-        answer: correctIdx,
+        options: isActing ? [] : answerFormat === "tf" ? TF_OPTIONS : options.map((o) => o || "…"),
+        answer: isActing ? 0 : correctIdx,
         image: media === "image" && imageData ? imageData : undefined,
-        format: answerFormat,
+        format: isActing ? undefined : answerFormat,
       }
     : null;
 
@@ -108,9 +109,9 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
         category: "custom",
         level,
         question: text.trim(),
-        options: answerFormat === "tf" ? TF_OPTIONS : options.map((o) => o.trim()),
-        answer: correctIdx,
-        format: answerFormat,
+        options: isActing ? [] : answerFormat === "tf" ? TF_OPTIONS : options.map((o) => o.trim()),
+        answer: isActing ? 0 : correctIdx,
+        format: isActing ? undefined : answerFormat,
         image: media === "image" && imageData ? imageData : undefined,
         video: media === "video" && ytId
           ? { youtubeId: ytId, start: Number(vStart) || 0, end: Number(vEnd) || 25 }
@@ -302,6 +303,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
       <div className="glass-card p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-bold mb-2 text-gold-light/90">طريقة الإجابة</label>
+          {isActing ? <p className="text-sm text-gold-light">تمثيل المثل، والمقدم يثبت النتيجة</p> : <>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setAnswerFormat("mc")}
@@ -322,7 +324,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
             >
               صح / خطأ
             </button>
-          </div>
+          </div></>}
         </div>
         <div>
           <label className="block text-sm font-bold mb-2 text-gold-light/90">مستوى الصعوبة</label>
@@ -348,11 +350,11 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="اكتب السؤال هنا…"
+          placeholder={isActing ? "اكتب المثل هنا…" : "اكتب السؤال هنا…"}
           className="input-night min-h-20 mb-4"
           maxLength={300}
         />
-        {answerFormat === "mc" ? (
+        {isActing ? <p className="text-sm text-muted-foreground">اكتب المثل نفسه أعلاه؛ سيظهر للممثل فقط أثناء التمثيل.</p> : answerFormat === "mc" ? (
           <>
             <label className="block text-sm font-bold mb-2 text-gold-light/90">
               الخيارات الأربعة — اضغط الدائرة لتحديد الإجابة الصحيحة
@@ -410,7 +412,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
           <p className="text-xs text-gold-light/80 font-bold mb-3">معاينة — هكذا يظهر للمتسابقين:</p>
           <QuestionBody q={preview} />
           <div className="mt-4">
-            <OptionsDisplay q={preview} reveal chosen={correctIdx} />
+            {!isActing && <OptionsDisplay q={preview} reveal chosen={correctIdx} />}
           </div>
         </div>
       )}

@@ -14,6 +14,7 @@ import { sfx } from "../lib/sounds";
 import { useNow } from "../lib/useNow";
 import PowerCardEvent from "../components/PowerCardEvent";
 import ShowdownPanel from "../components/ShowdownPanel";
+import PunishmentPanel from "../components/PunishmentPanel";
 
 export default function TvScreen() {
   const { code = "" } = useParams();
@@ -249,7 +250,8 @@ export default function TvScreen() {
         )}
 
         {/* ═══ السؤال ═══ */}
-        {q && st.phase !== "lobby" && st.phase !== "choose" && st.phase !== "showdown" && st.phase !== "showdown_revealed" && st.phase !== "ended" && (
+        {q?.type === "punishment" && st.punishment && st.phase !== "ended" ? <PunishmentPanel key={q.id} match={match} matchCode={code} /> : null}
+        {q && q.type !== "punishment" && st.phase !== "lobby" && st.phase !== "choose" && st.phase !== "showdown" && st.phase !== "showdown_revealed" && st.phase !== "ended" && (
           <div className="w-full max-w-5xl flex flex-col items-center gap-5 animate-fade-up">
             <div className="flex items-center gap-4 flex-wrap justify-center">
               <QuestionMeta q={q} />

@@ -24,7 +24,16 @@ type ActionName =
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
   | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats" | "getTeamInvites"
-  | "revealQuestionPrompt" | "resolveTeamCode";
+  | "revealQuestionPrompt" | "resolveTeamCode" | "syncAdminAccess"
+  | "preparePunishment" | "judgePunishment" | "requestPunishmentOutcome" | "resolvePunishment" | "cancelPunishment";
+
+export async function syncAdminAccess() {
+  return gameAction<{ admin: boolean }>("syncAdminAccess", {});
+}
+
+export async function runPunishmentAction(matchCode: string, action: "preparePunishment" | "judgePunishment" | "requestPunishmentOutcome" | "resolvePunishment" | "cancelPunishment", questionId: number, details: Record<string, unknown> = {}) {
+  return gameAction(action, { matchCode, questionId, ...details });
+}
 
 export interface TeamInvites {
   teamKeys: Record<string, string>;
@@ -269,21 +278,22 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
   const teamUsed = Object.values(match.typeCounts?.[teamCode] ?? {})
     .reduce<number>((total, count) => total + (Number(count) || 0), 0);
   const cap = typeCap(match, type);
+  const nextLevel = levelForPick(teamUsed + 1, match.difficulty ?? "mixed", match.difficultyLevels);
   return {
     used,
     cap,
     left: Math.max(0, cap - used),
-    nextLevel: levelForPick(teamUsed + 1, match.difficulty ?? "mixed", match.difficultyLevels),
+    nextLevel,
     nextPoints: pointsForPick(used + 1),
-    available: used < cap,
+    available: used < cap && !match.rotationBlocked?.[teamCode]?.[type]?.[nextLevel],
   };
 }
 
-export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "error"> {
+export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "error"> {
   const requestId = typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" }>("chooseType", { matchCode, type, requestId });
+  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" | "rotation" }>("chooseType", { matchCode, type, requestId });
   try {
     const result = await send();
     return result.status;

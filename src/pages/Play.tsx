@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import PunishmentPanel from "../components/PunishmentPanel";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
@@ -184,6 +185,7 @@ export default function Play() {
       if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
       else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
       else if (res === "empty") setChooseMsg("لا توجد أسئلة متاحة من هذا النوع والمستوى");
+      else if (res === "rotation") setChooseMsg("نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة — اختاروا قسمًا آخر");
       else if (res === "error") setChooseMsg("تعذّر تحميل السؤال — اضغط مرة أخرى");
       else if (res === "accepted") {
         accepted = true;
@@ -332,7 +334,7 @@ export default function Play() {
   return (
     <div className="min-h-dvh flex flex-col">
       <PowerCardEvent match={match} />
-      {st!.phase !== "showdown" && st!.phase !== "showdown_revealed" ? (
+      {st!.phase !== "showdown" && st!.phase !== "showdown_revealed" && st!.question?.type !== "punishment" ? (
         <PowerCardsWallet match={match} teamCode={teamCode} onUse={activateCard} />
       ) : null}
       {/* شريط النتائج */}
@@ -411,10 +413,10 @@ export default function Play() {
                           : <QuestionTypeIcon type={t} className="h-12 w-12" />}
                       <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>
                       <span className="text-xs text-muted-foreground">
-                        {LEVEL_LABEL[pr.nextLevel]} · {pr.nextPoints} نقطة
+                        {t === "punishment" ? "تحدَّ منافسك · العقاب أو −200" : `${LEVEL_LABEL[pr.nextLevel]} · ${pr.nextPoints} نقطة`}
                       </span>
                       <span className={`text-[11px] font-cairo font-bold ${pr.available ? "text-emerald2-light" : "text-maroon-light"}`}>
-                        {pr.available ? `باقي ${pr.left}` : "اكتمل"}
+                        {pr.available ? `باقي ${pr.left}` : match.rotationBlocked?.[teamCode]?.[t]?.[pr.nextLevel] ? "مقفول لمنع التكرار" : "اكتمل"}
                       </span>
                     </button>
                   );
@@ -442,7 +444,8 @@ export default function Play() {
         )}
 
         {/* السؤال */}
-        {q && st!.phase !== "lobby" && st!.phase !== "choose" && st!.phase !== "showdown" && st!.phase !== "showdown_revealed" && (
+        {q?.type === "punishment" && st!.punishment ? <PunishmentPanel key={q.id} match={match} matchCode={matchCode} teamCode={teamCode} canControl={match.answerMode !== "representative" || team.captainId === player.id} /> : null}
+        {q && q.type !== "punishment" && st!.phase !== "lobby" && st!.phase !== "choose" && st!.phase !== "showdown" && st!.phase !== "showdown_revealed" && (
           <>
             {isMyTurn ? (
               <div className="w-full flex flex-col gap-4 animate-fade-up">

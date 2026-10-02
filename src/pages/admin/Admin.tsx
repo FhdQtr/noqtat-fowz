@@ -3,13 +3,14 @@
 // ═══════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { getIdTokenResult, signInAnonymously, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { getIdTokenResult, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInAnonymously, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import {
   ShieldCheck, Lock, Loader2, PlusCircle, Database, ClipboardList,
   Save, KeyRound, LogOut, ArrowRight, BarChart3,
 } from "lucide-react";
 import { type CustomQuestion } from "../../lib/customBank";
 import { auth } from "../../lib/firebase";
+import { syncAdminAccess } from "../../lib/matchApi";
 import QuestionForm from "./QuestionForm";
 import ManageBank from "./ManageBank";
 import BulkImport from "./BulkImport";
@@ -39,16 +40,35 @@ export default function Admin() {
   const [editTarget, setEditTarget] = useState<CustomQuestion | null>(null);
 
   useEffect(() => {
-    const check = async () => {
-      const user = auth.currentUser;
+    return onAuthStateChanged(auth, (user) => {
+      void (async () => {
       if (user && !user.isAnonymous) {
+        await syncAdminAccess();
         const token = await getIdTokenResult(user, true);
         if (token.claims.admin === true) return setGate("authed");
       }
       setGate("login");
-    };
-    void check().catch(() => setGate("login"));
+      })().catch(() => setGate("login"));
+    });
   }, []);
+
+  const googleLogin = async () => {
+    setBusy(true); setErr("");
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const credential = await signInWithPopup(auth, provider);
+      await syncAdminAccess();
+      await credential.user.getIdToken(true);
+      setGate("authed");
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      setErr(code === "auth/operation-not-allowed" ? "فعّل تسجيل الدخول بجوجل في Firebase أولاً"
+        : code === "auth/unauthorized-domain" ? "أضف qtrgame.net إلى نطاقات Firebase المصرح بها"
+        : code === "functions/permission-denied" ? "هذا الحساب لا يملك صلاحية الإدارة"
+        : "تعذّر تسجيل الدخول بجوجل؛ أعد المحاولة من المتصفح");
+    } finally { setBusy(false); }
+  };
 
   const submit = async () => {
     setErr("");
@@ -93,6 +113,9 @@ export default function Admin() {
           </p>
           {gate !== "loading" && (
             <>
+              <button onClick={() => void googleLogin()} disabled={busy} className="btn-gold w-full mb-5 flex items-center justify-center gap-2">
+                {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />} الدخول بحساب Google
+              </button>
               <input
                 type="email"
                 value={email}
@@ -157,7 +180,7 @@ export default function Admin() {
 
         {/* التبويبات */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-          {TABS.map(({ id, label, icon: Icon }) => (
+          {TABS.filter(({ id }) => id !== "password" || auth.currentUser?.providerData.some((provider) => provider.providerId === "password")).map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => {

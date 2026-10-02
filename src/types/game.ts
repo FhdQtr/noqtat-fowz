@@ -12,7 +12,8 @@ export type BuiltinQuestionType =
   | "ordering"
   | "riddle"
   | "memory"
-  | "acting";
+  | "acting"
+  | "punishment";
 
 export type QuestionType = string;
 
@@ -155,6 +156,16 @@ export interface GameState {
     at: number;
   } | null;
   showdown?: ShowdownState | null;
+  rotationReused?: boolean;
+  punishment?: {
+    stage: "prepare" | "answering" | "failed" | "resolved";
+    byTeam: string;
+    targetTeam?: string;
+    prepareUntil: number;
+    penalty?: string;
+    requestedMode?: "perform" | "deduct";
+    mode?: "perform" | "deduct" | "cancelled";
+  } | null;
 }
 
 export interface Match {
@@ -173,6 +184,7 @@ export interface Match {
   difficultyLevels?: QuestionLevel[]; // مستوى واحد أو مستويان، والمنوع يستخدم المستويات الثلاثة
   answerMode?: AnswerMode;
   enabledTypes: QuestionType[];
+  rotationBlocked?: Record<string, Record<string, Partial<Record<QuestionLevel, boolean>>>>;
   typeCaps?: Record<string, number>; // الحصة العادلة لكل قسم بحسب حجم البنك وعدد الفرق
   state: GameState;
   teams: Record<string, Team>;
@@ -251,6 +263,7 @@ export const TYPE_LABEL: Record<string, string> = {
   riddle: "لغز",
   memory: "اختبار الذاكرة",
   acting: "مثّل المثل",
+  punishment: "سؤال وعقاب",
 };
 
 // أسماء الأنواع المخصصة — تُسجَّل تلقائياً من مزامنة البنك المخصص
@@ -313,7 +326,7 @@ export function questionPoints(st: {
 export function canPassQuestion(match: Pick<Match, "teamOrder" | "state">): boolean {
   const st = match.state;
   if (st.phase !== "revealed" || st.isCorrect !== false || !st.question) return false;
-  if (st.question.type === "true_false" || st.question.format === "tf") return false;
+  if (st.question.type === "true_false" || st.question.type === "punishment" || st.question.format === "tf") return false;
   const attempted = new Set(st.attemptedTeams ?? [
     ...(st.passCount > 0 && st.originalTeam ? [st.originalTeam] : []),
     ...(st.targetTeam ? [st.targetTeam] : []),

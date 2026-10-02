@@ -25,6 +25,7 @@ const TYPE_OPTIONS: { id: QuestionType; label: string }[] = [
   { id: "ordering", label: "ترتيب" },
   { id: "riddle", label: "ألغاز" },
   { id: "acting", label: "مثّل المثل" },
+  { id: "punishment", label: "سؤال وعقاب" },
 ];
 
 const QUESTIONS_PER_TEAM_OPTIONS = [4, 6, 8, 10, 12];

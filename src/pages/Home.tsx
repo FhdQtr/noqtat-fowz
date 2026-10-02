@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowLeft, Gamepad2, Menu, MonitorPlay, Trophy, UsersRound } from "lucide-react";
+import { ArrowLeft, Gamepad2, MonitorPlay, Trophy, UsersRound } from "lucide-react";
+import AdminAccountLink from "../components/AdminAccountLink";
 import { unlockAudio, sfx } from "../lib/sounds";
 import "./Home.css";
 
@@ -97,9 +98,7 @@ export default function Home() {
               aria-label="الميدان — الميدان يا حميدان"
             />
           </Link>
-          <Link className="am-menu" to="/admin" aria-label="إدارة الميدان">
-            <Menu aria-hidden="true" />
-          </Link>
+          <AdminAccountLink />
         </div>
         <div className="am-sadu" aria-hidden="true" />
       </header>

@@ -53,6 +53,7 @@ function harness(firebaseEmptyNodes = false) {
   };
   const snapshot = (value) => ({ val: () => clone(value), exists: () => value !== null });
   const ref = (path = '') => ({
+    child: (key) => ref(`${path}/${key}`),
     get: async () => { const snap = snapshot(read(path)); afterRead?.(); return snap; },
     set: async (value) => write(path, value),
     remove: async () => write(path, null),
@@ -78,15 +79,18 @@ function harness(firebaseEmptyNodes = false) {
     if (name === 'firebase-functions/v2/https') return { onCall: (_, fn) => fn, HttpsError };
     if (name === 'firebase-functions/v2/scheduler') return { onSchedule: (_, fn) => fn };
     if (name === 'firebase-admin/app') return { initializeApp: () => {} };
+    if (name === 'firebase-admin/auth') return { getAuth: () => ({ getUser: async () => ({ customClaims: {} }), setCustomUserClaims: async () => {} }) };
     if (name === 'firebase-admin/database') return { getDatabase: () => ({ ref }), ServerValue: {} };
     return realRequire(name);
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source, { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
-  return { data, call, match: () => data.matches.A234,
+  return { data, call, helpers: exports.testHelpers,
+    authCall: (token) => exports.gameAction({ auth: { uid: 'owner', token }, rawRequest: { ip: '192.0.2.2' }, data: { action: 'syncAdminAccess' } }),
+    match: () => data.matches.A234,
     setClock: (value) => { clock = value; },
     beforeTransaction: (fn) => { beforeTransaction = fn; },
     afterRead: (fn) => { afterRead = fn; },
@@ -280,4 +284,151 @@ test('concurrent invite loading keeps a stable code for each team', async () => 
   const [a, b] = await Promise.all([h.call('getTeamInvites'), h.call('getTeamInvites')]);
   assert.equal(a.shortTeamCodes['A234-1'], b.shortTeamCodes['A234-1']);
   assert.equal(Object.keys(h.data.teamJoinCodes).length, 1);
+});
+
+test('rotation prevents repeating question assets during fifteen competitions', async () => {
+  const h = harness(true);
+  const pool = Array.from({ length: 45 }, (_, id) => ({ id, type: 'flag', level: 'easy', image: `/flag-${id}.svg`, question: `flag ${id}`, options: ['a', 'b'], answer: 0 }));
+  const recent = [];
+  for (let game = 0; game < 35; game++) {
+    const draw = await h.helpers.rotateQuestion(pool, `game${game}`, 'host');
+    assert.equal(draw.reused, false);
+    assert.ok(!recent.slice(-14).includes(draw.question.id));
+    recent.push(draw.question.id);
+  }
+  assert.equal(h.data.questionRotation.host.games.length, 15);
+});
+
+test('rotation identifies same image/text despite different question ids and reports bank shortage', async () => {
+  const h = harness();
+  const a = { id: 1, type: 'acting', question: 'المثل نفسه', options: [], answer: 0 };
+  const b = { ...a, id: 2, question: '  المثل   نفسه  ' };
+  await h.helpers.rotateQuestion([a], 'one', 'host');
+  await assert.rejects(h.helpers.rotateQuestion([b], 'two', 'host'), /15/);
+  for (let game = 2; game <= 16; game++) await h.helpers.registerRotationMatch('host', `empty${game}`);
+  const next = await h.helpers.rotateQuestion([b], 'empty16', 'host');
+  assert.equal(next.question.id, 2);
+  assert.equal(h.helpers.rotationAssetKey(a), h.helpers.rotationAssetKey(b));
+  assert.equal(h.helpers.rotationAssetKey({ ...a, image: '/same.svg' }), h.helpers.rotationAssetKey({ ...b, image: '/same.svg' }));
+});
+
+function punishmentFixture() {
+  const h = harness(true);
+  h.match().enabledTypes = ['punishment'];
+  h.match().questionsPerTeam = 8;
+  h.match().turnIndex = 0;
+  h.match().state = { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [] };
+  return h;
+}
+
+async function preparedPunishment(h) {
+  assert.equal((await h.call('chooseType', 'user1', { type: 'punishment', requestId: 'p-request' })).status, 'accepted');
+  const questionId = h.match().state.question.id;
+  await h.call('preparePunishment', 'user1', { questionId, targetTeam: 'A234-2', prompt: 'سؤال المنافس', answerText: 'إجابة سرية', penalty: 'يمثل حركة' });
+  return questionId;
+}
+
+test('punishment answer remains private and only host can judge', async () => {
+  const h = punishmentFixture();
+  const questionId = await preparedPunishment(h);
+  assert.equal(JSON.stringify(h.match()).includes('إجابة سرية'), false);
+  await assert.rejects(h.call('getHostAnswer', 'user2'), { code: 'permission-denied' });
+  assert.equal((await h.call('getHostAnswer')).answerText, 'إجابة سرية');
+  await assert.rejects(h.call('judgePunishment', 'user1', { questionId, correct: false }), { code: 'permission-denied' });
+  await assert.rejects(h.call('judgeVerbal', 'host', { correct: true }), { code: 'failed-precondition' });
+});
+
+test('correct punishment answer avoids penalty; failed answer deducts exactly once', async () => {
+  const success = punishmentFixture();
+  const successId = await preparedPunishment(success);
+  await success.call('judgePunishment', 'host', { questionId: successId, correct: true });
+  assert.equal(success.match().state.punishment.stage, 'resolved');
+  assert.equal(success.match().teams['A234-2'].score, 150);
+  const h = punishmentFixture();
+  const questionId = await preparedPunishment(h);
+  await assert.rejects(h.call('resolvePunishment', 'host', { questionId, mode: 'deduct' }), { code: 'failed-precondition' });
+  await h.call('judgePunishment', 'host', { questionId, correct: false });
+  await h.call('requestPunishmentOutcome', 'user2', { questionId, mode: 'deduct' });
+  assert.equal(h.match().teams['A234-2'].score, 150);
+  const attempts = await Promise.allSettled([h.call('resolvePunishment', 'host', { questionId, mode: 'deduct' }), h.call('resolvePunishment', 'host', { questionId, mode: 'deduct' })]);
+  assert.equal(attempts.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(h.match().teams['A234-2'].score, -50);
+});
+
+test('physical punishment does not deduct points; preparation expires after sixty seconds', async () => {
+  const h = punishmentFixture();
+  const questionId = await preparedPunishment(h);
+  await h.call('judgePunishment', 'host', { questionId, correct: false });
+  await h.call('resolvePunishment', 'host', { questionId, mode: 'perform' });
+  assert.equal(h.match().teams['A234-2'].score, 150);
+  const expired = punishmentFixture();
+  await expired.call('chooseType', 'user1', { type: 'punishment' });
+  const oldId = expired.match().state.question.id;
+  expired.setClock(62001);
+  await assert.rejects(expired.call('preparePunishment', 'user1', { questionId: oldId, targetTeam: 'A234-2', prompt: 'سؤال', answerText: 'جواب', penalty: 'حركة' }), { code: 'deadline-exceeded' });
+  await expired.call('cancelPunishment', 'host', { questionId: oldId });
+  assert.equal(expired.match().state.punishment.mode, 'cancelled');
+});
+
+test('representative alone prepares and selects penalty; stale requests cannot affect a new question', async () => {
+  const h = punishmentFixture();
+  h.match().answerMode = 'representative';
+  h.match().teams['A234-1'].captainId = 'p1';
+  h.match().teams['A234-2'].captainId = 'p2';
+  h.match().players.p3 = { id: 'p3', teamCode: 'A234-1', name: 'عضو' };
+  h.data.matchAccess.A234.playerUids.p3 = 'user3';
+  await assert.rejects(h.call('chooseType', 'user3', { type: 'punishment' }), { code: 'permission-denied' });
+  const questionId = await preparedPunishment(h);
+  await assert.rejects(h.call('preparePunishment', 'user3', { questionId }), { code: 'permission-denied' });
+  await assert.rejects(h.call('judgePunishment', 'host', { questionId: questionId - 1, correct: false }), { code: 'failed-precondition' });
+});
+
+test('admin enrollment requires verified owner email from Google authentication', async () => {
+  const h = harness();
+  for (const token of [ {}, { email: 'other@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } }, { email: 'fhd.alqahtani@gmail.com', email_verified: false, firebase: { sign_in_provider: 'google.com' } }, { email: 'fhd.alqahtani@gmail.com', email_verified: true, firebase: { sign_in_provider: 'password' } } ]) {
+    await assert.rejects(h.authCall(token), { code: 'permission-denied' });
+  }
+  assert.equal((await h.authCall({ email: 'fhd.alqahtani@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } })).admin, true);
+});
+
+test('normal custom-section selection rotates across fifteen new matches for the same presenter', async () => {
+  const h = harness();
+  h.data.customQuestions = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [900000 + i, { id: 900000 + i, type: 'ct_rotation', category: 'custom', level: 'easy', question: `سؤال جديد ${i}`, options: ['أ', 'ب', 'ج', 'د'], answer: 0 }]));
+  const seen = new Set();
+  for (let i = 0; i < 15; i++) {
+    const matchCode = `B${100 + i}`;
+    h.data.matches[matchCode] = { ...clone(h.match()), enabledTypes: ['ct_rotation'], difficulty: 'easy', questionsPerTeam: 4, turnIndex: 0, state: { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [], usedAssets: [] } };
+    h.data.matchAccess[matchCode] = clone(h.data.matchAccess.A234);
+    const response = await h.call('chooseType', 'user1', { matchCode, type: 'ct_rotation', requestId: `request${i}` });
+    assert.equal(response.status, 'accepted');
+    const question = h.data.matches[matchCode].state.question;
+    assert.equal(seen.has(question.id), false);
+    seen.add(question.id);
+  }
+  assert.equal(seen.size, 15);
+});
+
+test('two simultaneous punishment drafts cannot mismatch prompt and private answer', async () => {
+  const h = punishmentFixture();
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const questionId = h.match().state.question.id;
+  const results = await Promise.allSettled(['one', 'two'].map((suffix) => h.call('preparePunishment', 'user1', { questionId, targetTeam: 'A234-2', prompt: `prompt-${suffix}`, answerText: `answer-${suffix}`, penalty: 'حركة' })));
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  const prompt = h.match().state.question.question;
+  assert.equal(h.data.matchSecrets.A234.answerText, prompt.replace('prompt-', 'answer-'));
+});
+
+
+test('exhausted rotation leaves selection usable and marks only that section and level', async () => {
+  const h = harness();
+  const question = { id: 900001, type: 'ct_rotation', category: 'custom', level: 'easy', question: 'السؤال الوحيد', options: ['أ', 'ب', 'ج', 'د'], answer: 0 };
+  h.data.customQuestions = { 900001: question };
+  await h.helpers.rotateQuestion([question], 'previous', 'host');
+  Object.assign(h.match(), { enabledTypes: ['ct_rotation'], difficulty: 'easy', questionsPerTeam: 4, turnIndex: 0, state: { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [] } });
+  const result = await h.call('chooseType', 'user1', { type: 'ct_rotation', requestId: 'no-repeat' });
+  assert.equal(result.status, 'rotation');
+  assert.equal(h.match().state.phase, 'choose');
+  assert.equal(h.match().state.question, null);
+  assert.equal(h.match().rotationBlocked['A234-1'].ct_rotation.easy, true);
+  assert.equal(h.match().typeCounts?.['A234-1']?.ct_rotation || 0, 0);
 });

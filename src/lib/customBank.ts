@@ -47,7 +47,7 @@ function startQuestionSync() {
   void ensureAuth().then(() => {
     onValue(ref(db, "customQuestions"), (s) => {
       const v = (s.val() ?? {}) as Record<string, CustomQuestion>;
-      latestQuestions = Object.values(v).sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+      latestQuestions = Object.values(v).map((q) => ({ ...q, options: q.options || [] })).sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
       emit();
     });
   });

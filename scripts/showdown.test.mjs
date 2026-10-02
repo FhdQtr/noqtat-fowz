@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
+import ts from 'typescript';
 
 const source = readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8');
 const realRequire = createRequire(new URL('../functions/index.js', import.meta.url));
@@ -86,7 +87,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch };', { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
   return { data, call, helpers: exports.testHelpers,
@@ -463,9 +464,9 @@ test('extra time works just before deadline and during memory viewing, only once
     h.setClock(startsAt === 1000 ? 20999 : 2000);
     assert.equal((await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'extraTime' })).accepted, true);
     assert.equal(h.match().state.extraTimeUsed, true);
-    assert.equal(h.match().teams['A234-1'].cardBalance, 900);
+    assert.equal(h.match().teams['A234-1'].cardBalance, 950);
     assert.equal((await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'extraTime' })).accepted, false);
-    assert.equal(h.match().teams['A234-1'].cardBalance, 900);
+    assert.equal(h.match().teams['A234-1'].cardBalance, 950);
   }
 });
 
@@ -542,4 +543,42 @@ test('punishment mode must be preselected and physical punishment cannot become 
   await invalid.call('chooseType', 'user1', { type: 'punishment' });
   await assert.rejects(invalid.call('preparePunishment', 'user1', { questionId: invalid.match().state.question.id, targetTeam: 'A234-2', prompt: 'سؤال', answerText: 'جواب', mode: 'other' }), { code: 'invalid-argument' });
   assert.equal(invalid.match().state.punishment.stage, 'prepare');
+});
+
+test('all enabled sections must be used per team before any section repeats', async () => {
+  const h = harness(true);
+  Object.assign(h.match(), { enabledTypes: ['ct_a', 'ct_b', 'punishment'], difficulty: 'easy', questionsPerTeam: 6, typeCaps: { ct_a: 3, ct_b: 3, punishment: 3 } });
+  h.data.customQuestions = { a: { id: 960001, type: 'ct_a', category: 'custom', level: 'easy', question: 'ألف', options: ['أ', 'ب'], answer: 0 }, b: { id: 960002, type: 'ct_b', category: 'custom', level: 'easy', question: 'باء', options: ['أ', 'ب'], answer: 0 } };
+  h.match().state = { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [] };
+  const next = () => Object.assign(h.match().state, { phase: 'choose', question: null, selectionRequestId: null, targetTeam: 'A234-1' });
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_a' })).status, 'accepted');
+  next();
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_b' })).status, 'accepted');
+  next();
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_a' })).status, 'cooldown');
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_b' })).status, 'cooldown');
+  assert.equal(h.helpers.sectionCycle(h.match(), 'A234-2').used.length, 0);
+  assert.equal((await h.call('chooseType', 'user1', { type: 'punishment' })).status, 'accepted');
+  assert.equal(h.helpers.sectionCycle(h.match(), 'A234-1').number, 2);
+  assert.equal(h.helpers.sectionCycle(h.match(), 'A234-1').used.length, 0);
+  next();
+  assert.equal((await h.call('chooseType', 'user1', { type: 'punishment' })).status, 'accepted');
+  next();
+  assert.equal((await h.call('chooseType', 'user1', { type: 'punishment' })).status, 'cooldown');
+});
+
+test('single-section cycle resets and card prices match the client at all match lengths', () => {
+  const h = harness();
+  const single = { enabledTypes: ['flag'], sectionCycleByTeam: {} };
+  single.sectionCycleByTeam.one = h.helpers.nextSectionCycle(single, 'one', 'flag');
+  assert.equal(h.helpers.sectionCycle(single, 'one').used.length, 0);
+  assert.equal(single.sectionCycleByTeam.one.number, 2);
+  const frontend = {};
+  const compiled = ts.transpileModule(readFileSync(new URL('../src/types/game.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  runInNewContext(compiled, { exports: frontend });
+  const prices = { extraTime: 50, swapQuestion: 100, pickPlayer: 150, doublePoints: 150, freeze: 150, steal: 200 };
+  for (const [card, price] of Object.entries(prices)) {
+    assert.equal(h.helpers.powerCardCost(card, 8), price);
+    for (const size of [1, 4, 8, 12, 16]) assert.equal(h.helpers.powerCardCost(card, size), frontend.powerCardCost(card, size));
+  }
 });

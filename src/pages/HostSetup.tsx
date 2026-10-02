@@ -97,10 +97,6 @@ export default function HostSetup() {
   };
 
   const create = async () => {
-    if (types.length < 2 && questionsPerTeam > 1) {
-      setErr("اختر قسمين على الأقل علشان كل فريق يبدّل القسم في دوره التالي");
-      return;
-    }
     if (types.length === 0) {
       setErr("اختر نوع سؤال واحد على الأقل");
       return;

@@ -6,7 +6,7 @@ import {
   HelpCircle, MessageSquare, ListChecks, Eye, Drama, Zap,
 } from "lucide-react";
 import {
-  subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress,
+  subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress, sectionCycleProgress,
   trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
@@ -184,7 +184,7 @@ export default function Play() {
       const res = await chooseType(matchCode, t);
       if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
       else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
-      else if (res === "cooldown") setChooseMsg("اخترتم هذا القسم في دوركم السابق؛ اختاروا قسمًا آخر ويرجع متاحًا في الدور اللي بعده");
+      else if (res === "cooldown") setChooseMsg("اخترتم هذا القسم في الدورة الحالية؛ أكملوا جميع الأقسام أولًا حتى تنفتح من جديد");
       else if (res === "empty") setChooseMsg("لا توجد أسئلة متاحة من هذا النوع والمستوى");
       else if (res === "rotation") setChooseMsg("نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة — اختاروا قسمًا آخر");
       else if (res === "error") setChooseMsg("تعذّر تحميل السؤال — اضغط مرة أخرى");
@@ -392,7 +392,7 @@ export default function Play() {
                 </span>
                 <p className="text-xs text-muted-foreground mt-2">
                   {canChooseType
-                    ? "اختر نوع السؤال — كل نوع يصعب ونقاطه تزيد كل ما كررتموه"
+                    ? `الدورة ${sectionCycleProgress(match, teamCode).number} · باقي ${sectionCycleProgress(match, teamCode).remaining} أقسام — أكملوها قبل تكرار أي قسم`
                     : "تقدرون تشوفون الأنواع، لكن الاختيار من جهاز ممثل الفريق فقط"}
                 </p>
               </div>
@@ -417,7 +417,7 @@ export default function Play() {
                         {t === "punishment" ? "تحدَّ منافسك · العقاب أو −200" : `${LEVEL_LABEL[pr.nextLevel]} · ${pr.nextPoints} نقطة`}
                       </span>
                       <span className={`text-[11px] font-cairo font-bold ${pr.available ? "text-emerald2-light" : "text-maroon-light"}`}>
-                        {pr.available ? `باقي ${pr.left}` : pr.coolingDown ? "اختر قسمًا آخر أولًا" : match.rotationBlocked?.[teamCode]?.[t]?.[pr.nextLevel] ? "مقفول لمنع التكرار" : "اكتمل"}
+                        {pr.available ? `باقي ${pr.left}` : pr.coolingDown ? "تم اختياره · أكمل بقية الأقسام" : match.rotationBlocked?.[teamCode]?.[t]?.[pr.nextLevel] ? "مقفول لمنع التكرار" : "اكتمل"}
                       </span>
                     </button>
                   );

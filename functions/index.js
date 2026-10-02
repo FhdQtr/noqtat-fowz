@@ -13,7 +13,7 @@ const LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const DIGITS = "23456789";
 const INVITE_CHARS = `${LETTERS}${DIGITS}`;
 const COLORS = ["maroon", "emerald", "royal", "gold"];
-const POWER_CARD_BASE_COST = { extraTime: 100, swapQuestion: 150, pickPlayer: 200, doublePoints: 200, freeze: 250, steal: 300 };
+const POWER_CARD_BASE_COST = { extraTime: 50, swapQuestion: 100, pickPlayer: 150, doublePoints: 150, freeze: 150, steal: 200 };
 const LOBBY_TTL_MS = 10 * 60 * 1000;
 const ACTIVE_TTL_MS = 8 * 60 * 60 * 1000;
 const ENDED_TTL_MS = 60 * 60 * 1000;
@@ -225,7 +225,7 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (!current) return current;
     if (current.state.phase !== "choose" || current.state.question || current.state.targetTeam !== teamCode) return;
-    if (current.lastChosenTypeByTeam?.[teamCode] === "punishment") return;
+    if (sectionCycle(current, teamCode).used.includes("punishment")) return;
     current.state = { ...current.state, phase: "question", round: current.state.round + 1,
       question: { id: now(), type: "punishment", category: "general", level: "hard", question: "سؤال وعقاب", options: [], answer: -1 },
       originalTeam: teamCode, targetTeam: teamCode, passCount: 0, attemptedTeams: [],
@@ -236,6 +236,8 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
     current.typeCounts ||= {};
     current.typeCounts[teamCode] ||= {};
     current.typeCounts[teamCode].punishment = usedCount + 1;
+    current.sectionCycleByTeam ||= {};
+    current.sectionCycleByTeam[teamCode] = nextSectionCycle(current, teamCode, "punishment");
     current.lastChosenTypeByTeam ||= {};
     current.lastChosenTypeByTeam[teamCode] = "punishment";
     return current;
@@ -307,6 +309,20 @@ async function punishmentAction(uid, data, id, match) {
   }, undefined, false);
   if (!result.committed || !result.snapshot.val()) fail("failed-precondition", "تغيّرت الجولة أو تم تثبيت النتيجة بالفعل");
   return { ok: true };
+}
+function sectionCycle(match, teamCode) {
+  const saved = match.sectionCycleByTeam?.[teamCode];
+  const previous = !saved && match.lastChosenTypeByTeam?.[teamCode];
+  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => match.enabledTypes.includes(type));
+  return { used, number: Number(saved?.number) || 1 };
+}
+function nextSectionCycle(match, teamCode, type) {
+  const cycle = sectionCycle(match, teamCode);
+  const used = [...new Set([...cycle.used, type])];
+  // Keep the number so an empty used list pruned by RTDB still marks a new cycle.
+  return match.enabledTypes.every((enabled) => used.includes(enabled))
+    ? { number: cycle.number + 1 }
+    : { used, number: cycle.number };
 }
 function pointsForPick(n) { return Math.min(250, Math.max(50, n * 50)); }
 function powerCardCost(card, questionsPerTeam = 8) {
@@ -477,7 +493,6 @@ async function createMatch(uid, options) {
   const totalRounds = hasPerTeam
     ? questionsPerTeam * names.length
     : Math.min(40, Math.max(4, Number(options.totalRounds) || 12));
-  if (questionsPerTeam > 1 && enabledTypes.length < 2) fail("invalid-argument", "اختر قسمين على الأقل؛ لا يمكن اختيار القسم نفسه في دورين متتاليين");
   const timer = Math.min(120, Math.max(0, Number(options.timer) || 0));
   const difficulty = ["easy", "medium", "hard", "mixed"].includes(options.difficulty) ? options.difficulty : "medium";
   const requestedLevels = Array.isArray(options.difficultyLevels)
@@ -487,6 +502,8 @@ async function createMatch(uid, options) {
     ? requestedLevels.slice(0, 3)
     : difficulty === "mixed" ? ["easy", "medium", "hard"] : [difficulty]);
   const typeCaps = fairTypeCaps(enabledTypes, difficultyLevels, names.length, questionsPerTeam, await questionBank());
+  const fullCycles = Math.floor(questionsPerTeam / enabledTypes.length);
+  if (enabledTypes.some((type) => typeCaps[type] < fullCycles)) fail("failed-precondition", "بعض الأقسام لا تحتوي أسئلة كافية ليكمل كل فريق جميع الأقسام؛ قلّل عدد الأسئلة أو اختر أقسامًا إضافية");
   if (Object.values(typeCaps).reduce((total, cap) => total + cap, 0) < questionsPerTeam) {
     fail("failed-precondition", "عدد الأقسام المختارة لا يكفي لإكمال المسابقة من دون تكرار؛ اختر أقساماً إضافية");
   }
@@ -622,7 +639,7 @@ async function chooseType(uid, data) {
   if (match.state.phase !== "choose" || match.state.question) {
     return { status: "late", reason: "initial-state", phase: match.state.phase, hasQuestion: Boolean(match.state.question) };
   }
-  if (match.lastChosenTypeByTeam?.[teamCode] === type) return { status: "cooldown" };
+  if (sectionCycle(match, teamCode).used.includes(type)) return { status: "cooldown" };
   if (!match.enabledTypes.includes(type)) fail("invalid-argument", "نوع السؤال غير مفعّل");
   const usedCount = match.typeCounts?.[teamCode]?.[type] || 0;
   if (usedCount >= typeCap(match, type)) return { status: "cap" };
@@ -701,6 +718,7 @@ async function chooseType(uid, data) {
       [`matchSecrets/${id}`]: questionSecret(question),
       [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
       [`matches/${id}/lastChosenTypeByTeam/${teamCode}`]: type,
+      [`matches/${id}/sectionCycleByTeam/${teamCode}`]: nextSectionCycle(match, teamCode, type),
       [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
       [`hostQuestionHistory/${historyOwner}/${typeKey}/${level}/${question.id}`]: started,
       [`globalQuestionHistory/${typeKey}/${level}/${question.id}`]: started,

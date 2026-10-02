@@ -199,6 +199,7 @@ export interface Match {
   // كم مرة كل فريق اختار كل نوع (للتصعيد والسقف) — Firebase يحذف الكائنات الفارغة
   typeCounts?: Record<string, Partial<Record<QuestionType, number>>>;
   lastChosenTypeByTeam?: Record<string, QuestionType>;
+  sectionCycleByTeam?: Record<string, { used?: QuestionType[]; number: number }>;
   /** الأسئلة التي شاهدها كل فريق؛ حصة الأقسام مستقلة بين الفرق. */
   usedIdsByTeam?: Record<string, number[]>;
   tieBreaker?: {
@@ -232,12 +233,12 @@ export const LEVEL_LABEL: Record<QuestionLevel, string> = {
 };
 
 export const POWER_CARD_BASE_COST: Record<PowerCardId, number> = {
-  extraTime: 100,
-  swapQuestion: 150,
-  pickPlayer: 200,
-  doublePoints: 200,
-  freeze: 250,
-  steal: 300,
+  extraTime: 50,
+  swapQuestion: 100,
+  pickPlayer: 150,
+  doublePoints: 150,
+  freeze: 150,
+  steal: 200,
 };
 
 export const POWER_CARD_LABEL: Record<PowerCardId, string> = {

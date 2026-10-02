@@ -275,6 +275,7 @@ export interface TypeProgress {
 }
 
 export function typeProgress(match: Match, teamCode: string, type: QuestionType): TypeProgress {
+  const cycle = sectionCycleProgress(match, teamCode);
   const used = match.typeCounts?.[teamCode]?.[type] ?? 0;
   const teamUsed = Object.values(match.typeCounts?.[teamCode] ?? {})
     .reduce<number>((total, count) => total + (Number(count) || 0), 0);
@@ -286,9 +287,16 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
     left: Math.max(0, cap - used),
     nextLevel,
     nextPoints: pointsForPick(used + 1),
-    coolingDown: match.lastChosenTypeByTeam?.[teamCode] === type,
-    available: used < cap && !match.rotationBlocked?.[teamCode]?.[type]?.[nextLevel] && match.lastChosenTypeByTeam?.[teamCode] !== type,
+    coolingDown: cycle.used.includes(type),
+    available: used < cap && !match.rotationBlocked?.[teamCode]?.[type]?.[nextLevel] && !cycle.used.includes(type),
   };
+}
+
+export function sectionCycleProgress(match: Match, teamCode: string) {
+  const saved = match.sectionCycleByTeam?.[teamCode];
+  const previous = !saved && match.lastChosenTypeByTeam?.[teamCode];
+  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => match.enabledTypes.includes(type));
+  return { used, number: saved?.number || 1, remaining: match.enabledTypes.length - used.length };
 }
 
 export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {

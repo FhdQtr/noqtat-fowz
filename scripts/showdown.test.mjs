@@ -322,10 +322,10 @@ function punishmentFixture() {
   return h;
 }
 
-async function preparedPunishment(h) {
+async function preparedPunishment(h, mode = 'perform') {
   assert.equal((await h.call('chooseType', 'user1', { type: 'punishment', requestId: 'p-request' })).status, 'accepted');
   const questionId = h.match().state.question.id;
-  await h.call('preparePunishment', 'user1', { questionId, targetTeam: 'A234-2', prompt: 'سؤال المنافس', answerText: 'إجابة سرية', penalty: 'يمثل حركة' });
+  await h.call('preparePunishment', 'user1', { questionId, targetTeam: 'A234-2', prompt: 'سؤال المنافس', answerText: 'إجابة سرية', penalty: 'يمثل حركة', mode });
   return questionId;
 }
 
@@ -339,20 +339,24 @@ test('punishment answer remains private and only host can judge', async () => {
   await assert.rejects(h.call('judgeVerbal', 'host', { correct: true }), { code: 'failed-precondition' });
 });
 
-test('correct punishment answer avoids penalty; failed answer deducts exactly once', async () => {
+test('preselected deduction is automatic only on wrong answer and cannot run twice', async () => {
   const success = punishmentFixture();
-  const successId = await preparedPunishment(success);
+  const successId = await preparedPunishment(success, 'deduct');
   await success.call('judgePunishment', 'host', { questionId: successId, correct: true });
   assert.equal(success.match().state.punishment.stage, 'resolved');
   assert.equal(success.match().teams['A234-2'].score, 150);
   const h = punishmentFixture();
-  const questionId = await preparedPunishment(h);
-  await assert.rejects(h.call('resolvePunishment', 'host', { questionId, mode: 'deduct' }), { code: 'failed-precondition' });
-  await h.call('judgePunishment', 'host', { questionId, correct: false });
-  await h.call('requestPunishmentOutcome', 'user2', { questionId, mode: 'deduct' });
-  assert.equal(h.match().teams['A234-2'].score, 150);
-  const attempts = await Promise.allSettled([h.call('resolvePunishment', 'host', { questionId, mode: 'deduct' }), h.call('resolvePunishment', 'host', { questionId, mode: 'deduct' })]);
+  const questionId = await preparedPunishment(h, 'deduct');
+  const attempts = await Promise.allSettled([
+    h.call('judgePunishment', 'host', { questionId, correct: false }),
+    h.call('judgePunishment', 'host', { questionId, correct: false }),
+  ]);
   assert.equal(attempts.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(h.match().teams['A234-2'].score, -50);
+  assert.equal(h.match().state.punishment.stage, 'resolved');
+  assert.equal(h.match().state.punishment.mode, 'deduct');
+  await assert.rejects(h.call('requestPunishmentOutcome', 'user2', { questionId, mode: 'perform' }), { code: 'failed-precondition' });
+  await assert.rejects(h.call('resolvePunishment', 'host', { questionId, mode: 'deduct' }), { code: 'failed-precondition' });
   assert.equal(h.match().teams['A234-2'].score, -50);
 });
 
@@ -413,7 +417,7 @@ test('two simultaneous punishment drafts cannot mismatch prompt and private answ
   const h = punishmentFixture();
   await h.call('chooseType', 'user1', { type: 'punishment' });
   const questionId = h.match().state.question.id;
-  const results = await Promise.allSettled(['one', 'two'].map((suffix) => h.call('preparePunishment', 'user1', { questionId, targetTeam: 'A234-2', prompt: `prompt-${suffix}`, answerText: `answer-${suffix}`, penalty: 'حركة' })));
+  const results = await Promise.allSettled(['one', 'two'].map((suffix) => h.call('preparePunishment', 'user1', { questionId, targetTeam: 'A234-2', prompt: `prompt-${suffix}`, answerText: `answer-${suffix}`, penalty: 'حركة', mode: 'perform' })));
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
   const prompt = h.match().state.question.question;
   assert.equal(h.data.matchSecrets.A234.answerText, prompt.replace('prompt-', 'answer-'));
@@ -496,4 +500,46 @@ test('prototype action names cannot bypass or create independent rate buckets', 
   assert.deepEqual(Object.keys(h.data.securityRateLimits).sort(), ['game_ip', 'game_uid']);
   const bucket = Object.values(h.data.securityRateLimits.game_uid)[0];
   assert.equal(bucket.count, 3);
+});
+
+test('a section is blocked only for that team next turn and returns after another selection', async () => {
+  const h = harness();
+  Object.assign(h.match(), { enabledTypes: ['ct_a', 'ct_b'], difficulty: 'easy', questionsPerTeam: 4, totalRounds: 8, typeCaps: { ct_a: 2, ct_b: 2 } });
+  h.data.customQuestions = Object.fromEntries(['ct_a', 'ct_b'].flatMap((type, index) => [1, 2].map((n) => {
+    const id = 950000 + index * 10 + n;
+    return [id, { id, type, category: 'custom', level: 'easy', question: `سؤال ${type} ${n}`, options: ['أ', 'ب', 'ج', 'د'], answer: 0 }];
+  })));
+  h.match().state = { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [], usedAssets: [] };
+  const nextSelection = (teamCode) => Object.assign(h.match().state, { phase: 'choose', targetTeam: teamCode, question: null, selectionRequestId: null });
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_a', requestId: 'first' })).status, 'accepted');
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_a', requestId: 'first' })).status, 'accepted');
+  nextSelection('A234-2');
+  assert.equal((await h.call('chooseType', 'user2', { type: 'ct_a' })).status, 'accepted');
+  nextSelection('A234-1');
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_a' })).status, 'cooldown');
+  assert.equal(h.match().state.question, null);
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_b' })).status, 'accepted');
+  nextSelection('A234-1');
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_a' })).status, 'empty');
+  // Both A questions were used by the two teams; cooldown has cleared, asset reuse has not.
+  assert.equal(h.match().lastChosenTypeByTeam['A234-1'], 'ct_b');
+  h.data.customQuestions[950003] = { id: 950003, type: 'ct_a', category: 'custom', level: 'easy', question: 'سؤال ثالث', options: ['أ', 'ب', 'ج', 'د'], answer: 0 };
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_a' })).status, 'accepted');
+  assert.equal(h.match().lastChosenTypeByTeam['A234-1'], 'ct_a');
+});
+
+test('punishment mode must be preselected and physical punishment cannot become a deduction', async () => {
+  const h = punishmentFixture();
+  const questionId = await preparedPunishment(h, 'perform');
+  await h.call('judgePunishment', 'host', { questionId, correct: false });
+  assert.equal(h.match().state.punishment.stage, 'failed');
+  await assert.rejects(h.call('resolvePunishment', 'host', { questionId, mode: 'deduct' }), { code: 'failed-precondition' });
+  await assert.rejects(h.call('requestPunishmentOutcome', 'user2', { questionId, mode: 'deduct' }), { code: 'failed-precondition' });
+  assert.equal(h.match().teams['A234-2'].score, 150);
+  await h.call('resolvePunishment', 'host', { questionId, mode: 'perform' });
+  assert.equal(h.match().state.punishment.mode, 'perform');
+  const invalid = punishmentFixture();
+  await invalid.call('chooseType', 'user1', { type: 'punishment' });
+  await assert.rejects(invalid.call('preparePunishment', 'user1', { questionId: invalid.match().state.question.id, targetTeam: 'A234-2', prompt: 'سؤال', answerText: 'جواب', mode: 'other' }), { code: 'invalid-argument' });
+  assert.equal(invalid.match().state.punishment.stage, 'prepare');
 });

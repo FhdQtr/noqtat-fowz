@@ -158,6 +158,7 @@ export interface GameState {
   showdown?: ShowdownState | null;
   rotationReused?: boolean;
   punishment?: {
+    selectedMode?: "perform" | "deduct";
     stage: "prepare" | "answering" | "failed" | "resolved";
     byTeam: string;
     targetTeam?: string;
@@ -197,6 +198,7 @@ export interface Match {
   }>;
   // كم مرة كل فريق اختار كل نوع (للتصعيد والسقف) — Firebase يحذف الكائنات الفارغة
   typeCounts?: Record<string, Partial<Record<QuestionType, number>>>;
+  lastChosenTypeByTeam?: Record<string, QuestionType>;
   /** الأسئلة التي شاهدها كل فريق؛ حصة الأقسام مستقلة بين الفرق. */
   usedIdsByTeam?: Record<string, number[]>;
   tieBreaker?: {

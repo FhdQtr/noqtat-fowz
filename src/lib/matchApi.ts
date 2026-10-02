@@ -271,6 +271,7 @@ export interface TypeProgress {
   nextLevel: QuestionLevel;
   nextPoints: number;
   available: boolean;
+  coolingDown: boolean;
 }
 
 export function typeProgress(match: Match, teamCode: string, type: QuestionType): TypeProgress {
@@ -285,15 +286,16 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
     left: Math.max(0, cap - used),
     nextLevel,
     nextPoints: pointsForPick(used + 1),
-    available: used < cap && !match.rotationBlocked?.[teamCode]?.[type]?.[nextLevel],
+    coolingDown: match.lastChosenTypeByTeam?.[teamCode] === type,
+    available: used < cap && !match.rotationBlocked?.[teamCode]?.[type]?.[nextLevel] && match.lastChosenTypeByTeam?.[teamCode] !== type,
   };
 }
 
-export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "error"> {
+export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {
   const requestId = typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" | "rotation" }>("chooseType", { matchCode, type, requestId });
+  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" }>("chooseType", { matchCode, type, requestId });
   try {
     const result = await send();
     return result.status;

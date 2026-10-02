@@ -225,6 +225,7 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (!current) return current;
     if (current.state.phase !== "choose" || current.state.question || current.state.targetTeam !== teamCode) return;
+    if (current.lastChosenTypeByTeam?.[teamCode] === "punishment") return;
     current.state = { ...current.state, phase: "question", round: current.state.round + 1,
       question: { id: now(), type: "punishment", category: "general", level: "hard", question: "سؤال وعقاب", options: [], answer: -1 },
       originalTeam: teamCode, targetTeam: teamCode, passCount: 0, attemptedTeams: [],
@@ -235,6 +236,8 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
     current.typeCounts ||= {};
     current.typeCounts[teamCode] ||= {};
     current.typeCounts[teamCode].punishment = usedCount + 1;
+    current.lastChosenTypeByTeam ||= {};
+    current.lastChosenTypeByTeam[teamCode] = "punishment";
     return current;
   }, undefined, false);
   return { status: result.committed && result.snapshot.val()?.state?.punishment ? "accepted" : "late" };
@@ -250,8 +253,10 @@ async function punishmentAction(uid, data, id, match) {
     if (!canChoose(match, uid, p.byTeam)) fail("permission-denied", "ممثل الفريق فقط يجهّز السؤال");
     if (p.stage !== "prepare" || now() > p.prepareUntil) fail("deadline-exceeded", "انتهت دقيقة تجهيز السؤال؛ المقدم ينهي الجولة");
     const target = code(data.targetTeam);
-    const prompt = text(data.prompt, 500), answerText = text(data.answerText, 300), penalty = text(data.penalty, 200);
-    if (target === p.byTeam || !match.teams[target] || !prompt || !answerText || !penalty) fail("invalid-argument", "اختر المنافس واكتب السؤال والإجابة والعقاب");
+    const prompt = text(data.prompt, 500), answerText = text(data.answerText, 300);
+    const selectedMode = data.mode;
+    const penalty = selectedMode === "perform" ? text(data.penalty, 200) || "تنفيذ العقاب المتفق عليه" : null;
+    if (target === p.byTeam || !match.teams[target] || !prompt || !answerText || !["perform", "deduct"].includes(selectedMode)) fail("invalid-argument", "اختر المنافس واكتب السؤال والإجابة وحدد العقاب أو خصم ٢٠٠ نقطة");
     const secret = await db.ref(`matchSecrets/${id}`).transaction((current) => {
       if (current?.questionId === st.question.id && current.punishmentPrepared) return;
       return { questionId: st.question.id, answer: -1, answerText, question: prompt, options: [], punishmentPrepared: true };
@@ -262,13 +267,14 @@ async function punishmentAction(uid, data, id, match) {
       if (current.state.question?.id !== st.question.id || current.state.punishment?.stage !== "prepare" || now() > p.prepareUntil) return;
       current.state.targetTeam = target;
       current.state.question.question = prompt;
-      current.state.punishment = { ...p, stage: "answering", targetTeam: target, penalty };
+      current.state.punishment = { ...p, stage: "answering", targetTeam: target, penalty, selectedMode };
       return current;
     }, undefined, false);
     if (!prepared.committed) fail("failed-precondition", "تغيّر السؤال أو انتهت دقيقة التجهيز");
     return { ok: true };
   }
   if (action === "requestPunishmentOutcome") {
+    if (p.selectedMode) fail("failed-precondition", "تم تحديد الجزاء قبل السؤال ولا يمكن تغييره");
     if (!canChoose(match, uid, p.targetTeam)) fail("permission-denied", "ممثل الفريق المستهدف يختار");
     if (!["perform", "deduct"].includes(data.mode) || p.stage !== "failed") fail("failed-precondition", "الاختيار بعد الإجابة الخاطئة فقط");
     await db.ref(`matches/${id}/state/punishment/requestedMode`).set(data.mode);
@@ -284,8 +290,13 @@ async function punishmentAction(uid, data, id, match) {
       state.isCorrect = data.correct;
       penalty.stage = data.correct ? "resolved" : "failed";
       state.phase = data.correct ? "revealed" : "question";
+      if (!data.correct && penalty.selectedMode === "deduct") {
+        current.teams[penalty.targetTeam].score = (Number(current.teams[penalty.targetTeam].score) || 0) - 200;
+        penalty.stage = "resolved"; penalty.mode = "deduct"; state.phase = "revealed";
+      }
     } else if (action === "resolvePunishment") {
       if (penalty.stage !== "failed" || !["perform", "deduct"].includes(data.mode)) return;
+      if (penalty.selectedMode && (penalty.selectedMode !== "perform" || data.mode !== "perform")) return;
       if (data.mode === "deduct") current.teams[penalty.targetTeam].score = (Number(current.teams[penalty.targetTeam].score) || 0) - 200;
       penalty.stage = "resolved"; penalty.mode = data.mode; state.phase = "revealed";
     } else if (action === "cancelPunishment") {
@@ -466,6 +477,7 @@ async function createMatch(uid, options) {
   const totalRounds = hasPerTeam
     ? questionsPerTeam * names.length
     : Math.min(40, Math.max(4, Number(options.totalRounds) || 12));
+  if (questionsPerTeam > 1 && enabledTypes.length < 2) fail("invalid-argument", "اختر قسمين على الأقل؛ لا يمكن اختيار القسم نفسه في دورين متتاليين");
   const timer = Math.min(120, Math.max(0, Number(options.timer) || 0));
   const difficulty = ["easy", "medium", "hard", "mixed"].includes(options.difficulty) ? options.difficulty : "medium";
   const requestedLevels = Array.isArray(options.difficultyLevels)
@@ -610,6 +622,7 @@ async function chooseType(uid, data) {
   if (match.state.phase !== "choose" || match.state.question) {
     return { status: "late", reason: "initial-state", phase: match.state.phase, hasQuestion: Boolean(match.state.question) };
   }
+  if (match.lastChosenTypeByTeam?.[teamCode] === type) return { status: "cooldown" };
   if (!match.enabledTypes.includes(type)) fail("invalid-argument", "نوع السؤال غير مفعّل");
   const usedCount = match.typeCounts?.[teamCode]?.[type] || 0;
   if (usedCount >= typeCap(match, type)) return { status: "cap" };
@@ -687,6 +700,7 @@ async function chooseType(uid, data) {
       [`matches/${id}/state`]: nextState,
       [`matchSecrets/${id}`]: questionSecret(question),
       [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
+      [`matches/${id}/lastChosenTypeByTeam/${teamCode}`]: type,
       [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
       [`hostQuestionHistory/${historyOwner}/${typeKey}/${level}/${question.id}`]: started,
       [`globalQuestionHistory/${typeKey}/${level}/${question.id}`]: started,

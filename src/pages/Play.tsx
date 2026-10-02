@@ -184,6 +184,7 @@ export default function Play() {
       const res = await chooseType(matchCode, t);
       if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
       else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
+      else if (res === "cooldown") setChooseMsg("اخترتم هذا القسم في دوركم السابق؛ اختاروا قسمًا آخر ويرجع متاحًا في الدور اللي بعده");
       else if (res === "empty") setChooseMsg("لا توجد أسئلة متاحة من هذا النوع والمستوى");
       else if (res === "rotation") setChooseMsg("نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة — اختاروا قسمًا آخر");
       else if (res === "error") setChooseMsg("تعذّر تحميل السؤال — اضغط مرة أخرى");
@@ -416,7 +417,7 @@ export default function Play() {
                         {t === "punishment" ? "تحدَّ منافسك · العقاب أو −200" : `${LEVEL_LABEL[pr.nextLevel]} · ${pr.nextPoints} نقطة`}
                       </span>
                       <span className={`text-[11px] font-cairo font-bold ${pr.available ? "text-emerald2-light" : "text-maroon-light"}`}>
-                        {pr.available ? `باقي ${pr.left}` : match.rotationBlocked?.[teamCode]?.[t]?.[pr.nextLevel] ? "مقفول لمنع التكرار" : "اكتمل"}
+                        {pr.available ? `باقي ${pr.left}` : pr.coolingDown ? "اختر قسمًا آخر أولًا" : match.rotationBlocked?.[teamCode]?.[t]?.[pr.nextLevel] ? "مقفول لمنع التكرار" : "اكتمل"}
                       </span>
                     </button>
                   );

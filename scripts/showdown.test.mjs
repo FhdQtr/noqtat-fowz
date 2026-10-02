@@ -487,3 +487,13 @@ test('shared game rate limit blocks excessive retries and resets next minute', a
   h.setClock(82001);
   await h.call('finishShowdown', 'user1');
 });
+
+test('prototype action names cannot bypass or create independent rate buckets', async () => {
+  const h = harness();
+  for (const action of ['__proto__', 'constructor', 'toString']) {
+    await assert.rejects(h.call(action), { code: 'invalid-argument' });
+  }
+  assert.deepEqual(Object.keys(h.data.securityRateLimits).sort(), ['game_ip', 'game_uid']);
+  const bucket = Object.values(h.data.securityRateLimits.game_uid)[0];
+  assert.equal(bucket.count, 3);
+});

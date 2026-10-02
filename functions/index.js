@@ -145,8 +145,9 @@ async function consumeRateLimit(scope, identity, limit, windowMs) {
 }
 async function enforceRequestLimit(action, request, uid) {
   // Unlisted actions share a bounded bucket, including invalid action names.
-  const scope = REQUEST_LIMITS[action] ? action : "game";
-  const limits = REQUEST_LIMITS[action] || GAME_REQUEST_LIMIT;
+  const configured = Object.hasOwn(REQUEST_LIMITS, action);
+  const scope = configured ? action : "game";
+  const limits = configured ? REQUEST_LIMITS[action] : GAME_REQUEST_LIMIT;
   const ip = requestIp(request);
   await Promise.all([
     consumeRateLimit(`${scope}_uid`, uid, limits.uid, limits.window),

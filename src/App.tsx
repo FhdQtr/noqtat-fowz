@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router";
 import SoundToggle from "./components/SoundToggle";
 import SiteAnalytics from "./components/SiteAnalytics";
+import AppErrorBoundary from "./components/AppErrorBoundary";
 
 const Home = lazy(() => import("./pages/Home"));
 const HostSetup = lazy(() => import("./pages/HostSetup"));
@@ -14,7 +15,7 @@ const Admin = lazy(() => import("./pages/admin/Admin"));
 
 export default function App() {
   return (
-    <>
+    <AppErrorBoundary>
     <SoundToggle />
     <SiteAnalytics />
     <Suspense fallback={<div className="grid min-h-dvh place-items-center"><div className="brand-loader" aria-label="جاري فتح الميدان" /></div>}>
@@ -30,6 +31,6 @@ export default function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
-    </>
+    </AppErrorBoundary>
   );
 }

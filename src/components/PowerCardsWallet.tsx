@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import type { Match, PowerCardId } from "../types/game";
 import { POWER_CARD_LABEL, powerCardCost, TEAM_COLORS } from "../types/game";
+import { useServerNow } from "../lib/useServerNow";
 
 const CARD_ORDER: PowerCardId[] = [
   "extraTime", "swapQuestion", "pickPlayer", "doublePoints", "freeze", "steal",
@@ -36,7 +37,7 @@ interface Props {
 
 type CardStatus = "ready" | "waiting" | "locked" | "used";
 
-function timingReason(match: Match, teamCode: string, card: PowerCardId): string | null {
+function timingReason(match: Match, teamCode: string, card: PowerCardId, serverNow: number): string | null {
   const st = match.state;
   const mine = st.targetTeam === teamCode;
   if (st.cardUsedThisTurn) return "لا يمكن استخدامه لأن فريقًا استخدم كرتًا في هذا السؤال بالفعل.";
@@ -52,6 +53,7 @@ function timingReason(match: Match, teamCode: string, card: PowerCardId): string
     if (st.answer) return "لا يمكن زيادة الوقت بعد تثبيت الإجابة.";
     if (st.question?.type === "acting") return "قسم مثّل المثل له مؤقت خاص ولا يقبل زيادة الوقت.";
     if (!(st.questionDuration || match.timer)) return "هذه المسابقة تعمل بدون مؤقت، لذلك لا يمكن زيادة الوقت.";
+    if (!st.questionStartedAt || serverNow >= st.questionStartedAt + (st.questionDuration || match.timer) * 1000) return "انتهى وقت السؤال؛ زيادة الوقت تُستخدم قبل انتهاء المؤقت فقط.";
     return null;
   }
   if (card === "swapQuestion") {
@@ -97,6 +99,7 @@ const FAILURE_MESSAGE: Record<string, string> = {
   player: "اللاعب المختار غير متاح",
   busy: "سبقكم استخدام كرت آخر",
   timing: "انتهت فرصة استخدام هذا الكرت",
+  expired: "انتهى وقت السؤال؛ لم يُستخدم الكرت ولم يُخصم شيء من رصيدكم.",
 };
 
 export default function PowerCardsWallet({ match, teamCode, onUse }: Props) {
@@ -120,11 +123,12 @@ export default function PowerCardsWallet({ match, teamCode, onUse }: Props) {
     .sort((a, b) => a - b)[0];
   const color = TEAM_COLORS[team.color];
   const previousBalance = useRef(balance);
+  const serverNow = useServerNow(1000);
   const cardViews = CARD_ORDER.map((card) => {
     const cost = powerCardCost(card, questionsPerTeam);
     const used = team.powerCards?.[card] === false;
     const affordable = balance >= cost;
-    const reason = timingReason(match, teamCode, card);
+    const reason = timingReason(match, teamCode, card, serverNow);
     const ready = !used && affordable && !reason;
     const status: CardStatus = used ? "used" : ready ? "ready" : affordable ? "waiting" : "locked";
     return { card, cost, used, affordable, reason, ready, status, progress: Math.min(100, Math.round(balance / cost * 100)) };

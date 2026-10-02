@@ -11,9 +11,10 @@
     "prepare:functions": "node scripts/prepare-functions.mjs",
     "check:functions": "npm run prepare:functions && node --check functions/index.js",
     "test:showdown": "npm run prepare:functions && node --test scripts/showdown.test.mjs",
-    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run test:showdown && npm run test:admin && npm run build",
+    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run test:showdown && npm run test:admin && npm run test:connection && npm run build",
     "preview": "vite preview",
-    "test:admin": "node --test scripts/admin-auth.test.mjs"
+    "test:admin": "node --test scripts/admin-auth.test.mjs",
+    "test:connection": "node --test scripts/connection.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -49,7 +50,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
-    "firebase": "^12.17.0",
+    "firebase": "^12.19.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.562.0",
     "next-themes": "^0.4.6",
@@ -66,6 +67,9 @@
     "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
     "zod": "^4.3.5"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

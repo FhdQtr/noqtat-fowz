@@ -150,8 +150,9 @@ export default function HostSetup() {
           </div>
 
           {/* اسم المقدم */}
-          <label className="block text-sm font-bold mb-2 text-gold-light/90">اسمك (الحكم)</label>
+          <label htmlFor="presenter-name" className="block text-sm font-bold mb-2 text-gold-light/90">اسمك (الحكم)</label>
           <input
+            id="presenter-name"
             value={hostName}
             onChange={(e) => setHostName(e.target.value)}
             placeholder="مثال: فهد"
@@ -162,11 +163,11 @@ export default function HostSetup() {
           {/* عدد الفرق */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90">عدد الفرق</label>
           <div className="flex items-center gap-4 mb-5">
-            <button onClick={() => setCount(teamCount - 1)} className="btn-ghost-gold !p-2.5" disabled={teamCount <= 2}>
+            <button aria-label="تقليل عدد الفرق" onClick={() => setCount(teamCount - 1)} className="btn-ghost-gold !p-2.5" disabled={teamCount <= 2}>
               <Minus className="w-5 h-5" />
             </button>
             <span className="text-4xl font-black font-cairo text-gold-gradient w-12 text-center">{teamCount}</span>
-            <button onClick={() => setCount(teamCount + 1)} className="btn-ghost-gold !p-2.5" disabled={teamCount >= 4}>
+            <button aria-label="زيادة عدد الفرق" onClick={() => setCount(teamCount + 1)} className="btn-ghost-gold !p-2.5" disabled={teamCount >= 4}>
               <Plus className="w-5 h-5" />
             </button>
             <span className="text-xs text-muted-foreground">من ٢ إلى ٤ فرق</span>
@@ -183,6 +184,7 @@ export default function HostSetup() {
                     style={{ background: c.light, boxShadow: `0 0 8px ${c.light}` }}
                   />
                   <input
+                    aria-label={`اسم الفريق ${i + 1}`}
                     value={name}
                     onChange={(e) =>
                       setTeamNames((prev) => prev.map((n, j) => (j === i ? e.target.value : n)))

@@ -32,7 +32,8 @@ const REQUEST_LIMITS = {
   resolveTeamCode: { uid: 12, ip: 120, window: 60 * 1000 },
   syncAdminAccess: { uid: 6, ip: 30, window: 60 * 1000 },
 };
-const RATE_LIMIT_SCOPES = Object.keys(REQUEST_LIMITS).flatMap((action) => [`${action}_uid`, `${action}_ip`]);
+const GAME_REQUEST_LIMIT = { uid: 180, ip: 2400, window: 60 * 1000 };
+const RATE_LIMIT_SCOPES = [...Object.keys(REQUEST_LIMITS), "game"].flatMap((action) => [`${action}_uid`, `${action}_ip`]);
 
 function fail(code, message) { throw new HttpsError(code, message); }
 function text(value, max = 30) { return String(value ?? "").trim().slice(0, max); }
@@ -143,12 +144,13 @@ async function consumeRateLimit(scope, identity, limit, windowMs) {
   if (!result.committed) fail("resource-exhausted", "طلبات كثيرة خلال وقت قصير، انتظر قليلاً ثم حاول");
 }
 async function enforceRequestLimit(action, request, uid) {
-  const limits = REQUEST_LIMITS[action];
-  if (!limits) return;
+  // Unlisted actions share a bounded bucket, including invalid action names.
+  const scope = REQUEST_LIMITS[action] ? action : "game";
+  const limits = REQUEST_LIMITS[action] || GAME_REQUEST_LIMIT;
   const ip = requestIp(request);
   await Promise.all([
-    consumeRateLimit(`${action}_uid`, uid, limits.uid, limits.window),
-    ip ? consumeRateLimit(`${action}_ip`, ip, limits.ip, limits.window) : Promise.resolve(),
+    consumeRateLimit(`${scope}_uid`, uid, limits.uid, limits.window),
+    ip ? consumeRateLimit(`${scope}_ip`, ip, limits.ip, limits.window) : Promise.resolve(),
   ]);
 }
 function randomOrder(values) {
@@ -478,7 +480,6 @@ async function createMatch(uid, options) {
   const answerMode = ["anyone", "representative", "host"].includes(options.answerMode) ? options.answerMode : "representative";
   for (let attempt = 0; attempt < 8; attempt++) {
     const id = matchCode();
-    if ((await db.ref(`matches/${id}`).get()).exists()) continue;
     const teams = {};
     const teamKeys = {};
     const teamOrder = [];
@@ -503,10 +504,14 @@ async function createMatch(uid, options) {
       createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, difficulty, difficultyLevels, answerMode, enabledTypes, typeCaps, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], usedAssets: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
-    await db.ref().update({
-      [`matches/${id}`]: match,
-      [`matchAccess/${id}`]: { hostUid: uid, viewerKey: inviteKey(), teamKeys, playerUids: {} },
-    });
+    // A cold transaction cache retries against the remote record. Never overwrite
+    // another presenter who obtained the same short audience code concurrently.
+    const reserved = await db.ref(`matches/${id}`).transaction((current) => {
+      if (current) return;
+      return match;
+    }, undefined, false);
+    if (!reserved.committed) continue;
+    await db.ref(`matchAccess/${id}`).set({ hostUid: uid, viewerKey: inviteKey(), teamKeys, playerUids: {} });
     await safelyRecordUsage(() => recordMatchUsage("matchesCreated", id));
     return { code: id };
   }
@@ -748,9 +753,8 @@ async function startShowdown(id, match) {
   return { showdown: true };
 }
 
-async function submitShowdownAnswer(uid, data) {
+async function submitShowdownAnswer(uid, data, receivedAt = now()) {
   // Measure arrival before database reads so their latency cannot reorder players.
-  const receivedAt = now();
   const id = code(data.matchCode);
   const [{ match, access }, secretSnapshot] = await Promise.all([
     loadMatch(id),
@@ -1022,6 +1026,9 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
     } else if (card === "extraTime") {
       if (state.phase !== "question" || targetTeam !== teamCode || state.answer || state.extraTimeUsed) return { accepted: false, reason: "timing" };
       if (state.question?.type === "acting" || !(state.questionDuration || match.timer)) return { accepted: false, reason: "timer" };
+      const startsAt = Number(state.questionStartedAt);
+      const duration = Number(state.questionDuration || match.timer);
+      if (!Number.isFinite(startsAt) || !state.questionStartedAt || now() >= startsAt + duration * 1000) return { accepted: false, reason: "expired" };
       updates["state/extraTimeUsed"] = true;
     } else if (card === "freeze") {
       if (state.phase !== "choose" || !targetTeam || targetTeam === teamCode || state.question) return { accepted: false, reason: "timing" };
@@ -1124,6 +1131,8 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
 }
 
 exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: process.env.ENFORCE_APP_CHECK === "true" }, async (request) => {
+  // Capture server arrival before rate-limit/database latency, never client time.
+  const receivedAt = now();
   const uid = request.auth?.uid;
   if (!uid) fail("unauthenticated", "سجّل الدخول أولاً");
   const data = request.data || {};
@@ -1146,7 +1155,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "chooseType") return chooseType(uid, data);
   if (action === "submitAnswer") return submitAnswer(uid, data);
   if (action === "submitHostAnswer") return submitHostAnswer(uid, data);
-  if (action === "submitShowdownAnswer") return submitShowdownAnswer(uid, data);
+  if (action === "submitShowdownAnswer") return submitShowdownAnswer(uid, data, receivedAt);
   if (action === "finishShowdown") return finishShowdown(uid, data);
   if (action === "syncAdminAccess") {
     const token = request.auth.token || {};

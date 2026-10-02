@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 import { initializeApp } from "firebase/app";
 import { getDatabase, connectDatabaseEmulator } from "firebase/database";
-import { getAuth, signInAnonymously, onAuthStateChanged, type User } from "firebase/auth";
+import { getAuth, signInAnonymously, type User } from "firebase/auth";
 import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
 const firebaseConfig = {
@@ -49,21 +49,23 @@ export async function ensureAuth(): Promise<User> {
   await appCheckReady;
   if (auth.currentUser) return Promise.resolve(auth.currentUser);
   if (!ready) {
-    ready = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("تعذّر تسجيل الدخول الآمن — تحقق من الاتصال")), 30000);
-      const un = onAuthStateChanged(auth, (u) => {
-        if (u) {
-          clearTimeout(timeout);
-          un();
-          resolve(u);
-        }
-      });
-      signInAnonymously(auth).catch((error) => {
+    ready = (async () => {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          (async () => {
+            // Restore persisted Google/guest sessions before creating a guest.
+            await auth.authStateReady();
+            return auth.currentUser ?? (await signInAnonymously(auth)).user;
+          })(),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error("تعذّر تسجيل الدخول الآمن — تحقق من الاتصال")), 30000);
+          }),
+        ]);
+      } finally {
         clearTimeout(timeout);
-        un();
-        reject(error);
-      });
-    });
+      }
+    })().finally(() => { ready = null; });
   }
   return ready;
 }

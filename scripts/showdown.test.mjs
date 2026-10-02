@@ -30,7 +30,7 @@ function fixture() {
 
 // Model RTDB's documented initial null cache and compare-and-retry behavior.
 // No Firebase project or production data is contacted by these tests.
-function harness(firebaseEmptyNodes = false) {
+function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   const data = fixture();
   let clock = 2000;
   let version = 0;
@@ -59,7 +59,7 @@ function harness(firebaseEmptyNodes = false) {
     remove: async () => write(path, null),
     update: async (values) => { for (const [key, value] of Object.entries(values)) write(`${path}/${key}`, value); },
     transaction: async (update) => {
-      beforeTransaction?.();
+      if (path.startsWith('matches/')) beforeTransaction?.();
       // undefined aborts immediately, even if a non-null record exists remotely.
       if (update(null) === undefined) return { committed: false, snapshot: snapshot(null) };
       for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -76,16 +76,17 @@ function harness(firebaseEmptyNodes = false) {
   });
   class HttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
   const mockedRequire = (name) => {
+    if (name === 'node:crypto' && fixedMatchCode) return { ...realRequire(name), randomInt: (...args) => args.length === 1 ? 0 : realRequire(name).randomInt(...args) };
     if (name === 'firebase-functions/v2/https') return { onCall: (_, fn) => fn, HttpsError };
     if (name === 'firebase-functions/v2/scheduler') return { onSchedule: (_, fn) => fn };
     if (name === 'firebase-admin/app') return { initializeApp: () => {} };
     if (name === 'firebase-admin/auth') return { getAuth: () => ({ getUser: async () => ({ customClaims: {} }), setCustomUserClaims: async () => {} }) };
-    if (name === 'firebase-admin/database') return { getDatabase: () => ({ ref }), ServerValue: {} };
+    if (name === 'firebase-admin/database') return { getDatabase: () => ({ ref }), ServerValue: { increment: (amount) => amount } };
     return realRequire(name);
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch };', { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
   return { data, call, helpers: exports.testHelpers,
@@ -431,4 +432,58 @@ test('exhausted rotation leaves selection usable and marks only that section and
   assert.equal(h.match().state.question, null);
   assert.equal(h.match().rotationBlocked['A234-1'].ct_rotation.easy, true);
   assert.equal(h.match().typeCounts?.['A234-1']?.ct_rotation || 0, 0);
+});
+
+test('extra time rejects the exact deadline and later without spending balance or card', async () => {
+  for (const clock of [21000, 30000]) {
+    const h = harness();
+    Object.assign(h.match(), { questionsPerTeam: 8, timer: 20 });
+    Object.assign(h.match().state, { phase: 'question', targetTeam: 'A234-1', questionStartedAt: 1000, questionDuration: 20, question: { id: 42, type: 'mcq' } });
+    Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { extraTime: true } });
+    h.setClock(clock);
+    const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'extraTime' });
+    assert.equal(result.accepted, false);
+    assert.equal(result.reason, 'expired');
+    assert.equal(h.match().teams['A234-1'].cardBalance, 1000);
+    assert.equal(h.match().teams['A234-1'].powerCards.extraTime, true);
+    assert.equal(h.match().state.cardClaimId, undefined);
+  }
+});
+
+test('extra time works just before deadline and during memory viewing, only once', async () => {
+  for (const startsAt of [1000, 14000]) {
+    const h = harness();
+    Object.assign(h.match(), { questionsPerTeam: 8, timer: 20 });
+    Object.assign(h.match().state, { phase: 'question', targetTeam: 'A234-1', questionStartedAt: startsAt, questionDuration: 20, question: { id: 42, type: 'mcq' } });
+    Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { extraTime: true } });
+    h.setClock(startsAt === 1000 ? 20999 : 2000);
+    assert.equal((await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'extraTime' })).accepted, true);
+    assert.equal(h.match().state.extraTimeUsed, true);
+    assert.equal(h.match().teams['A234-1'].cardBalance, 900);
+    assert.equal((await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'extraTime' })).accepted, false);
+    assert.equal(h.match().teams['A234-1'].cardBalance, 900);
+  }
+});
+
+test('concurrent creation using the same audience code cannot overwrite the first match', async () => {
+  const h = harness(false, true);
+  const options = { teamNames: ['ألف', 'باء'], enabledTypes: ['mcq'], difficulty: 'easy', questionsPerTeam: 1 };
+  const results = await Promise.allSettled([
+    h.helpers.createMatch('host-one', { ...options, hostName: 'الأول' }),
+    h.helpers.createMatch('host-two', { ...options, hostName: 'الثاني' }),
+  ]);
+  const winnerIndex = results.findIndex((result) => result.status === 'fulfilled');
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(results[1 - winnerIndex].reason.code, 'resource-exhausted');
+  const code = results[winnerIndex].value.code;
+  assert.equal(h.data.matches[code].hostName, winnerIndex === 0 ? 'الأول' : 'الثاني');
+  assert.equal(h.data.matchAccess[code].hostUid, winnerIndex === 0 ? 'host-one' : 'host-two');
+});
+
+test('shared game rate limit blocks excessive retries and resets next minute', async () => {
+  const h = harness(); h.setClock(22000);
+  for (let n = 0; n < 180; n++) await h.call('finishShowdown', 'user1');
+  await assert.rejects(h.call('finishShowdown', 'user1'), { code: 'resource-exhausted' });
+  h.setClock(82001);
+  await h.call('finishShowdown', 'user1');
 });

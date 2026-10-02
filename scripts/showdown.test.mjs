@@ -87,7 +87,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank };', { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, rotateFlagQuestion, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
   return { data, call, helpers: exports.testHelpers,
@@ -291,7 +291,7 @@ test('concurrent invite loading keeps a stable code for each team', async () => 
 
 test('rotation prevents repeating question assets during fifteen competitions', async () => {
   const h = harness(true);
-  const pool = Array.from({ length: 45 }, (_, id) => ({ id, type: 'flag', level: 'easy', image: `/flag-${id}.svg`, question: `flag ${id}`, options: ['a', 'b'], answer: 0 }));
+  const pool = Array.from({ length: 45 }, (_, id) => ({ id, type: 'image', image: `/image-${id}.svg`, question: `flag ${id}`, options: ['a', 'b'], answer: 0 }));
   const recent = [];
   for (let game = 0; game < 35; game++) {
     const draw = await h.helpers.rotateQuestion(pool, `game${game}`, 'host');
@@ -426,7 +426,7 @@ test('two simultaneous punishment drafts cannot mismatch prompt and private answ
 });
 
 
-test('exhausted rotation leaves selection usable and marks only that section and level', async () => {
+test('exhausted rotation leaves selection usable and marks only that section bank', async () => {
   const h = harness();
   const question = { id: 900001, type: 'ct_rotation', category: 'custom', level: 'easy', question: 'السؤال الوحيد', options: ['أ', 'ب', 'ج', 'د'], answer: 0 };
   h.data.customQuestions = { 900001: question };
@@ -436,7 +436,7 @@ test('exhausted rotation leaves selection usable and marks only that section and
   assert.equal(result.status, 'rotation');
   assert.equal(h.match().state.phase, 'choose');
   assert.equal(h.match().state.question, null);
-  assert.equal(h.match().rotationBlocked['A234-1'].ct_rotation.easy, true);
+  assert.equal(h.match().rotationBlocked['A234-1'].ct_rotation.bank, true);
   assert.equal(h.match().typeCounts?.['A234-1']?.ct_rotation || 0, 0);
 });
 
@@ -671,4 +671,61 @@ test('permanent delete validates the whole batch before changing any question', 
   await assert.rejects(h.adminCall('deleteAdminQuestions', { ids: [questions[0].id, 'bad'] }), { code: 'invalid-argument' });
   await assert.rejects(h.adminCall('deleteAdminQuestions', { ids: [] }), { code: 'invalid-argument' });
   assert.equal(h.data.questionDeletions, undefined);
+});
+
+test('the 160 flags form a full persistent cycle across competitions before any reuse', async () => {
+  const h = harness(true);
+  const bank = await h.helpers.questionBank();
+  const flags = bank.filter((q) => q.type === 'flag' && !q.disabled);
+  const countries = JSON.parse(readFileSync(new URL('../src/data/flagCountries.json', import.meta.url), 'utf8'));
+  assert.equal(flags.length, 160);
+  assert.equal(new Set(flags.map((q) => q.image)).size, 160);
+  assert.deepEqual(new Set(flags.map((q) => q.options[q.answer])), new Set(countries.map((c) => c.name)));
+  const seen = new Set();
+  for (let i = 0; i < 160; i++) {
+    const draw = await h.helpers.rotateQuestion(flags, `game-${i}`, 'host', flags);
+    assert.equal(draw.reused, false);
+    assert.equal(seen.has(draw.question.image), false);
+    seen.add(draw.question.image);
+    assert.equal('level' in draw.question, false);
+    assert.equal(new Set(draw.question.options).size, 4);
+    assert.equal(readFileSync(new URL(`../public${draw.question.image}`, import.meta.url)).subarray(8, 12).toString(), 'WEBP');
+  }
+  assert.equal(seen.size, 160);
+  const next = await h.helpers.rotateQuestion(flags, 'game-next', 'host', flags);
+  assert.equal(next.reused, true);
+  assert.ok(seen.has(next.question.image));
+  assert.equal(h.data.flagRotation.v1.host.cycle, 2);
+});
+
+test('concurrent flag draws cannot give two teams the same flag and owners rotate independently', async () => {
+  const h = harness(true);
+  const flags = (await h.helpers.questionBank()).filter((q) => q.type === 'flag' && !q.disabled);
+  const draws = await Promise.all(Array.from({ length: 8 }, (_, i) => h.helpers.rotateQuestion(flags, `game-${i}`, 'host', flags)));
+  assert.equal(new Set(draws.map((draw) => draw.question.image)).size, 8);
+  await h.helpers.rotateQuestion(flags, 'other-game', 'other-host', flags);
+  assert.equal(h.data.flagRotation.v1['other-host'].used.length, 1);
+  assert.equal(h.data.flagRotation.v1.host.used.length, 8);
+});
+
+test('flag rotation cannot reset early when the remaining flags are unavailable in this match', async () => {
+  const h = harness(true);
+  const flags = (await h.helpers.questionBank()).filter((q) => q.type === 'flag' && !q.disabled).slice(0, 3);
+  const first = await h.helpers.rotateFlagQuestion(flags, 'host', flags);
+  await assert.rejects(h.helpers.rotateFlagQuestion([first.question], 'host', flags), { code: 'resource-exhausted' });
+  assert.equal(h.data.flagRotation.v1.host.cycle, 1);
+  const second = await h.helpers.rotateFlagQuestion(flags, 'host', flags);
+  assert.notEqual(second.question.image, first.question.image);
+});
+
+test('unified sections ignore legacy difficulty for selection and count all questions in their cap', async () => {
+  const h = harness();
+  const questions = ['easy', 'medium', 'hard', 'hard'].map((level, i) => ({ id: 900100 + i, type: 'ct_unified', category: 'custom', level, question: `سؤال البنك ${i}`, options: ['أ', 'ب'], answer: 0 }));
+  assert.equal(h.helpers.fairTypeCaps(['ct_unified'], 2, 4, questions).ct_unified, 2);
+  h.data.customQuestions = { 900103: questions[3] };
+  Object.assign(h.match(), { enabledTypes: ['ct_unified'], difficulty: 'easy', difficultyLevels: ['easy'], questionsPerTeam: 4, turnIndex: 0, state: { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [] } });
+  const response = await h.call('chooseType', 'user1', { type: 'ct_unified', requestId: 'unified-bank' });
+  assert.equal(response.status, 'accepted');
+  assert.equal(h.match().state.question.id, 900103);
+  assert.equal('level' in h.match().state.question, false);
 });

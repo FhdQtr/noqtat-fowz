@@ -17,8 +17,6 @@ export type BuiltinQuestionType =
 
 export type QuestionType = string;
 
-export type QuestionLevel = "easy" | "medium" | "hard";
-export type DifficultyMode = QuestionLevel | "mixed";
 export type AnswerMode = "anyone" | "representative" | "host";
 export type PowerCardId = "extraTime" | "doublePoints" | "swapQuestion" | "freeze" | "steal" | "pickPlayer";
 
@@ -42,7 +40,6 @@ export interface Question {
   id: number;
   type: QuestionType;
   category: string; // مفتاح الفئة
-  level: QuestionLevel;
   question: string;
   options: string[];
   answer: number; // فهرس الإجابة الصحيحة
@@ -181,11 +178,9 @@ export interface Match {
   totalRounds: number; // عدد الأسئلة المخطط
   questionsPerTeam?: number; // عدد الأسئلة لكل فريق
   timer: number; // ثواني لكل سؤال (0 = يدوي)
-  difficulty?: DifficultyMode;
-  difficultyLevels?: QuestionLevel[]; // مستوى واحد أو مستويان، والمنوع يستخدم المستويات الثلاثة
   answerMode?: AnswerMode;
   enabledTypes: QuestionType[];
-  rotationBlocked?: Record<string, Record<string, Partial<Record<QuestionLevel, boolean>>>>;
+  rotationBlocked?: Record<string, Record<string, Record<string, boolean>>>;
   typeCaps?: Record<string, number>; // الحصة العادلة لكل قسم بحسب حجم البنك وعدد الفرق
   state: GameState;
   teams: Record<string, Team>;
@@ -218,18 +213,6 @@ export const TEAM_COLORS: Record<
   emerald: { label: "أخضر", hex: "#0e7c5b", light: "#12a174", dark: "#095a42", text: "#ffffff" },
   royal: { label: "أزرق", hex: "#1d4ed8", light: "#3b82f6", dark: "#16347a", text: "#ffffff" },
   gold: { label: "ذهبي", hex: "#b8860b", light: "#d4af37", dark: "#7a5a08", text: "#1a1208" },
-};
-
-export const LEVEL_POINTS: Record<QuestionLevel, number> = {
-  easy: 100,
-  medium: 150,
-  hard: 200,
-};
-
-export const LEVEL_LABEL: Record<QuestionLevel, string> = {
-  easy: "سهل",
-  medium: "متوسط",
-  hard: "صعب",
 };
 
 export const POWER_CARD_BASE_COST: Record<PowerCardId, number> = {
@@ -291,15 +274,11 @@ export const VISUAL_TYPES: QuestionType[] = ["memory", "flag"];
 
 /**
  * مدة المشاهدة قبل ظهور السؤال (بالثواني):
- * الذاكرة: سهل ١٢، متوسط ١٠، صعب ٨ — الأعلام ١٠ ثوانٍ
+ * الذاكرة والأعلام: ١٠ ثوانٍ
  * أسئلة الفيديو = طول المقطع — وغيرها بدون مشاهدة
  */
 export function viewSecondsFor(q: Question): number | null {
-  if (q.type === "memory") {
-    if (q.level === "easy") return 12;
-    if (q.level === "hard") return 8;
-    return 10;
-  }
+  if (q.type === "memory") return 10;
   if (q.type === "flag") return VIEW_SECONDS;
   if (q.video) return Math.max(1, q.video.end - q.video.start) + 3; // +3 سماحية تشغيل
   return null;
@@ -318,7 +297,7 @@ export function questionPoints(st: {
   assistUsed?: boolean;
   pointMultiplier?: number;
 }): number {
-  const base = st.questionValue ?? (st.question ? LEVEL_POINTS[st.question.level] : 0);
+  const base = st.questionValue ?? (st.question ? 50 : 0);
   let result = base;
   if (st.assistUsed) result = Math.max(1, Math.round(result / 2));
   else if (st.passCount > 0) result = Math.max(1, Math.round(result / 2));

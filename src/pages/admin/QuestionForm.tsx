@@ -8,10 +8,10 @@ import {
 } from "lucide-react";
 import {
   addCustomType, addCustomQuestion, updateCustomQuestion, deleteCustomQuestion,
-  compressImage, parseYoutubeId, LEVELS, type CustomQuestion,
+  compressImage, parseYoutubeId, type CustomQuestion,
 } from "../../lib/customBank";
 import { useCustomTypes } from "../../lib/useCustomBank";
-import { TYPE_LABEL, LEVEL_LABEL, type Question } from "../../types/game";
+import { TYPE_LABEL, type Question } from "../../types/game";
 import { QuestionBody, OptionsDisplay } from "../../components/QuestionCard";
 
 const BUILTIN_TYPES = Object.entries(TYPE_LABEL).filter(([id]) => id !== "punishment").map(([id, label]) => ({ id, label }));
@@ -28,7 +28,6 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
   const [newTypeName, setNewTypeName] = useState("");
   const [media, setMedia] = useState<"none" | "image" | "video">("none");
   const [answerFormat, setAnswerFormat] = useState<"mc" | "tf">("mc");
-  const [level, setLevel] = useState<"easy" | "medium" | "hard">("easy");
   const [text, setText] = useState("");
   const [options, setOptions] = useState<string[]>(["", "", "", ""]);
   const [correctIdx, setCorrectIdx] = useState(0);
@@ -46,7 +45,6 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
     setTypeId(editTarget.type);
     setMedia(editTarget.video ? "video" : editTarget.image ? "image" : "none");
     setAnswerFormat(editTarget.format === "tf" || (editTarget.options || []).length === 2 ? "tf" : "mc");
-    setLevel(editTarget.level);
     setText(editTarget.question);
     const opts = [...(editTarget.options || [])];
     while (opts.length < 4) opts.push("");
@@ -79,7 +77,6 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
         id: -1,
         type: typeId === "__new__" ? "custom" : typeId,
         category: "custom",
-        level,
         question: text,
         options: isActing ? [] : answerFormat === "tf" ? TF_OPTIONS : options.map((o) => o || "…"),
         answer: isActing ? 0 : correctIdx,
@@ -107,7 +104,6 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
       const payload: Omit<CustomQuestion, "id" | "createdAt"> = {
         type: finalType,
         category: "custom",
-        level,
         question: text.trim(),
         options: isActing ? [] : answerFormat === "tf" ? TF_OPTIONS : options.map((o) => o.trim()),
         answer: isActing ? 0 : correctIdx,
@@ -299,8 +295,8 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
         )}
       </div>
 
-      {/* طريقة الإجابة والمستوى */}
-      <div className="glass-card p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* طريقة الإجابة */}
+      <div className="glass-card p-5 grid grid-cols-1 gap-4">
         <div>
           <label className="block text-sm font-bold mb-2 text-gold-light/90">طريقة الإجابة</label>
           {isActing ? <p className="text-sm text-gold-light">تمثيل المثل، والمقدم يثبت النتيجة</p> : <>
@@ -325,22 +321,6 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
               صح / خطأ
             </button>
           </div></>}
-        </div>
-        <div>
-          <label className="block text-sm font-bold mb-2 text-gold-light/90">مستوى الصعوبة</label>
-          <div className="grid grid-cols-3 gap-2">
-            {LEVELS.map((l) => (
-              <button
-                key={l}
-                onClick={() => setLevel(l)}
-                className={`rounded-xl py-2.5 font-cairo font-bold border transition-all ${
-                  level === l ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground"
-                }`}
-              >
-                {LEVEL_LABEL[l]}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 

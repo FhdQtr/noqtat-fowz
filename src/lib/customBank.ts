@@ -5,7 +5,7 @@
 import { ref, set, update, remove, onValue, type Unsubscribe } from "firebase/database";
 import { db, ensureAuth } from "./firebase";
 import { registerTypeLabels } from "../types/game";
-import type { Question, QuestionLevel, CustomType } from "../types/game";
+import type { Question, CustomType } from "../types/game";
 
 export interface CustomQuestion extends Question {
   disabled?: boolean;
@@ -190,6 +190,3 @@ export async function importBackup(b: BankBackup) {
     }
   }
 }
-
-/** أرقام ثابتة لعرض المستويات */
-export const LEVELS: QuestionLevel[] = ["easy", "medium", "hard"];

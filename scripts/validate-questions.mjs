@@ -54,9 +54,6 @@ for (const [index, q] of questions.entries()) {
   if (!q.type?.trim()) errors.push(`${at}: نوع السؤال فارغ`);
   if (q.type && !builtinTypes.has(q.type)) errors.push(`${at}: نوع السؤال غير معروف (${q.type})`);
   if (!q.category?.trim()) errors.push(`${at}: التصنيف فارغ`);
-  if (!["easy", "medium", "hard"].includes(q.level)) {
-    errors.push(`${at}: مستوى الصعوبة غير صحيح`);
-  }
 
   if (!Array.isArray(q.options)) errors.push(`${at}: الخيارات ليست قائمة`);
 

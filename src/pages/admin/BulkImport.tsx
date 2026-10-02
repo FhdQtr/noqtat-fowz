@@ -1,14 +1,13 @@
 import { useMemo, useState } from "react";
 import { addCustomQuestion, addCustomType } from "../../lib/customBank";
 import { useCustomTypes } from "../../lib/useCustomBank";
-import { TYPE_LABEL, LEVEL_LABEL, type QuestionLevel, type QuestionType } from "../../types/game";
+import { TYPE_LABEL, type QuestionType } from "../../types/game";
 import { Button } from "../../components/ui/button";
 import { ClipboardPaste, Upload, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 // ═══ صيغة السطور المدعومة ═══
-// صح/خطأ:        النوع | المستوى | السؤال | صح أو خطأ
-// اختيار متعدد:  النوع | المستوى | السؤال | خيار1 | خيار2 | خيار3 | خيار4 | رقم الإجابة الصحيحة (1-4)
-// المستوى يقبل: سهل / متوسط / صعب  أو  easy / medium / hard  أو  1 / 2 / 3
+// صح/خطأ:        النوع | السؤال | صح أو خطأ
+// اختيار متعدد:  النوع | السؤال | خيار1 | خيار2 | خيار3 | خيار4 | رقم الإجابة الصحيحة (1-4)
 
 interface ParsedRow {
   lineNo: number;
@@ -16,44 +15,33 @@ interface ParsedRow {
   ok: boolean;
   error?: string;
   typeName?: string;
-  level?: QuestionLevel;
   question?: string;
   options?: string[];
   answer?: number; // فهرس الإجابة الصحيحة داخل الخيارات
   format?: "tf" | "mc";
 }
 
-function parseLevel(s: string): QuestionLevel | null {
-  const v = s.trim();
-  if (["سهل", "easy", "1"].includes(v)) return "easy";
-  if (["متوسط", "medium", "2"].includes(v)) return "medium";
-  if (["صعب", "hard", "3"].includes(v)) return "hard";
-  return null;
-}
-
 function parseLine(line: string, lineNo: number): ParsedRow {
   const parts = line.split("|").map((p) => p.trim());
   const base: ParsedRow = { lineNo, raw: line, ok: false };
-  if (parts.length !== 4 && parts.length !== 8) {
-    return { ...base, error: `عدد الخانات غير صحيح (${parts.length}) — الصح/خطأ يحتاج 4 خانات والاختيارات يحتاج 8` };
+  if (parts.length !== 3 && parts.length !== 7) {
+    return { ...base, error: `عدد الخانات غير صحيح (${parts.length}) — الصح/خطأ يحتاج 3 خانات والاختيارات يحتاج 7` };
   }
-  const [typeName, levelStr, text] = parts;
+  const [typeName, text] = parts;
   if (typeName.length < 2) return { ...base, error: "اسم النوع قصير جداً" };
-  const level = parseLevel(levelStr);
-  if (!level) return { ...base, error: `المستوى «${levelStr}» غير معروف — استخدم سهل/متوسط/صعب` };
   if (text.length < 4) return { ...base, error: "نص السؤال قصير جداً" };
 
-  if (parts.length === 4) {
-    const tf = parts[3];
+  if (parts.length === 3) {
+    const tf = parts[2];
     if (tf !== "صح" && tf !== "خطأ") return { ...base, error: "خانة الجواب يجب أن تكون «صح» أو «خطأ»" };
-    return { ...base, ok: true, typeName, level, question: text, options: ["صح", "خطأ"], answer: tf === "صح" ? 0 : 1, format: "tf" };
+    return { ...base, ok: true, typeName, question: text, options: ["صح", "خطأ"], answer: tf === "صح" ? 0 : 1, format: "tf" };
   }
 
-  const options = parts.slice(3, 7);
+  const options = parts.slice(2, 6);
   if (options.some((o) => o.length === 0)) return { ...base, error: "أحد الخيارات الأربعة فارغ" };
-  const correctNum = Number(parts[7]);
+  const correctNum = Number(parts[6]);
   if (![1, 2, 3, 4].includes(correctNum)) return { ...base, error: "رقم الإجابة الصحيحة يجب أن يكون من 1 إلى 4" };
-  return { ...base, ok: true, typeName, level, question: text, options, answer: correctNum - 1, format: "mc" };
+  return { ...base, ok: true, typeName, question: text, options, answer: correctNum - 1, format: "mc" };
 }
 
 export default function BulkImport() {
@@ -101,7 +89,6 @@ export default function BulkImport() {
         await addCustomQuestion({
           type: typeId,
           category: "custom",
-          level: row.level!,
           question: row.question!,
           options: row.options!,
           answer: row.answer!,
@@ -126,17 +113,17 @@ export default function BulkImport() {
 
       <div className="rounded-xl bg-navy/60 border border-white/10 p-3 text-xs leading-6 text-white/70 space-y-1">
         <p className="font-bold text-white">صيغة السطر (خانات مفصولة بالعلامة | ):</p>
-        <p>سؤال صح/خطأ: <span className="text-gold" dir="rtl">النوع | المستوى | السؤال | صح أو خطأ</span></p>
-        <p>سؤال اختيارات: <span className="text-gold" dir="rtl">النوع | المستوى | السؤال | خيار1 | خيار2 | خيار3 | خيار4 | رقم الإجابة الصحيحة</span></p>
-        <p>المستوى: سهل / متوسط / صعب — والنوع: اسم نوع موجود (مثل «اختيار من متعدد» أو «صح أم خطأ» أو اسم نوع أنشأته) أو اسم جديد وسيُنشأ لك تلقائياً.</p>
-        <p className="text-white/50">مثال: اختيار من متعدد | سهل | ما هي عاصمة قطر؟ | الدوحة | الريان | الوكرة | الخور | 1</p>
+        <p>سؤال صح/خطأ: <span className="text-gold" dir="rtl">النوع | السؤال | صح أو خطأ</span></p>
+        <p>سؤال اختيارات: <span className="text-gold" dir="rtl">النوع | السؤال | خيار1 | خيار2 | خيار3 | خيار4 | رقم الإجابة الصحيحة</span></p>
+        <p>النوع: اسم نوع موجود (مثل «اختيار من متعدد» أو «صح أم خطأ» أو اسم نوع أنشأته) أو اسم جديد وسيُنشأ لك تلقائياً.</p>
+        <p className="text-white/50">مثال: اختيار من متعدد | ما هي عاصمة قطر؟ | الدوحة | الريان | الوكرة | الخور | 1</p>
       </div>
 
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={10}
-        placeholder={"اختيار من متعدد | سهل | ما هي عاصمة قطر؟ | الدوحة | الريان | الوكرة | الخور | 1\nصح أم خطأ | متوسط | قطر أكبر مصدّر للغاز المسال في العالم | صح"}
+        placeholder={"اختيار من متعدد | ما هي عاصمة قطر؟ | الدوحة | الريان | الوكرة | الخور | 1\nصح أم خطأ | الشمس نجم | صح"}
         className="w-full rounded-xl bg-white/5 border border-white/10 p-3 text-sm leading-7 placeholder:text-white/25 focus:outline-none focus:border-gold/50"
         dir="rtl"
       />
@@ -155,7 +142,7 @@ export default function BulkImport() {
                   {r.ok ? (
                     <p className="leading-5">
                       <span className="text-white/50">سطر {r.lineNo}:</span> {r.question}
-                      <span className="text-white/50"> — {r.typeName} • {LEVEL_LABEL[r.level!]} • الجواب: </span>
+                      <span className="text-white/50"> — {r.typeName} • الجواب: </span>
                       <span className="text-gold">{r.options![r.answer!]}</span>
                     </p>
                   ) : (

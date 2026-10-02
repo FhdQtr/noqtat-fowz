@@ -9,6 +9,7 @@ const { getDatabase, ServerValue } = require("firebase-admin/database");
 initializeApp({ databaseURL: "https://noqtat-fowz-d13aa-default-rtdb.asia-southeast1.firebasedatabase.app" });
 const db = getDatabase();
 const QUESTIONS = JSON.parse(readFileSync(require.resolve("./questions.json"), "utf8"));
+const FLAG_BANK_REFRESH_AT = Date.UTC(2026, 9, 2, 23, 18, 47);
 const LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const DIGITS = "23456789";
 const INVITE_CHARS = `${LETTERS}${DIGITS}`;
@@ -162,19 +163,31 @@ function randomOrder(values) {
   }
   return result;
 }
-function levelForPick(n, difficulty = "mixed", difficultyLevels = null) {
-  const selected = Array.isArray(difficultyLevels)
-    ? [...new Set(difficultyLevels.filter((level) => ["easy", "medium", "hard"].includes(level)))]
-    : [];
-  if (selected.length) return selected[(Math.max(1, n) - 1) % selected.length];
-  if (["easy", "medium", "hard"].includes(difficulty)) return difficulty;
-  return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
-}
-function teamQuestionCount(match, teamCode) {
-  return Object.values(match.typeCounts?.[teamCode] || {}).reduce((total, count) => total + (Number(count) || 0), 0);
-}
 // Asset-based rotation across the last fifteen competitions, persisted on the server.
-async function rotateQuestion(pool, matchId, owner) {
+async function rotateFlagQuestion(pool, owner, allFlags) {
+  const activeAssets = new Set(allFlags.map(rotationAssetKey));
+  const draw = randomInt(1000000);
+  let selected;
+  let reused = false;
+  const result = await db.ref(`flagRotation/v1/${dbKey(owner)}`).transaction((current) => {
+    let used = new Set(Object.values(current?.used || {}).filter((asset) => activeAssets.has(asset)));
+    let cycle = Number(current?.cycle) || 1;
+    reused = activeAssets.size > 0 && [...activeAssets].every((asset) => used.has(asset));
+    if (reused) { used = new Set(); cycle += 1; }
+    const available = pool.filter((q) => activeAssets.has(rotationAssetKey(q)) && !used.has(rotationAssetKey(q)));
+    if (!available.length) return;
+    selected = available[draw % available.length];
+    used.add(rotationAssetKey(selected));
+    return { cycle, used: [...used] };
+  }, undefined, false);
+  if (!result.committed || !selected) fail("resource-exhausted", "الأعلام المتبقية في الدورة ظهرت في هذه المسابقة؛ أكملها في ميدان جديد");
+  return { question: shuffled(selected), reused };
+}
+async function rotateQuestion(pool, matchId, owner, allFlags = null) {
+  if (pool.length && pool.every((q) => q.type === "flag")) {
+    const flags = allFlags || (await questionBank()).filter((q) => q.type === "flag" && !q.disabled);
+    return rotateFlagQuestion(pool, owner, flags);
+  }
   const ref = db.ref(`questionRotation/${dbKey(owner)}`);
   const draw = randomInt(1000000);
   let selected;
@@ -225,9 +238,9 @@ async function questionBank(includeCustom = true) {
   const custom = customSnapshot?.val() || {};
   const excluded = excludedSnapshot.val() || {};
   const deleted = deletedSnapshot.val() || {};
-  return [...QUESTIONS, ...Object.values(custom).map((q) => ({ ...q, options: q.options || [] }))]
+  return [...QUESTIONS, ...Object.values(custom).filter((q) => q.type !== "flag" || Number(q.createdAt) >= FLAG_BANK_REFRESH_AT).map((q) => ({ ...q, options: q.options || [] }))]
     .filter((q) => deleted[q.id] !== true)
-    .map((q) => ({ ...q, disabled: q.disabled === true || excluded[q.id] === true }));
+    .map((q) => { const { level: _legacyLevel, ...question } = q; return { ...question, disabled: q.disabled === true || excluded[q.id] === true }; });
 }
 
 async function adminQuestions(action, data) {
@@ -236,7 +249,7 @@ async function adminQuestions(action, data) {
     const legacyDisabled = new Set(QUESTIONS.filter((q) => q.disabled).map((q) => q.id));
     const builtinIds = new Set(QUESTIONS.map((q) => q.id));
     return { questions: bank.filter((q) => !legacyDisabled.has(q.id)).map((q) => ({
-      id: q.id, type: q.type, level: q.level, question: q.question,
+      id: q.id, type: q.type, question: q.question,
       ...(q.image ? { image: q.image } : {}), ...(q.video ? { video: q.video } : {}),
       disabled: q.disabled === true, custom: !builtinIds.has(q.id),
     })) };
@@ -286,7 +299,7 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
     if (current.state.phase !== "choose" || current.state.question || current.state.targetTeam !== teamCode) return;
     if (sectionCycle(current, teamCode).used.includes("punishment")) return;
     current.state = { ...current.state, phase: "question", round: current.state.round + 1,
-      question: { id: now(), type: "punishment", category: "general", level: "hard", question: "سؤال وعقاب", options: [], answer: -1 },
+      question: { id: now(), type: "punishment", category: "general", question: "سؤال وعقاب", options: [], answer: -1 },
       originalTeam: teamCode, targetTeam: teamCode, passCount: 0, attemptedTeams: [],
       questionValue: 0, pointMultiplier: 1, answer: null, isCorrect: null,
       questionStartedAt: null, questionDuration: 0, viewUntil: null, selectionRequestId: requestId,
@@ -397,15 +410,13 @@ function typeCap(match, type) {
   const saved = Number(match.typeCaps?.[type]);
   return Number.isFinite(saved) ? saved : defaultTypeCap(match);
 }
-function fairTypeCaps(enabledTypes, levels, teamCount, questionsPerTeam, bank = QUESTIONS) {
+function fairTypeCaps(enabledTypes, teamCount, questionsPerTeam, bank = QUESTIONS) {
   const base = enabledTypes.length <= 1 ? questionsPerTeam : Math.max(3, Math.ceil(questionsPerTeam / 2));
   return Object.fromEntries(enabledTypes.map((type) => {
     const typeQuestions = bank.filter((question) => question.type === type && !question.disabled);
     if (!typeQuestions.length) return [type, base];
-    const perLevel = levels.map((level) => new Set(
-      typeQuestions.filter((question) => question.level === level).map(questionAssetKey),
-    ).size);
-    const fair = Math.floor(Math.min(...perLevel) / Math.max(1, teamCount));
+    const count = new Set(typeQuestions.map(questionAssetKey)).size;
+    const fair = Math.floor(count / Math.max(1, teamCount));
     return [type, Math.max(0, Math.min(base, fair))];
   }));
 }
@@ -462,11 +473,7 @@ function shuffled(question) {
   return { ...question, options: tagged.map((x) => x.value), answer: tagged.findIndex((x) => x.correct) };
 }
 function viewSeconds(question) {
-  if (question.type === "memory") {
-    if (question.level === "easy") return 12;
-    if (question.level === "hard") return 8;
-    return 10;
-  }
+  if (question.type === "memory") return 10;
   if (question.type === "flag") return 10;
   if (question.video) return Math.max(1, question.video.end - question.video.start) + 3;
   return null;
@@ -553,14 +560,7 @@ async function createMatch(uid, options) {
     ? questionsPerTeam * names.length
     : Math.min(40, Math.max(4, Number(options.totalRounds) || 12));
   const timer = Math.min(120, Math.max(0, Number(options.timer) || 0));
-  const difficulty = ["easy", "medium", "hard", "mixed"].includes(options.difficulty) ? options.difficulty : "medium";
-  const requestedLevels = Array.isArray(options.difficultyLevels)
-    ? [...new Set(options.difficultyLevels.map((level) => text(level, 10)).filter((level) => ["easy", "medium", "hard"].includes(level)))]
-    : [];
-  const difficultyLevels = randomOrder(requestedLevels.length
-    ? requestedLevels.slice(0, 3)
-    : difficulty === "mixed" ? ["easy", "medium", "hard"] : [difficulty]);
-  const typeCaps = fairTypeCaps(enabledTypes, difficultyLevels, names.length, questionsPerTeam, await questionBank());
+  const typeCaps = fairTypeCaps(enabledTypes, names.length, questionsPerTeam, await questionBank());
   const fullCycles = Math.floor(questionsPerTeam / enabledTypes.length);
   if (enabledTypes.some((type) => typeCaps[type] < fullCycles)) fail("failed-precondition", "بعض الأقسام لا تحتوي أسئلة كافية ليكمل كل فريق جميع الأقسام؛ قلّل عدد الأسئلة أو اختر أقسامًا إضافية");
   if (Object.values(typeCaps).reduce((total, cap) => total + cap, 0) < questionsPerTeam) {
@@ -590,7 +590,7 @@ async function createMatch(uid, options) {
     const createdAt = now();
     const match = {
       hostName: text(options.hostName, 20) || "المقدم",
-      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, difficulty, difficultyLevels, answerMode, enabledTypes, typeCaps, teams,
+      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, answerMode, enabledTypes, typeCaps, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], usedAssets: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     // A cold transaction cache retries against the remote record. Never overwrite
@@ -654,21 +654,7 @@ async function joinTeam(uid, data) {
 
 async function startChallenge(uid) {
   const bank = await questionBank(false);
-  const schedule = ["easy", "easy", "easy", "medium", "medium", "medium", "hard", "hard", "hard", "hard"];
-  const selected = [];
-  const used = new Set();
-  for (const level of schedule) {
-    const pool = bank.filter((q) => !q.disabled && q.level === level && !["flag", "acting"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0 && !used.has(q.id));
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = randomInt(i + 1);
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    pool.slice(0, 10).forEach((question) => {
-      const q = shuffled(question);
-      used.add(q.id);
-      selected.push(q);
-    });
-  }
+  const selected = randomOrder(bank.filter((q) => !q.disabled && !["flag", "acting"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0)).slice(0, 100).map(shuffled);
   if (selected.length < 100) fail("resource-exhausted", "بنك التحدي لا يحتوي أسئلة كافية");
   const sessionId = `${now()}_${randomInt(100000, 999999)}`;
   await db.ref(`challengeSecrets/${uid}`).set({ [sessionId]: { createdAt: now(), answers: selected.map((q) => q.answer), ids: selected.map((q) => q.id) } });
@@ -709,16 +695,13 @@ async function chooseType(uid, data) {
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
-  // المستوى يتدرج حسب إجمالي أسئلة الفريق، لا حسب مرات اختيار القسم.
-  // بذلك لا يبدأ كل قسم من المستوى نفسه في كل مسابقة.
-  const level = levelForPick(teamQuestionCount(match, teamCode) + 1, match.difficulty || "mixed", match.difficultyLevels);
-  const teamPool = candidates.filter((q) => q.type === type && q.level === level && !q.disabled && !teamUsedIds.has(q.id));
+  const teamPool = candidates.filter((q) => q.type === type && !q.disabled && !teamUsedIds.has(q.id));
   if (!teamPool.length) return { status: "empty" };
   // ممنوع تكرار السؤال أو الصورة نفسها بين الفرق داخل المسابقة.
   const pool = teamPool.filter((q) => !usedIds.has(q.id) && !usedAssets.has(questionAssetKey(q)));
   if (!pool.length) return { status: "empty" };
 
-  // سجل دائم للمقدم: لا نكرر السؤال بين المسابقات حتى ينتهي مخزون النوع/المستوى.
+  // سجل دائم للمقدم: لا نكرر السؤال بين المسابقات حتى ينتهي مخزون القسم.
   const historyOwner = match.hostUid || uid;
 
   let question;
@@ -736,7 +719,7 @@ async function chooseType(uid, data) {
       await releaseClaim(claimRef, requestId);
       return { status: "late", reason: "state-changed" };
     }
-    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner);
+    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner, candidates.filter((q) => q.type === "flag" && !q.disabled));
     question = rotated.question;
     const seconds = viewSeconds(question);
     const viewUntil = seconds ? started + seconds * 1000 : null;
@@ -780,14 +763,14 @@ async function chooseType(uid, data) {
       [`matches/${id}/lastChosenTypeByTeam/${teamCode}`]: type,
       [`matches/${id}/sectionCycleByTeam/${teamCode}`]: nextSectionCycle(match, teamCode, type),
       [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
-      [`hostQuestionHistory/${historyOwner}/${typeKey}/${level}/${question.id}`]: started,
-      [`globalQuestionHistory/${typeKey}/${level}/${question.id}`]: started,
+      [`hostQuestionHistory/${historyOwner}/${typeKey}/bank/${question.id}`]: started,
+      [`globalQuestionHistory/${typeKey}/bank/${question.id}`]: started,
     });
     return { status: "accepted" };
   } catch (error) {
     await releaseClaim(claimRef, requestId);
     if (error.code === "resource-exhausted") {
-      await db.ref(`matches/${id}/rotationBlocked/${teamCode}/${typeKey}/${level}`).set(true);
+      await db.ref(`matches/${id}/rotationBlocked/${teamCode}/${typeKey}/bank`).set(true);
       return { status: "rotation" };
     }
     throw error;
@@ -802,7 +785,7 @@ async function startShowdown(id, match) {
   const usedAssets = new Set(match.state.usedAssets || []);
   const eligible = (await questionBank()).filter((question) =>
     !question.disabled
-    && question.level === "hard"
+    && question.type !== "flag"
     && Array.isArray(question.options)
     && question.options.length === 4
     && (wantsImage ? Boolean(question.image) : allowedTextTypes.has(question.type))
@@ -840,8 +823,8 @@ async function startShowdown(id, match) {
     [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
     [`matches/${id}/state/usedAssets`]: [...usedAssets, questionAssetKey(question)],
     [`matchSecrets/${id}`]: questionSecret(question),
-    [`hostQuestionHistory/${historyOwner}/showdown_${kind}/hard/${question.id}`]: createdAt,
-    [`globalQuestionHistory/showdown_${kind}/hard/${question.id}`]: createdAt,
+    [`hostQuestionHistory/${historyOwner}/showdown_${kind}/bank/${question.id}`]: createdAt,
+    [`globalQuestionHistory/showdown_${kind}/bank/${question.id}`]: createdAt,
   });
   return { showdown: true };
 }
@@ -1145,12 +1128,12 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       const usedIds = new Set(state.usedIds || []);
       const usedAssets = new Set(state.usedAssets || []);
       const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
-      const teamPool = candidates.filter((question) => question.type === state.question.type && question.level === state.question.level && !question.disabled && !teamUsedIds.has(question.id));
+      const teamPool = candidates.filter((question) => question.type === state.question.type && !question.disabled && !teamUsedIds.has(question.id));
       if (!teamPool.length) return { accepted: false, reason: "empty" };
       const pool = teamPool.filter((question) => !usedIds.has(question.id) && !usedAssets.has(questionAssetKey(question)));
       if (!pool.length) return { accepted: false, reason: "empty" };
       let rotated;
-      try { rotated = await rotateQuestion(pool, rotationGameId(id, match), match.hostUid || uid); }
+      try { rotated = await rotateQuestion(pool, rotationGameId(id, match), match.hostUid || uid, candidates.filter((q) => q.type === "flag" && !q.disabled)); }
       catch (error) { if (error.code === "resource-exhausted") return { accepted: false, reason: "empty" }; throw error; }
       const question = rotated.question;
       const started = now();
@@ -1184,8 +1167,8 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
         [`matches/${id}/state/cardClaimId`]: null,
         [`matches/${id}/state/cardEvent`]: event,
         [`matchSecrets/${id}`]: questionSecret(question),
-        [`hostQuestionHistory/${match.hostUid || uid}/${dbKey(question.type)}/${question.level}/${question.id}`]: started,
-        [`globalQuestionHistory/${dbKey(question.type)}/${question.level}/${question.id}`]: started,
+        [`hostQuestionHistory/${match.hostUid || uid}/${dbKey(question.type)}/bank/${question.id}`]: started,
+        [`globalQuestionHistory/${dbKey(question.type)}/bank/${question.id}`]: started,
       });
       return { accepted: true };
     } else if (card === "steal") {

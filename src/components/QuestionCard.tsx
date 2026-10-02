@@ -1,6 +1,6 @@
 import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle, Brain, Clapperboard, Drama } from "lucide-react";
 import type { Question } from "../types/game";
-import { typeLabel, LEVEL_LABEL, CATEGORY_LABEL } from "../types/game";
+import { typeLabel, CATEGORY_LABEL } from "../types/game";
 import { ANSWER_LETTERS } from "../lib/answers";
 
 const TYPE_ICON: Record<string, typeof Flag> = {
@@ -25,17 +25,6 @@ export function QuestionMeta({ q }: { q: Question }) {
       </span>
       <span className="rounded-full border border-gold-faint/40 bg-night-700/70 px-3 py-1 text-muted-foreground">
         {CATEGORY_LABEL[q.category] ?? q.category}
-      </span>
-      <span
-        className={`rounded-full px-3 py-1 border ${
-          q.level === "easy"
-            ? "border-emerald2/50 text-emerald2-light"
-            : q.level === "medium"
-            ? "border-gold/50 text-gold-light"
-            : "border-maroon-light/60 text-maroon-light"
-        }`}
-      >
-        {LEVEL_LABEL[q.level]}
       </span>
     </div>
   );
@@ -67,7 +56,7 @@ export function QuestionBody({
           <img
             src={q.image}
             alt="صورة السؤال"
-            className={`w-full object-cover ${q.type === "flag" ? "aspect-[3/2]" : big ? "aspect-[16/10]" : "aspect-[3/2]"}`}
+            className={`w-full ${q.type === "flag" ? "object-contain aspect-[3/2] bg-white/5 p-3" : big ? "object-cover aspect-[16/10]" : "object-cover aspect-[3/2]"}`}
             loading="eager"
           />
           <div className="absolute inset-0 ring-1 ring-inset ring-white/10 rounded-2xl" />

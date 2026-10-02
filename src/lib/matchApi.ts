@@ -2,7 +2,7 @@
 import { onDisconnect, onValue, ref, remove, serverTimestamp, set, type Unsubscribe } from "firebase/database";
 import { httpsCallable } from "firebase/functions";
 import { db, ensureAuth, functions } from "./firebase";
-import type { AnswerMode, DifficultyMode, Match, Player, PowerCardId, QuestionLevel, QuestionType, TeamColor } from "../types/game";
+import type { AnswerMode, Match, Player, PowerCardId, QuestionType, TeamColor } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 import { normalizeMatch } from "./normalizeMatch";
 
@@ -11,8 +11,6 @@ export interface CreateMatchOptions {
   teamNames: string[];
   questionsPerTeam: number;
   timer: number;
-  difficulty: DifficultyMode;
-  difficultyLevels: QuestionLevel[];
   answerMode: AnswerMode;
   enabledTypes: QuestionType[];
 }
@@ -34,7 +32,6 @@ export async function syncAdminAccess() {
 export interface AdminQuestion {
   id: number;
   type: string;
-  level: QuestionLevel;
   question: string;
   image?: string;
   video?: { youtubeId: string; start: number; end: number };
@@ -91,13 +88,6 @@ export interface UsageStats {
     matchesStartedLastAt?: number;
   };
   daily: UsageDay[];
-}
-
-function levelForPick(n: number, difficulty: DifficultyMode = "mixed", difficultyLevels?: QuestionLevel[]): QuestionLevel {
-  const selected = [...new Set((difficultyLevels ?? []).filter((level): level is QuestionLevel => ["easy", "medium", "hard"].includes(level)))];
-  if (selected.length) return selected[(Math.max(1, n) - 1) % selected.length];
-  if (difficulty !== "mixed") return difficulty;
-  return n <= 1 ? "easy" : n === 2 ? "medium" : "hard";
 }
 
 function pointsForPick(n: number): number {
@@ -291,7 +281,7 @@ export interface TypeProgress {
   used: number;
   cap: number;
   left: number;
-  nextLevel: QuestionLevel;
+  blocked: boolean;
   nextPoints: number;
   available: boolean;
   coolingDown: boolean;
@@ -300,18 +290,16 @@ export interface TypeProgress {
 export function typeProgress(match: Match, teamCode: string, type: QuestionType): TypeProgress {
   const cycle = sectionCycleProgress(match, teamCode);
   const used = match.typeCounts?.[teamCode]?.[type] ?? 0;
-  const teamUsed = Object.values(match.typeCounts?.[teamCode] ?? {})
-    .reduce<number>((total, count) => total + (Number(count) || 0), 0);
   const cap = typeCap(match, type);
-  const nextLevel = levelForPick(teamUsed + 1, match.difficulty ?? "mixed", match.difficultyLevels);
+  const blocked = Boolean(match.rotationBlocked?.[teamCode]?.[type]?.bank);
   return {
     used,
     cap,
     left: Math.max(0, cap - used),
-    nextLevel,
+    blocked,
     nextPoints: pointsForPick(used + 1),
     coolingDown: cycle.used.includes(type),
-    available: used < cap && !match.rotationBlocked?.[teamCode]?.[type]?.[nextLevel] && !cycle.used.includes(type),
+    available: used < cap && !blocked && !cycle.used.includes(type),
   };
 }
 

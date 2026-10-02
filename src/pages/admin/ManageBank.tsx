@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useCustomQuestions, useCustomTypes } from "../../lib/useCustomBank";
 import { type CustomQuestion } from "../../lib/customBank";
 import { getAdminQuestions, deleteAdminQuestions, type AdminQuestion } from "../../lib/matchApi";
-import { LEVEL_LABEL, typeLabel } from "../../types/game";
+import { typeLabel } from "../../types/game";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -19,7 +19,6 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [fType, setFType] = useState("flag");
-  const [fLevel, setFLevel] = useState("all");
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -43,8 +42,7 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
   const sections = useMemo(() => Array.from(new Set([...questions.map((q) => q.type), ...customTypes.map((t) => t.id)]))
     .sort((a, b) => typeLabel(a).localeCompare(typeLabel(b), "ar")), [questions, customTypes]);
   const filtered = useMemo(() => questions.filter((q) => q.type === fType && !q.disabled
-    && (fLevel === "all" || q.level === fLevel)
-    && (!search.trim() || q.question.includes(search.trim()))), [questions, fType, fLevel, search]);
+    && (!search.trim() || q.question.includes(search.trim()))), [questions, fType, search]);
   const previousIds = questions.filter((q) => q.disabled).map((q) => q.id);
   const deleteIds = deletePrevious ? previousIds : Array.from(selected);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -87,9 +85,8 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
           {sections.map((type) => <option key={type} value={type}>{typeLabel(type)} ({questions.filter((q) => q.type === type && !q.disabled).length})</option>)}
         </select>
       </label>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2">
         <div className="relative"><Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" /><Input aria-label="بحث في السؤال" disabled={busy} value={search} onChange={(e) => changeFilter(() => setSearch(e.target.value))} placeholder="ابحث في السؤال" className="h-11 border-white/10 bg-night pr-9" /></div>
-        <select aria-label="المستوى" disabled={busy} value={fLevel} onChange={(e) => changeFilter(() => setFLevel(e.target.value))} className="h-11 rounded-md border border-white/10 bg-night px-3 text-sm"><option value="all">كل المستويات</option><option value="easy">سهل</option><option value="medium">متوسط</option><option value="hard">صعب</option></select>
       </div>
     </div>
     {!loading && previousIds.length > 0 && <div className="rounded-2xl border border-maroon-light/30 bg-maroon/10 p-4">
@@ -102,7 +99,7 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {visible.map((q) => <div key={q.id} className={`relative overflow-hidden rounded-2xl border transition-colors ${selected.has(q.id) ? "border-gold bg-gold/15 ring-1 ring-gold" : "border-white/10 bg-white/5"}`}>
           <label className={`block h-full cursor-pointer p-4 ${busy ? "pointer-events-none opacity-60" : ""}`}>
-            <div className="mb-3 flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{LEVEL_LABEL[q.level]} · #{q.id}</span><span className="relative flex h-7 w-7 items-center justify-center"><input type="checkbox" aria-label={`تحديد السؤال ${q.id}: ${q.question}`} checked={selected.has(q.id)} disabled={busy} onChange={() => toggle(q.id)} className="h-7 w-7 cursor-pointer accent-[#d5b45d]" />{selected.has(q.id) && <Check aria-hidden="true" className="pointer-events-none absolute h-4 w-4 text-night" />}</span></div>
+            <div className="mb-3 flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">السؤال #{q.id}</span><span className="relative flex h-7 w-7 items-center justify-center"><input type="checkbox" aria-label={`تحديد السؤال ${q.id}: ${q.question}`} checked={selected.has(q.id)} disabled={busy} onChange={() => toggle(q.id)} className="h-7 w-7 cursor-pointer accent-[#d5b45d]" />{selected.has(q.id) && <Check aria-hidden="true" className="pointer-events-none absolute h-4 w-4 text-night" />}</span></div>
             {q.image && <img src={q.image} alt={q.question} loading="lazy" className="mb-3 aspect-video w-full rounded-xl bg-night object-contain" />}
             {q.video && <p className="mb-3 flex items-center gap-2 text-sm text-gold-light"><Video className="h-4 w-4" /> سؤال فيديو</p>}
             <p className="break-words text-base font-bold leading-7">{q.question}</p>

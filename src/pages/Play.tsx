@@ -10,7 +10,7 @@ import {
   trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
-import { TEAM_COLORS, typeLabel, LEVEL_LABEL, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
+import { TEAM_COLORS, typeLabel, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
 import LinearTimer from "../components/LinearTimer";
@@ -414,10 +414,10 @@ export default function Play() {
                           : <QuestionTypeIcon type={t} className="h-12 w-12" />}
                       <span className="font-cairo font-bold text-sm">{typeLabel(t)}</span>
                       <span className="text-xs text-muted-foreground">
-                        {t === "punishment" ? "تحدَّ منافسك · العقاب أو −200" : `${LEVEL_LABEL[pr.nextLevel]} · ${pr.nextPoints} نقطة`}
+                        {t === "punishment" ? "تحدَّ منافسك · العقاب أو −200" : `${pr.nextPoints} نقطة`}
                       </span>
                       <span className={`text-[11px] font-cairo font-bold ${pr.available ? "text-emerald2-light" : "text-maroon-light"}`}>
-                        {pr.available ? `باقي ${pr.left}` : pr.coolingDown ? "تم اختياره · أكمل بقية الأقسام" : match.rotationBlocked?.[teamCode]?.[t]?.[pr.nextLevel] ? "مقفول لمنع التكرار" : "اكتمل"}
+                        {pr.available ? `باقي ${pr.left}` : pr.coolingDown ? "تم اختياره · أكمل بقية الأقسام" : pr.blocked ? "مقفول لمنع التكرار" : "اكتمل"}
                       </span>
                     </button>
                   );

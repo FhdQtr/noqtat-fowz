@@ -6,11 +6,11 @@ import { useNavigate } from "react-router";
 import { getIdTokenResult, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInAnonymously, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import {
   ShieldCheck, Lock, Loader2, PlusCircle, Database, ClipboardList,
-  Save, KeyRound, LogOut, ArrowRight, BarChart3,
+  Save, KeyRound, LogOut, ArrowRight, BarChart3, X,
 } from "lucide-react";
 import { type CustomQuestion } from "../../lib/customBank";
 import { auth } from "../../lib/firebase";
-import { syncAdminAccess } from "../../lib/matchApi";
+import { authorizeAdmin, adminError } from "../../lib/adminAuth";
 import QuestionForm from "./QuestionForm";
 import ManageBank from "./ManageBank";
 import BulkImport from "./BulkImport";
@@ -40,34 +40,41 @@ export default function Admin() {
   const [editTarget, setEditTarget] = useState<CustomQuestion | null>(null);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (user) => {
-      void (async () => {
-      if (user && !user.isAnonymous) {
-        await syncAdminAccess();
-        const token = await getIdTokenResult(user, true);
-        if (token.claims.admin === true) return setGate("authed");
-      }
-      setGate("login");
-      })().catch(() => setGate("login"));
+    let alive = true;
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user || user.isAnonymous) { setGate("login"); return; }
+      setGate("loading");
+      void authorizeAdmin(user).then(() => {
+        if (alive && auth.currentUser?.uid === user.uid) { setErr(""); setGate("authed"); }
+      }).catch((error) => {
+        if (alive && auth.currentUser?.uid === user.uid) { setErr(adminError(error, "access")); setGate("login"); }
+      });
     });
+    return () => { alive = false; unsubscribe(); };
   }, []);
 
   const googleLogin = async () => {
     setBusy(true); setErr("");
+    let stage: "google" | "access" = "google";
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
       const credential = await signInWithPopup(auth, provider);
-      await syncAdminAccess();
-      await credential.user.getIdToken(true);
-      setGate("authed");
+      stage = "access";
+      await authorizeAdmin(credential.user);
+      if (auth.currentUser?.uid === credential.user.uid) setGate("authed");
     } catch (error) {
-      const code = (error as { code?: string }).code;
-      setErr(code === "auth/operation-not-allowed" ? "فعّل تسجيل الدخول بجوجل في Firebase أولاً"
-        : code === "auth/unauthorized-domain" ? "أضف qtrgame.net إلى نطاقات Firebase المصرح بها"
-        : code === "functions/permission-denied" ? "هذا الحساب لا يملك صلاحية الإدارة"
-        : "تعذّر تسجيل الدخول بجوجل؛ أعد المحاولة من المتصفح");
+      setErr(adminError(error, stage)); setGate("login");
     } finally { setBusy(false); }
+  };
+
+  const retryAccess = async () => {
+    const user = auth.currentUser;
+    if (!user || user.isAnonymous) return;
+    setBusy(true); setErr("");
+    try { await authorizeAdmin(user); setGate("authed"); }
+    catch (error) { setErr(adminError(error, "access")); }
+    finally { setBusy(false); }
   };
 
   const submit = async () => {
@@ -100,12 +107,15 @@ export default function Admin() {
   // ═══ بوابة الدخول ═══
   if (gate !== "authed")
     return (
-      <div className="min-h-dvh flex flex-col items-center justify-center px-4">
+      <div className="min-h-dvh flex flex-col items-center justify-center px-4 py-8">
         <div className="fixed inset-0 -z-10">
           <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-25" />
           <div className="absolute inset-0 bg-night/88" />
         </div>
-        <div className="glass-card w-full max-w-sm p-7 text-center animate-scale-in">
+        <div className="glass-card relative w-full max-w-sm p-7 pt-16 text-center animate-scale-in">
+          <button onClick={() => nav("/")} aria-label="إغلاق والعودة للرئيسية" className="absolute left-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-gold/40 bg-night/60 text-gold-light hover:bg-gold/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold">
+            <X className="h-6 w-6" />
+          </button>
           <ShieldCheck className="w-14 h-14 text-gold-light mx-auto mb-4" />
           <h1 className="text-2xl font-black font-cairo text-gold-gradient mb-1">لوحة التحكم</h1>
           <p className="text-sm text-muted-foreground mb-6">
@@ -135,7 +145,10 @@ export default function Admin() {
                 className="input-night text-center mb-3"
                 autoComplete="current-password"
               />
-              {err && <p className="text-maroon-light text-sm font-bold mb-3">{err}</p>}
+              {err && <div role="alert" className="mb-4 rounded-xl border border-maroon-light/40 bg-maroon/15 p-3">
+                <p className="text-maroon-light text-sm font-bold break-words">{err}</p>
+                {auth.currentUser && !auth.currentUser.isAnonymous ? <button onClick={() => void retryAccess()} disabled={busy} className="btn-ghost-gold w-full mt-3 !text-sm">أعد التحقق من صلاحية الحساب</button> : null}
+              </div>}
               <button
                 onClick={submit}
                 disabled={busy || !email || !pass}
@@ -148,7 +161,7 @@ export default function Admin() {
           )}
           {err && gate === "loading" && <p className="text-maroon-light text-sm font-bold">{err}</p>}
         </div>
-        <button onClick={() => nav("/")} className="mt-6 flex items-center gap-2 text-sm text-muted-foreground hover:text-gold-light transition-colors">
+        <button onClick={() => nav("/")} className="btn-ghost-gold mt-5 w-full max-w-sm flex items-center justify-center gap-2">
           <ArrowRight className="w-4 h-4" />
           العودة للرئيسية
         </button>

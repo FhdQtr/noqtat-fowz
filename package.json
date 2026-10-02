@@ -11,8 +11,9 @@
     "prepare:functions": "node scripts/prepare-functions.mjs",
     "check:functions": "npm run prepare:functions && node --check functions/index.js",
     "test:showdown": "npm run prepare:functions && node --test scripts/showdown.test.mjs",
-    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run test:showdown && npm run build",
-    "preview": "vite preview"
+    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run test:showdown && npm run test:admin && npm run build",
+    "preview": "vite preview",
+    "test:admin": "node --test scripts/admin-auth.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

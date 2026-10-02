@@ -217,13 +217,16 @@ function rotationAssetKey(question) {
 }
 
 async function questionBank(includeCustom = true) {
-  const [customSnapshot, excludedSnapshot] = await Promise.all([
+  const [customSnapshot, excludedSnapshot, deletedSnapshot] = await Promise.all([
     includeCustom ? db.ref("customQuestions").get() : Promise.resolve(null),
     db.ref("questionExclusions").get(),
+    db.ref("questionDeletions").get(),
   ]);
   const custom = customSnapshot?.val() || {};
   const excluded = excludedSnapshot.val() || {};
+  const deleted = deletedSnapshot.val() || {};
   return [...QUESTIONS, ...Object.values(custom).map((q) => ({ ...q, options: q.options || [] }))]
+    .filter((q) => deleted[q.id] !== true)
     .map((q) => ({ ...q, disabled: q.disabled === true || excluded[q.id] === true }));
 }
 
@@ -237,6 +240,27 @@ async function adminQuestions(action, data) {
       ...(q.image ? { image: q.image } : {}), ...(q.video ? { video: q.video } : {}),
       disabled: q.disabled === true, custom: !builtinIds.has(q.id),
     })) };
+  }
+  if (action === "deleteAdminQuestions") {
+    if (!Array.isArray(data.ids) || !data.ids.length || data.ids.length > 1200) fail("invalid-argument", "حدد الأسئلة المطلوب حذفها");
+    const ids = [...new Set(data.ids)];
+    const [bank, deletedSnapshot] = await Promise.all([questionBank(), db.ref("questionDeletions").get()]);
+    const knownIds = new Set(bank.map((q) => q.id));
+    const deleted = deletedSnapshot.val() || {};
+    if (ids.some((id) => !Number.isSafeInteger(id) || (!knownIds.has(id) && deleted[id] !== true))) {
+      fail("invalid-argument", "أحد الأسئلة غير موجود؛ حدّث القائمة");
+    }
+    const builtinIds = new Set(QUESTIONS.map((q) => q.id));
+    const updates = {};
+    for (const id of ids) {
+      // Builtins are immutable deployment assets. Keep only a permanent id marker;
+      // never return their contents in the catalog or draw them again after redeploy.
+      updates[`questionDeletions/${id}`] = true;
+      updates[`questionExclusions/${id}`] = null;
+      if (!builtinIds.has(id)) updates[`customQuestions/${id}`] = null;
+    }
+    await db.ref().update(updates);
+    return { count: ids.length };
   }
   if (!Array.isArray(data.ids) || data.ids.length < 1 || data.ids.length > 1200 || typeof data.disabled !== "boolean") {
     fail("invalid-argument", "حدد الأسئلة وحالة الاستبعاد المطلوبة");
@@ -1207,7 +1231,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   const data = request.data || {};
   const action = text(data.action, 40);
   await enforceRequestLimit(action, request, uid);
-  if (["getAdminQuestions", "setAdminQuestionAvailability"].includes(action)) {
+  if (["getAdminQuestions", "setAdminQuestionAvailability", "deleteAdminQuestions"].includes(action)) {
     if (request.auth?.token?.admin !== true) fail("permission-denied", "إدارة الأسئلة للمدير فقط");
     return adminQuestions(action, data);
   }

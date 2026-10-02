@@ -642,3 +642,33 @@ test('team selection skips excluded questions while keeping the rest of the sect
   assert.equal((await h.call('chooseType', 'user1', { type: 'ct_gallery' })).status, 'accepted');
   assert.equal(h.match().state.question.id, 900002);
 });
+
+test('permanent deletion removes builtin and custom questions from gallery and all banks', async () => {
+  const h = harness();
+  h.data.customQuestions = { 900001: { id: 900001, type: 'ct_test', level: 'easy', question: 'خاص', options: ['أ', 'ب'], answer: 0 } };
+  const { questions } = await h.adminCall('getAdminQuestions');
+  const builtin = questions.find((q) => !q.custom && q.type === 'multiple_choice');
+  const ids = [builtin.id, 900001];
+  await assert.rejects(h.adminCall('deleteAdminQuestions', { ids }, false), { code: 'permission-denied' });
+  assert.equal(h.data.questionDeletions, undefined);
+  await h.adminCall('setAdminQuestionAvailability', { ids, disabled: true });
+  assert.equal((await h.adminCall('deleteAdminQuestions', { ids })).count, 2);
+  assert.equal(h.data.customQuestions[900001], undefined);
+  assert.ok(ids.every((id) => h.data.questionDeletions[id] === true));
+  assert.ok(ids.every((id) => !h.data.questionExclusions[id]));
+  for (const bank of [(await h.adminCall('getAdminQuestions')).questions, await h.helpers.questionBank(), await h.helpers.questionBank(false)]) {
+    assert.ok(bank.every((q) => !ids.includes(q.id)));
+  }
+  await assert.rejects(h.adminCall('setAdminQuestionAvailability', { ids, disabled: false }), { code: 'invalid-argument' });
+  assert.equal((await h.adminCall('deleteAdminQuestions', { ids })).count, 2);
+  const session = await h.call('startChallenge', 'solo');
+  assert.ok(session.questions.every((q) => !ids.includes(q.id)));
+});
+
+test('permanent delete validates the whole batch before changing any question', async () => {
+  const h = harness();
+  const { questions } = await h.adminCall('getAdminQuestions');
+  await assert.rejects(h.adminCall('deleteAdminQuestions', { ids: [questions[0].id, 'bad'] }), { code: 'invalid-argument' });
+  await assert.rejects(h.adminCall('deleteAdminQuestions', { ids: [] }), { code: 'invalid-argument' });
+  assert.equal(h.data.questionDeletions, undefined);
+});

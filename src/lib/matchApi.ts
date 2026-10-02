@@ -24,7 +24,7 @@ type ActionName =
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
   | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats" | "getTeamInvites"
-  | "revealQuestionPrompt" | "resolveTeamCode" | "syncAdminAccess" | "getAdminQuestions" | "setAdminQuestionAvailability"
+  | "revealQuestionPrompt" | "resolveTeamCode" | "syncAdminAccess" | "getAdminQuestions" | "setAdminQuestionAvailability" | "deleteAdminQuestions"
   | "preparePunishment" | "judgePunishment" | "requestPunishmentOutcome" | "resolvePunishment" | "cancelPunishment";
 
 export async function syncAdminAccess() {
@@ -44,6 +44,10 @@ export interface AdminQuestion {
 
 export async function getAdminQuestions() {
   return (await gameAction<{ questions: AdminQuestion[] }>("getAdminQuestions", {})).questions;
+}
+
+export async function deleteAdminQuestions(ids: number[]) {
+  return gameAction<{ count: number }>("deleteAdminQuestions", { ids });
 }
 
 export async function setAdminQuestionAvailability(ids: number[], disabled: boolean) {

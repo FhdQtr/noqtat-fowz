@@ -103,7 +103,7 @@ export async function deleteCustomType(id: string) {
 
 // ─── أسئلة المقدم ───
 function nextCustomId(): number {
-  return latestQuestions.reduce((mx, q) => Math.max(mx, q.id), FIRST_CUSTOM_ID - 1) + 1;
+  return Math.max(Date.now(), latestQuestions.reduce((mx, q) => Math.max(mx, q.id), FIRST_CUSTOM_ID - 1) + 1);
 }
 
 export async function addCustomQuestion(q: Omit<CustomQuestion, "id" | "createdAt">): Promise<CustomQuestion> {

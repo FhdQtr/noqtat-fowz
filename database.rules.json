@@ -3,7 +3,9 @@
     ".read": false,
     ".write": false,
     "matches": {
-      ".indexOn": ["expiresAt"],
+      ".indexOn": [
+        "expiresAt"
+      ],
       "$code": {
         ".read": "auth != null",
         ".write": false,
@@ -27,7 +29,9 @@
       ".read": false,
       ".write": false,
       "$scope": {
-        ".indexOn": ["expiresAt"]
+        ".indexOn": [
+          "expiresAt"
+        ]
       }
     },
     "challengeSecrets": {
@@ -40,9 +44,16 @@
     },
     "customQuestions": {
       ".read": "auth != null && auth.token.admin == true",
-      ".write": "auth != null && auth.token.admin == true"
+      ".write": "auth != null && auth.token.admin == true",
+      "$id": {
+        ".validate": "!root.child('questionDeletions').child($id).exists()"
+      }
     },
     "admin": {
+      ".read": false,
+      ".write": false
+    },
+    "questionDeletions": {
       ".read": false,
       ".write": false
     }

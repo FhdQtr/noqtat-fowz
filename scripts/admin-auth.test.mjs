@@ -19,6 +19,9 @@ test('Google auth iframe is allowed explicitly by the production CSP', () => {
   const frames = csp.split(';').find((directive) => directive.trim().startsWith('frame-src')).trim().split(/\s+/);
   assert.ok(frames.includes(`https://${domain}`));
   assert.ok(!frames.includes('*'));
+  const scripts = csp.split(';').find((directive) => directive.trim().startsWith('script-src')).trim().split(/\s+/);
+  assert.ok(scripts.includes('https://apis.google.com'));
+  assert.ok(!scripts.includes('*'));
   assert.ok(csp.includes("object-src 'none'"));
 });
 

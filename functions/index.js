@@ -216,9 +216,44 @@ function rotationAssetKey(question) {
   return createHash("sha256").update(asset).digest("hex");
 }
 
-async function questionBank() {
-  const custom = (await db.ref("customQuestions").get()).val() || {};
-  return [...QUESTIONS, ...Object.values(custom).map((q) => ({ ...q, options: q.options || [] }))];
+async function questionBank(includeCustom = true) {
+  const [customSnapshot, excludedSnapshot] = await Promise.all([
+    includeCustom ? db.ref("customQuestions").get() : Promise.resolve(null),
+    db.ref("questionExclusions").get(),
+  ]);
+  const custom = customSnapshot?.val() || {};
+  const excluded = excludedSnapshot.val() || {};
+  return [...QUESTIONS, ...Object.values(custom).map((q) => ({ ...q, options: q.options || [] }))]
+    .map((q) => ({ ...q, disabled: q.disabled === true || excluded[q.id] === true }));
+}
+
+async function adminQuestions(action, data) {
+  if (action === "getAdminQuestions") {
+    const bank = await questionBank();
+    const legacyDisabled = new Set(QUESTIONS.filter((q) => q.disabled).map((q) => q.id));
+    const builtinIds = new Set(QUESTIONS.map((q) => q.id));
+    return { questions: bank.filter((q) => !legacyDisabled.has(q.id)).map((q) => ({
+      id: q.id, type: q.type, level: q.level, question: q.question,
+      ...(q.image ? { image: q.image } : {}), ...(q.video ? { video: q.video } : {}),
+      disabled: q.disabled === true, custom: !builtinIds.has(q.id),
+    })) };
+  }
+  if (!Array.isArray(data.ids) || data.ids.length < 1 || data.ids.length > 1200 || typeof data.disabled !== "boolean") {
+    fail("invalid-argument", "حدد الأسئلة وحالة الاستبعاد المطلوبة");
+  }
+  const ids = [...new Set(data.ids)];
+  const bank = await questionBank();
+  const knownIds = new Set(bank.map((q) => q.id));
+  const builtinIds = new Set(QUESTIONS.map((q) => q.id));
+  if (ids.some((id) => !Number.isSafeInteger(id) || !knownIds.has(id))) fail("invalid-argument", "أحد الأسئلة غير موجود؛ حدّث القائمة");
+  const updates = {};
+  for (const id of ids) {
+    // Reversible exclusion: preserve the original question and its private answer.
+    updates[`questionExclusions/${id}`] = data.disabled ? true : null;
+    if (!builtinIds.has(id)) updates[`customQuestions/${id}/disabled`] = data.disabled;
+  }
+  await db.ref().update(updates);
+  return { count: ids.length };
 }
 
 async function beginPunishment(uid, data, id, match, teamCode, usedCount, requestId) {
@@ -594,11 +629,12 @@ async function joinTeam(uid, data) {
 }
 
 async function startChallenge(uid) {
+  const bank = await questionBank(false);
   const schedule = ["easy", "easy", "easy", "medium", "medium", "medium", "hard", "hard", "hard", "hard"];
   const selected = [];
   const used = new Set();
   for (const level of schedule) {
-    const pool = QUESTIONS.filter((q) => !q.disabled && q.level === level && !["flag", "acting"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0 && !used.has(q.id));
+    const pool = bank.filter((q) => !q.disabled && q.level === level && !["flag", "acting"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0 && !used.has(q.id));
     for (let i = pool.length - 1; i > 0; i--) {
       const j = randomInt(i + 1);
       [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -1171,6 +1207,10 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   const data = request.data || {};
   const action = text(data.action, 40);
   await enforceRequestLimit(action, request, uid);
+  if (["getAdminQuestions", "setAdminQuestionAvailability"].includes(action)) {
+    if (request.auth?.token?.admin !== true) fail("permission-denied", "إدارة الأسئلة للمدير فقط");
+    return adminQuestions(action, data);
+  }
   if (action === "getUsageStats") {
     if (request.auth?.token?.admin !== true) fail("permission-denied", "هذه الإحصاءات للمدير فقط");
     const [totalsSnapshot, dailySnapshot] = await Promise.all([

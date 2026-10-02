@@ -87,10 +87,11 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost };', { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
   return { data, call, helpers: exports.testHelpers,
+    adminCall: (action, extra = {}, admin = true) => exports.gameAction({ auth: { uid: 'owner', token: { admin } }, rawRequest: { ip: '192.0.2.2' }, data: { action, ...extra } }),
     authCall: (token) => exports.gameAction({ auth: { uid: 'owner', token }, rawRequest: { ip: '192.0.2.2' }, data: { action: 'syncAdminAccess' } }),
     match: () => data.matches.A234,
     setClock: (value) => { clock = value; },
@@ -581,4 +582,63 @@ test('single-section cycle resets and card prices match the client at all match 
     assert.equal(h.helpers.powerCardCost(card, 8), price);
     for (const size of [1, 4, 8, 12, 16]) assert.equal(h.helpers.powerCardCost(card, size), frontend.powerCardCost(card, size));
   }
+});
+
+
+test('question gallery is admin-only and omits answers and options', async () => {
+  const h = harness();
+  await assert.rejects(h.adminCall('getAdminQuestions', {}, false), { code: 'permission-denied' });
+  const { questions } = await h.adminCall('getAdminQuestions');
+  assert.ok(questions.length > 100);
+  assert.ok(questions.some((q) => q.type === 'flag' && q.image));
+  for (const q of questions) {
+    assert.equal(Object.hasOwn(q, 'answer'), false);
+    assert.equal(Object.hasOwn(q, 'options'), false);
+  }
+});
+
+test('bulk exclusion applies to builtin and custom questions and can be restored', async () => {
+  const h = harness();
+  h.data.customQuestions = { 900001: { id: 900001, type: 'ct_test', level: 'easy', question: 'خاص', options: ['أ', 'ب'], answer: 0 } };
+  const { questions } = await h.adminCall('getAdminQuestions');
+  const builtin = questions.find((q) => !q.custom && q.type === 'flag');
+  const ids = [builtin.id, 900001];
+  await assert.rejects(h.adminCall('setAdminQuestionAvailability', { ids, disabled: true }, false), { code: 'permission-denied' });
+  assert.equal(h.data.questionExclusions, undefined);
+  assert.equal((await h.adminCall('setAdminQuestionAvailability', { ids, disabled: true })).count, 2);
+  const bank = await h.helpers.questionBank();
+  assert.equal(bank.find((q) => q.id === builtin.id).disabled, true);
+  assert.equal(bank.find((q) => q.id === 900001).disabled, true);
+  assert.equal((await h.adminCall('getAdminQuestions')).questions.find((q) => q.id === builtin.id).disabled, true);
+  await h.adminCall('setAdminQuestionAvailability', { ids, disabled: false });
+  const restored = await h.helpers.questionBank();
+  assert.equal(restored.find((q) => q.id === builtin.id).disabled, false);
+  assert.equal(restored.find((q) => q.id === 900001).disabled, false);
+});
+
+test('invalid bulk ids leave all availability unchanged', async () => {
+  const h = harness();
+  const { questions } = await h.adminCall('getAdminQuestions');
+  await assert.rejects(h.adminCall('setAdminQuestionAvailability', { ids: [questions[0].id, 'bad'], disabled: true }), { code: 'invalid-argument' });
+  await assert.rejects(h.adminCall('setAdminQuestionAvailability', { ids: [], disabled: true }), { code: 'invalid-argument' });
+  assert.equal(h.data.questionExclusions, undefined);
+});
+
+test('solo challenge never draws questions excluded by admin', async () => {
+  const h = harness();
+  const { questions } = await h.adminCall('getAdminQuestions');
+  const ids = questions.filter((q) => q.type === 'multiple_choice').slice(0, 20).map((q) => q.id);
+  await h.adminCall('setAdminQuestionAvailability', { ids, disabled: true });
+  const session = await h.call('startChallenge', 'solo');
+  assert.equal(session.questions.length, 100);
+  assert.ok(session.questions.every((q) => !ids.includes(q.id)));
+});
+
+test('team selection skips excluded questions while keeping the rest of the section', async () => {
+  const h = harness();
+  h.data.customQuestions = Object.fromEntries([900001, 900002].map((id) => [id, { id, type: 'ct_gallery', category: 'custom', level: 'easy', question: `سؤال ${id}`, options: ['أ', 'ب'], answer: 0 }]));
+  await h.adminCall('setAdminQuestionAvailability', { ids: [900001], disabled: true });
+  Object.assign(h.match(), { enabledTypes: ['ct_gallery'], difficulty: 'easy', questionsPerTeam: 4, turnIndex: 0, state: { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [] } });
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_gallery' })).status, 'accepted');
+  assert.equal(h.match().state.question.id, 900002);
 });

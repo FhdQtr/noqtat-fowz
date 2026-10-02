@@ -23,7 +23,7 @@ type Tab = "stats" | "add" | "manage" | "bulk" | "backup" | "password";
 const TABS: { id: Tab; label: string; icon: typeof PlusCircle }[] = [
   { id: "stats", label: "الإحصاءات", icon: BarChart3 },
   { id: "add", label: "إضافة سؤال", icon: PlusCircle },
-  { id: "manage", label: "إدارة البنك", icon: Database },
+  { id: "manage", label: "الأسئلة", icon: Database },
   { id: "bulk", label: "إضافة جماعية", icon: ClipboardList },
   { id: "backup", label: "نسخ احتياطي", icon: Save },
   { id: "password", label: "كلمة السر", icon: KeyRound },

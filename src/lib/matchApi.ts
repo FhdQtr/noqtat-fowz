@@ -24,11 +24,30 @@ type ActionName =
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
   | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats" | "getTeamInvites"
-  | "revealQuestionPrompt" | "resolveTeamCode" | "syncAdminAccess"
+  | "revealQuestionPrompt" | "resolveTeamCode" | "syncAdminAccess" | "getAdminQuestions" | "setAdminQuestionAvailability"
   | "preparePunishment" | "judgePunishment" | "requestPunishmentOutcome" | "resolvePunishment" | "cancelPunishment";
 
 export async function syncAdminAccess() {
   return gameAction<{ admin: boolean }>("syncAdminAccess", {});
+}
+
+export interface AdminQuestion {
+  id: number;
+  type: string;
+  level: QuestionLevel;
+  question: string;
+  image?: string;
+  video?: { youtubeId: string; start: number; end: number };
+  disabled: boolean;
+  custom: boolean;
+}
+
+export async function getAdminQuestions() {
+  return (await gameAction<{ questions: AdminQuestion[] }>("getAdminQuestions", {})).questions;
+}
+
+export async function setAdminQuestionAvailability(ids: number[], disabled: boolean) {
+  return gameAction<{ count: number }>("setAdminQuestionAvailability", { ids, disabled });
 }
 
 export async function runPunishmentAction(matchCode: string, action: "preparePunishment" | "judgePunishment" | "requestPunishmentOutcome" | "resolvePunishment" | "cancelPunishment", questionId: number, details: Record<string, unknown> = {}) {

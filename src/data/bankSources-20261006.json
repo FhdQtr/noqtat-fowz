@@ -1,0 +1,681 @@
+{
+  "reviewedAt": "2026-10-06",
+  "difficultyIntent": "upper-medium to hard; editorial intent only, not a gameplay level",
+  "entries": [
+    {
+      "id": 400175,
+      "type": "completion",
+      "correctAnswer": "اللبن",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "في الصيف ضيعت اللبن"
+    },
+    {
+      "id": 400176,
+      "type": "completion",
+      "correctAnswer": "حنين",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "رجع بخفي حنين"
+    },
+    {
+      "id": 400177,
+      "type": "completion",
+      "correctAnswer": "طحنًا",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "جعجعة ولا أرى طحنا"
+    },
+    {
+      "id": 400178,
+      "type": "completion",
+      "correctAnswer": "ما وراءها",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "إن وراء الأكمة ما وراءها"
+    },
+    {
+      "id": 400179,
+      "type": "completion",
+      "correctAnswer": "فَهُنْ",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "إذا عز أخوك فهن"
+    },
+    {
+      "id": 400180,
+      "type": "completion",
+      "correctAnswer": "العذل",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "سبق السيف العذل"
+    },
+    {
+      "id": 400181,
+      "type": "completion",
+      "correctAnswer": "تراه",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "تسمع بالمعيدي خير من أن تراه"
+    },
+    {
+      "id": 400182,
+      "type": "completion",
+      "correctAnswer": "الزُّبى",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "بلغ السيل الزبى"
+    },
+    {
+      "id": 400183,
+      "type": "completion",
+      "correctAnswer": "انسلّت",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "رمتني بدائها وانسلت"
+    },
+    {
+      "id": 400184,
+      "type": "completion",
+      "correctAnswer": "جارة",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "إياك أعني واسمعي يا جاره"
+    },
+    {
+      "id": 400185,
+      "type": "completion",
+      "correctAnswer": "طبقة",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "وافق شن طبقة"
+    },
+    {
+      "id": 400186,
+      "type": "completion",
+      "correctAnswer": "ذامًّا",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "لا تعدم الحسناء ذاما"
+    },
+    {
+      "id": 400187,
+      "type": "completion",
+      "correctAnswer": "الجمل",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "قد استنوق الجمل"
+    },
+    {
+      "id": 400188,
+      "type": "completion",
+      "correctAnswer": "رامٍ",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "رب رمية من غير رام"
+    },
+    {
+      "id": 400189,
+      "type": "completion",
+      "correctAnswer": "اليقين",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "عند جهينة الخبر اليقين"
+    },
+    {
+      "id": 400190,
+      "type": "completion",
+      "correctAnswer": "باريها",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "أعط القوس باريها"
+    },
+    {
+      "id": 400191,
+      "type": "completion",
+      "correctAnswer": "الإبل",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "أوسعتهم سبا وأودوا بالإبل"
+    },
+    {
+      "id": 400192,
+      "type": "completion",
+      "correctAnswer": "نفخ",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "يداك أوكتا وفوك نفخ"
+    },
+    {
+      "id": 400193,
+      "type": "completion",
+      "correctAnswer": "يستنسر",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "إن البغاث بأرضنا يستنسر"
+    },
+    {
+      "id": 400194,
+      "type": "completion",
+      "correctAnswer": "كيلة",
+      "sourceUrls": [
+        "https://www.arabic-keyboard.info/books/ar/read-book/مجمع-الأمثال"
+      ],
+      "verifiedText": "أحشفا وسوء كيلة"
+    },
+    {
+      "id": 400195,
+      "type": "image",
+      "correctAnswer": "قلعة هيميجي",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/661",
+        "https://commons.wikimedia.org/wiki/File:Himeji_castle_in_may_2015.jpg"
+      ],
+      "subject": "Himeji Castle"
+    },
+    {
+      "id": 400196,
+      "type": "image",
+      "correctAnswer": "راني كي فاف",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/922",
+        "https://commons.wikimedia.org/wiki/File:Rani_ki_vav_02.jpg"
+      ],
+      "subject": "Rani ki Vav"
+    },
+    {
+      "id": 400197,
+      "type": "image",
+      "correctAnswer": "روسيا",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/544",
+        "https://commons.wikimedia.org/wiki/File:Kizhi_06-2017_img08_Pogost_view.jpg"
+      ],
+      "subject": "Kizhi Pogost"
+    },
+    {
+      "id": 400198,
+      "type": "image",
+      "correctAnswer": "جامع السليمية في أدرنة",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/1366",
+        "https://commons.wikimedia.org/wiki/File:Selimiye_Mosque_(15051985908)_(cropped).jpg"
+      ],
+      "subject": "Selimiye Mosque, Edirne"
+    },
+    {
+      "id": 400199,
+      "type": "image",
+      "correctAnswer": "جانتار مانتار في جايبور",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/1338",
+        "https://commons.wikimedia.org/wiki/File:Jantar_Mantar_at_Jaipur.jpg"
+      ],
+      "subject": "Jantar Mantar, Jaipur"
+    },
+    {
+      "id": 400200,
+      "type": "image",
+      "correctAnswer": "مالي",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/116",
+        "https://commons.wikimedia.org/wiki/File:Djenne_great_mud_mosque.jpg"
+      ],
+      "subject": "Great Mosque of Djenné"
+    },
+    {
+      "id": 400201,
+      "type": "image",
+      "correctAnswer": "سانتشي",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/524",
+        "https://commons.wikimedia.org/wiki/File:East_Gateway_-_Stupa_1_-_Sanchi_Hill_2013-02-21_4398.JPG"
+      ],
+      "subject": "Sanchi"
+    },
+    {
+      "id": 400202,
+      "type": "image",
+      "correctAnswer": "غيونغبوكغونغ",
+      "sourceUrls": [
+        "https://english.visitkorea.or.kr/svc/contents/contentsView.do?vcontsId=110592",
+        "https://commons.wikimedia.org/wiki/File:%EA%B4%91%ED%99%94%EB%AC%B8_%EC%9B%94%EB%8C%80.jpg"
+      ],
+      "subject": "Gyeongbokgung"
+    },
+    {
+      "id": 400203,
+      "type": "image",
+      "correctAnswer": "ضريح إيتسوكوشيما",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/776",
+        "https://commons.wikimedia.org/wiki/File:Itsukushima_Shrine_Torii_Gate_(13890465459).jpg"
+      ],
+      "subject": "Itsukushima Shrine"
+    },
+    {
+      "id": 400204,
+      "type": "image",
+      "correctAnswer": "قصر آيت بن حدّو",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/444",
+        "https://commons.wikimedia.org/wiki/File:Ksar_A%C3%AFt_Benhaddou,_Marocco_(%D8%A3%D9%8A%D8%AA_%D8%A8%D9%86_%D8%AD%D8%AF%D9%88%D8%8C_%D8%A7%D9%84%D9%85%D8%BA%D8%B1%D8%A8,_%E2%B4%B0%E2%B5%A2%E2%B5%9C_%E2%B5%83%E2%B4%B0%E2%B4%B7%E2%B4%B7%E2%B5%93).jpg"
+      ],
+      "subject": "Aït Benhaddou"
+    },
+    {
+      "id": 400205,
+      "type": "image",
+      "correctAnswer": "جورجيا",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/709",
+        "https://commons.wikimedia.org/wiki/File:Ushguli_Svaneti_Georgia.JPG"
+      ],
+      "subject": "Ushguli"
+    },
+    {
+      "id": 400206,
+      "type": "image",
+      "correctAnswer": "لبدة الكبرى",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/183",
+        "https://commons.wikimedia.org/wiki/File:Leptis_Magna_(29)_(8288918733).jpg"
+      ],
+      "subject": "Leptis Magna"
+    },
+    {
+      "id": 400207,
+      "type": "image",
+      "correctAnswer": "برامبانان",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/642",
+        "https://commons.wikimedia.org/wiki/File:Prambanan_Temple_Yogyakarta_Indonesia.jpg"
+      ],
+      "subject": "Prambanan"
+    },
+    {
+      "id": 400208,
+      "type": "image",
+      "correctAnswer": "أولون دانو براتان",
+      "sourceUrls": [
+        "https://www.indonesia.travel/ru/en/destination/bali-nusa-tenggara/bali/bali---ulun-danu-beratan",
+        "https://commons.wikimedia.org/wiki/File:Pura_Ulun_Danu_Bratan,_2022.jpg"
+      ],
+      "subject": "Pura Ulun Danu Bratan"
+    },
+    {
+      "id": 400209,
+      "type": "image",
+      "correctAnswer": "وات آرون",
+      "sourceUrls": [
+        "https://www.tourismthailand.org/Attraction/wat-arun-ratchawararam-ratchawaramahawihan",
+        "https://commons.wikimedia.org/wiki/File:%E0%B9%80%E0%B8%88%E0%B8%94%E0%B8%B5%E0%B8%A2%E0%B9%8C%E0%B8%9B%E0%B8%A3%E0%B8%B0%E0%B8%98%E0%B8%B2%E0%B8%99%E0%B8%97%E0%B8%A3%E0%B8%87%E0%B8%9B%E0%B8%A3%E0%B8%B2%E0%B8%87%E0%B8%84%E0%B9%8C%E0%B8%A7%E0%B8%B1%E0%B8%94%E0%B8%AD%E0%B8%A3%E0%B8%B8%E0%B8%932.jpg"
+      ],
+      "subject": "Wat Arun"
+    },
+    {
+      "id": 400210,
+      "type": "image",
+      "correctAnswer": "غول غومباز",
+      "sourceUrls": [
+        "https://karnatakatourism.org/en/destinations/vijayapura/",
+        "https://commons.wikimedia.org/wiki/File:Gol_Gumbaz_-4,_Bijapur,_Karnataka.jpg"
+      ],
+      "subject": "Gol Gumbaz"
+    },
+    {
+      "id": 400211,
+      "type": "image",
+      "correctAnswer": "ألكاثار سيغوفيا",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/311",
+        "https://commons.wikimedia.org/wiki/File:Panor%C3%A1mica_Oto%C3%B1o_Alc%C3%A1zar_de_Segovia.jpg"
+      ],
+      "subject": "Alcázar of Segovia"
+    },
+    {
+      "id": 400212,
+      "type": "image",
+      "correctAnswer": "قصر بينا",
+      "sourceUrls": [
+        "https://www.parquesdesintra.pt/en/parks-monuments/park-and-national-palace-of-pena/",
+        "https://commons.wikimedia.org/wiki/File:Sintra_Portugal_Pal%C3%A1cio_da_Pena-01.jpg"
+      ],
+      "subject": "Pena Palace"
+    },
+    {
+      "id": 400213,
+      "type": "image",
+      "correctAnswer": "قصر الفنون الجميلة في مكسيكو",
+      "sourceUrls": [
+        "https://palacio.inba.gob.mx/",
+        "https://commons.wikimedia.org/wiki/File:Bellas_Artes_01.jpg"
+      ],
+      "subject": "Palacio de Bellas Artes"
+    },
+    {
+      "id": 400214,
+      "type": "image",
+      "correctAnswer": "تونس",
+      "sourceUrls": [
+        "https://whc.unesco.org/en/list/38",
+        "https://commons.wikimedia.org/wiki/File:The_Amphitheatre_of_El_Jem,_built_around_AD_238_in_Thysdrus_in_Africa_Proconsularis,_the_estimated_capacity_is_35,000,_Tunisia_-_52717762494.jpg"
+      ],
+      "subject": "Amphitheatre of El Jem"
+    },
+    {
+      "id": 400215,
+      "type": "ordering",
+      "correctAnswer": "7/12 ثم 5/8 ثم 2/3 ثم 11/16",
+      "referenceValues": {
+        "7/12": 0.5833333333333334,
+        "5/8": 0.625,
+        "2/3": 0.6666666666666666,
+        "11/16": 0.6875
+      },
+      "direction": "ascending",
+      "verification": "Calculated directly from the quantities in the question."
+    },
+    {
+      "id": 400216,
+      "type": "ordering",
+      "correctAnswer": "2⁷ ثم 3⁵ ثم 5⁴ ثم 4⁵",
+      "referenceValues": {
+        "2⁷": 128,
+        "3⁵": 243,
+        "5⁴": 625,
+        "4⁵": 1024
+      },
+      "direction": "ascending",
+      "verification": "Calculated directly from the quantities in the question."
+    },
+    {
+      "id": 400217,
+      "type": "ordering",
+      "correctAnswer": "√45 ثم √50 ثم √63 ثم √80",
+      "referenceValues": {
+        "√45": 6.708203932499369,
+        "√50": 7.0710678118654755,
+        "√63": 7.937253933193772,
+        "√80": 8.94427190999916
+      },
+      "direction": "ascending",
+      "verification": "Calculated directly from the quantities in the question."
+    },
+    {
+      "id": 400218,
+      "type": "ordering",
+      "correctAnswer": "-7 ثم -√36 ثم -5.5 ثم -16/3",
+      "referenceValues": {
+        "-7": -7,
+        "-√36": -6.0,
+        "-5.5": -5.5,
+        "-16/3": -5.333333333333333
+      },
+      "direction": "ascending",
+      "verification": "Calculated directly from the quantities in the question."
+    },
+    {
+      "id": 400219,
+      "type": "ordering",
+      "correctAnswer": "69% ثم 7/10 ثم 0.705 ثم 0.72",
+      "referenceValues": {
+        "0.72": 0.72,
+        "7/10": 0.7,
+        "69%": 0.69,
+        "0.705": 0.705
+      },
+      "direction": "ascending",
+      "verification": "Calculated directly from the quantities in the question."
+    },
+    {
+      "id": 400220,
+      "type": "ordering",
+      "correctAnswer": "ساعة و35 دقيقة ثم 6000 ثانية ثم 1.75 ساعة ثم 110 دقائق",
+      "referenceValues": {
+        "ساعة و35 دقيقة": 95,
+        "6000 ثانية": 100,
+        "1.75 ساعة": 105,
+        "110 دقائق": 110
+      },
+      "direction": "ascending",
+      "verification": "Calculated directly from the quantities in the question."
+    },
+    {
+      "id": 400221,
+      "type": "ordering",
+      "correctAnswer": "المستطيل ثم المربع ثم الدائرة ثم المثلث",
+      "referenceValues": {
+        "المستطيل": 12,
+        "المربع": 12.25,
+        "الدائرة": 12.566370614359172,
+        "المثلث": 15.0
+      },
+      "direction": "ascending",
+      "verification": "Calculated directly from the quantities in the question."
+    },
+    {
+      "id": 400222,
+      "type": "ordering",
+      "correctAnswer": "ب ثم أ ثم ج ثم د",
+      "referenceValues": {
+        "أ": 60.0,
+        "ب": 50.0,
+        "ج": 70.0,
+        "د": 90.0
+      },
+      "direction": "ascending",
+      "verification": "Calculated directly from the quantities in the question."
+    },
+    {
+      "id": 400223,
+      "type": "ordering",
+      "correctAnswer": "زحل ثم أورانوس ثم المشتري ثم نبتون",
+      "referenceValues": {
+        "زحل": 0.6871,
+        "أورانوس": 1.27,
+        "المشتري": 1.3262,
+        "نبتون": 1.638
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://ssd.jpl.nasa.gov/planets/phys_par.html"
+      ],
+      "units": "g/cm³"
+    },
+    {
+      "id": 400224,
+      "type": "ordering",
+      "correctAnswer": "المريخ ثم الزهرة ثم الأرض ثم زحل",
+      "referenceValues": {
+        "المريخ": 3.71,
+        "الزهرة": 8.87,
+        "الأرض": 9.8,
+        "زحل": 10.44
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://ssd.jpl.nasa.gov/planets/phys_par.html"
+      ],
+      "units": "m/s²"
+    },
+    {
+      "id": 400225,
+      "type": "ordering",
+      "correctAnswer": "الأرض ثم أورانوس ثم نبتون ثم المشتري",
+      "referenceValues": {
+        "الأرض": 5.97217,
+        "أورانوس": 86.8099,
+        "نبتون": 102.4092,
+        "المشتري": 1898.125
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://ssd.jpl.nasa.gov/planets/phys_par.html"
+      ],
+      "units": "10²⁴ kg"
+    },
+    {
+      "id": 400226,
+      "type": "ordering",
+      "correctAnswer": "عطارد ثم المريخ ثم الزهرة ثم الأرض",
+      "referenceValues": {
+        "عطارد": 2439.4,
+        "المريخ": 3389.5,
+        "الزهرة": 6051.8,
+        "الأرض": 6371.0084
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://ssd.jpl.nasa.gov/planets/phys_par.html"
+      ],
+      "units": "km"
+    },
+    {
+      "id": 400227,
+      "type": "ordering",
+      "correctAnswer": "المشتري ثم نبتون ثم الأرض ثم المريخ",
+      "referenceValues": {
+        "المشتري": 0.41354,
+        "نبتون": 0.67125,
+        "الأرض": 0.99726968,
+        "المريخ": 1.02595676
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://ssd.jpl.nasa.gov/planets/phys_par.html"
+      ],
+      "units": "Earth days"
+    },
+    {
+      "id": 400228,
+      "type": "ordering",
+      "correctAnswer": "سيريس ثم نبتون ثم بلوتو ثم إيريس",
+      "referenceValues": {
+        "سيريس": 4.61,
+        "نبتون": 164.79132,
+        "بلوتو": 247.92065,
+        "إيريس": 557.56
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://ssd.jpl.nasa.gov/planets/phys_par.html"
+      ],
+      "units": "Earth years"
+    },
+    {
+      "id": 400229,
+      "type": "ordering",
+      "correctAnswer": "بايونير 10 ثم فوياجر 2 ثم غاليليو ثم كاسيني",
+      "referenceValues": {
+        "بايونير 10": 1972,
+        "فوياجر 2": 1977,
+        "غاليليو": 1989,
+        "كاسيني": 1997
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://science.nasa.gov/planetary-science/programs/radioisotope-power-systems/missions/"
+      ],
+      "units": "launch year"
+    },
+    {
+      "id": 400230,
+      "type": "ordering",
+      "correctAnswer": "فايكينغ 1 ثم باثفايندر ثم كيوريوسيتي ثم بيرسيفيرانس",
+      "referenceValues": {
+        "فايكينغ 1": 1976,
+        "باثفايندر": 1997,
+        "كيوريوسيتي": 2012,
+        "بيرسيفيرانس": 2021
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://science.nasa.gov/planetary-science/programs/mars-exploration/mission-timeline/how-we-land-on-mars/"
+      ],
+      "units": "landing year"
+    },
+    {
+      "id": 400231,
+      "type": "ordering",
+      "correctAnswer": "هابل ثم تشاندرا ثم سبيتزر ثم جيمس ويب",
+      "referenceValues": {
+        "هابل": 1990,
+        "تشاندرا": 1999,
+        "سبيتزر": 2003,
+        "جيمس ويب": 2021
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://science.nasa.gov/universe/observatories/",
+        "https://science.nasa.gov/mission/webb/webb-mission-timeline/"
+      ],
+      "units": "launch year"
+    },
+    {
+      "id": 400232,
+      "type": "ordering",
+      "correctAnswer": "ساليوت 1 ثم سكايلاب ثم مير ثم محطة الفضاء الدولية",
+      "referenceValues": {
+        "ساليوت 1": 1971,
+        "سكايلاب": 1973,
+        "مير": 1986,
+        "محطة الفضاء الدولية": 1998
+      },
+      "direction": "ascending",
+      "sourceUrls": [
+        "https://www.nasa.gov/history/space-station-20th-historical-origins-of-iss/",
+        "https://ntrs.nasa.gov/api/citations/20160001032/downloads/20160001032.pdf",
+        "https://www.nasa.gov/podcasts/houston-we-have-a-podcast/the-international-space-station-begins-part-1/"
+      ],
+      "units": "first element launch year"
+    },
+    {
+      "id": 400233,
+      "type": "ordering",
+      "correctAnswer": "استثمار ثم استقرار ثم استقلال ثم استكشاف",
+      "referenceValues": {
+        "استقلال": 2,
+        "استثمار": 0,
+        "استقرار": 1,
+        "استكشاف": 3
+      },
+      "direction": "ascending",
+      "verification": "Compared letter by letter using the Arabic alphabetical order.",
+      "alphabet": "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"
+    },
+    {
+      "id": 400234,
+      "type": "ordering",
+      "correctAnswer": "تجارة ثم تجربة ثم تجريد ثم تجويد",
+      "referenceValues": {
+        "تجارة": 0,
+        "تجربة": 1,
+        "تجريد": 2,
+        "تجويد": 3
+      },
+      "direction": "ascending",
+      "verification": "Compared letter by letter using the Arabic alphabetical order.",
+      "alphabet": "ابتثجحخدذرزسشصضطظعغفقكلمنهوي"
+    }
+  ]
+}

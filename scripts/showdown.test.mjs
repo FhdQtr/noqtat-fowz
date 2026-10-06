@@ -9,6 +9,46 @@ const source = readFileSync(new URL('../functions/index.js', import.meta.url), '
 const realRequire = createRequire(new URL('../functions/index.js', import.meta.url));
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+test('sixty reviewed bank additions have verified answer mappings, unique image assets and valid orderings', () => {
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const review = JSON.parse(readFileSync(new URL('../src/data/bankSources-20261006.json', import.meta.url), 'utf8'));
+  const credits = JSON.parse(readFileSync(new URL('../public/img/landmarks-v3/SOURCES.json', import.meta.url), 'utf8'));
+  assert.equal(review.entries.length, 60);
+  for (const type of ['completion', 'image', 'ordering']) {
+    assert.equal(review.entries.filter((entry) => entry.type === type).length, 20);
+  }
+  const images = new Set();
+  for (const entry of review.entries) {
+    const q = bank.find((question) => question.id === entry.id);
+    assert.ok(q, `missing addition ${entry.id}`);
+    assert.equal(q.type, entry.type);
+    assert.equal('level' in q, false);
+    assert.equal(q.options.length, 4);
+    assert.equal(new Set(q.options).size, 4);
+    assert.equal(q.options[q.answer], entry.correctAnswer);
+    if (q.type === 'completion') {
+      assert.ok(entry.sourceUrls.length && entry.verifiedText);
+    } else if (q.type === 'image') {
+      assert.ok(!images.has(q.image));
+      assert.equal(bank.filter((question) => question.image === q.image).length, 1);
+      images.add(q.image);
+      const bytes = readFileSync(new URL(`../public${q.image}`, import.meta.url));
+      assert.equal(bytes.subarray(8, 12).toString(), 'WEBP');
+      const credit = credits.find((item) => item.image === q.image);
+      assert.ok(credit?.source && credit.author && credit.license);
+      assert.ok(entry.sourceUrls.length >= 2);
+    } else {
+      const pairs = Object.entries(entry.referenceValues).sort((a, b) => a[1] - b[1]);
+      if (entry.direction === 'descending') pairs.reverse();
+      assert.equal(q.options[q.answer], pairs.map(([label]) => label).join(' ثم '));
+      for (const option of q.options) {
+        assert.deepEqual(option.split(' ثم ').sort(), pairs.map(([label]) => label).sort());
+      }
+    }
+  }
+  assert.equal(images.size, 20);
+});
+
 test('reviewed October riddles have four unique choices, correct answer indexes and matching stats', async () => {
   const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
   const ids = [400160, 400161, 400162, 400163, 824, 400164, 400165, 1000, 400166, 400167, 851, 400168, 848, 400169, 400170, 834, 400171, 400172, 400173, 400174];

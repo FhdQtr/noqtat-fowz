@@ -9,6 +9,31 @@ const source = readFileSync(new URL('../functions/index.js', import.meta.url), '
 const realRequire = createRequire(new URL('../functions/index.js', import.meta.url));
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+test('reviewed October riddles have four unique choices, correct answer indexes and matching stats', async () => {
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const ids = [400160, 400161, 400162, 400163, 824, 400164, 400165, 1000, 400166, 400167, 851, 400168, 848, 400169, 400170, 834, 400171, 400172, 400173, 400174];
+  const correct = ['نجم', 'لا شيء', '9', 'الحرف', 'الإبرة', 'ملك الشطرنج', 'بحر الشعر', 'الحذاء', 'الرماد', 'شجرة العائلة', 'أنت', 'الفلفل الحار', 'الشاي', 'حرف الراء', '(1, 2, 3)', 'الجوع', 'أرجل الطاولة', 'العمر', 'العقل', 'القلم'];
+  ids.forEach((id, i) => {
+    const question = bank.find((q) => q.id === id);
+    assert.ok(question, `missing reviewed riddle ${id}`);
+    assert.equal(question.type, 'riddle');
+    assert.equal(question.category, 'riddles');
+    assert.equal(Boolean(question.disabled), false);
+    assert.equal('level' in question, false);
+    assert.equal(question.options.length, 4);
+    assert.equal(new Set(question.options).size, 4);
+    assert.equal(question.options[question.answer], correct[i]);
+  });
+  assert.equal(1 + 2 + 3, 1 * 2 * 3);
+  assert.equal(2 + 6 + 1, 9);
+  assert.equal('نجم'.padStart(4, 'م'), 'منجم');
+  assert.equal('الحرف'.slice(2), 'حرف');
+  assert.equal('باريس'[2], 'ر');
+  assert.equal('عقل'.slice(1), 'قل');
+  const stats = await import('../src/data/questionStats.ts');
+  assert.equal(stats.BUILTIN_QUESTION_STATS.riddle, bank.filter((q) => q.type === 'riddle' && !q.disabled).length);
+});
+
 function fixture() {
   return {
     matches: { A234: {

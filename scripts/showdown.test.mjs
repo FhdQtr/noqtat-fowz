@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import ts from 'typescript';
@@ -687,6 +688,47 @@ test('invalid bulk ids leave all availability unchanged', async () => {
   await assert.rejects(h.adminCall('setAdminQuestionAvailability', { ids: [questions[0].id, 'bad'], disabled: true }), { code: 'invalid-argument' });
   await assert.rejects(h.adminCall('setAdminQuestionAvailability', { ids: [], disabled: true }), { code: 'invalid-argument' });
   assert.equal(h.data.questionExclusions, undefined);
+});
+
+test('admin inventory counts exactly the playable bank and explains a 739 to 723 difference', async () => {
+  const h = harness();
+  const base = await h.adminCall('getAdminQuestions');
+  const builtin = base.questions.filter((q) => q.type === 'multiple_choice' && !q.disabled && !q.custom);
+  assert.equal(builtin.length, 739);
+  h.data.questionDeletions = Object.fromEntries(builtin.slice(0, 10).map((q) => [q.id, true]));
+  h.data.questionExclusions = Object.fromEntries(builtin.slice(10, 16).map((q) => [q.id, true]));
+  // A deleted and excluded marker must not subtract the same question twice.
+  h.data.questionExclusions[builtin[0].id] = true;
+  const catalog = await h.adminCall('getAdminQuestions');
+  const counts = catalog.inventory.multiple_choice;
+  assert.equal(counts.builtin, 789);
+  assert.equal(counts.legacyDisabled, 50);
+  assert.equal(counts.deleted, 10);
+  assert.equal(counts.excluded, 6);
+  assert.equal(counts.available, 723);
+  const bank = await h.helpers.questionBank();
+  for (const [type, inventory] of Object.entries(catalog.inventory)) {
+    assert.equal(inventory.available, bank.filter((q) => q.type === type && !q.disabled).length);
+    assert.equal(inventory.available, catalog.questions.filter((q) => q.type === type && !q.disabled).length);
+    assert.equal(inventory.available, inventory.builtin - inventory.legacyDisabled - inventory.deleted - inventory.excluded + inventory.customAvailable);
+  }
+  const questions = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const expectedRevision = createHash('sha256').update(JSON.stringify(questions)).digest('hex');
+  assert.equal(catalog.bankRevision, expectedRevision);
+  assert.equal(JSON.parse(readFileSync(new URL('../src/data/questionBankVersion.json', import.meta.url), 'utf8')).sha256, expectedRevision);
+  assert.ok(catalog.questions.every((q) => !('answer' in q) && !('options' in q)));
+});
+
+test('admin inventory refreshes after custom additions and permanent deletion', async () => {
+  const h = harness();
+  h.data.customQuestions = { 900001: { id: 900001, type: 'multiple_choice', question: 'خاص', options: ['أ', 'ب'], answer: 0 } };
+  let catalog = await h.adminCall('getAdminQuestions');
+  assert.equal(catalog.inventory.multiple_choice.customAvailable, 1);
+  assert.equal(catalog.inventory.multiple_choice.available, 740);
+  await h.adminCall('deleteAdminQuestions', { ids: [900001] });
+  catalog = await h.adminCall('getAdminQuestions');
+  assert.equal(catalog.inventory.multiple_choice.customAvailable, 0);
+  assert.equal(catalog.inventory.multiple_choice.available, 739);
 });
 
 test('solo challenge never draws questions excluded by admin', async () => {

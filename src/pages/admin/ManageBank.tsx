@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCustomQuestions, useCustomTypes } from "../../lib/useCustomBank";
 import { type CustomQuestion } from "../../lib/customBank";
-import { getAdminQuestions, deleteAdminQuestions, type AdminQuestion } from "../../lib/matchApi";
+import { getAdminQuestionCatalog, deleteAdminQuestions, type AdminQuestionCatalog } from "../../lib/matchApi";
+import bankVersion from "../../data/questionBankVersion.json";
 import { typeLabel } from "../../types/game";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
@@ -13,7 +14,8 @@ const PAGE_SIZE = 48;
 export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => void }) {
   const customTypes = useCustomTypes();
   const customQs = useCustomQuestions();
-  const [questions, setQuestions] = useState<AdminQuestion[]>([]);
+  const [catalog, setCatalog] = useState<AdminQuestionCatalog>({ questions: [] });
+  const questions = catalog.questions;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -24,26 +26,37 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [deletePrevious, setDeletePrevious] = useState(false);
+  const staleBank = !loading && !error && catalog.bankRevision !== bankVersion.sha256;
+  const inventory = catalog.inventory?.[fType];
 
   const reload = async () => {
     setLoading(true); setError("");
-    try { setQuestions(await getAdminQuestions()); setSelected(new Set()); setPage(0); }
+    try { setCatalog(await getAdminQuestionCatalog()); setSelected(new Set()); setPage(0); }
     catch { setError("تعذّر تحميل الأسئلة. أعد المحاولة، وتأكد من تحديث gameAction في Firebase."); }
     finally { setLoading(false); }
   };
   useEffect(() => {
     let alive = true;
-    void getAdminQuestions().then((qs) => { if (alive) setQuestions(qs); }).catch(() => {
+    setLoading(true);
+    void getAdminQuestionCatalog().then((result) => { if (alive) { setCatalog(result); setError(""); } }).catch(() => {
       if (alive) setError("تعذّر تحميل الأسئلة. أعد المحاولة، وتأكد من تحديث gameAction في Firebase.");
     }).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [customQs]);
 
   const sections = useMemo(() => Array.from(new Set([...questions.map((q) => q.type), ...customTypes.map((t) => t.id)]))
     .sort((a, b) => typeLabel(a).localeCompare(typeLabel(b), "ar")), [questions, customTypes]);
   const filtered = useMemo(() => questions.filter((q) => q.type === fType && !q.disabled
     && (!search.trim() || q.question.includes(search.trim()))), [questions, fType, search]);
-  const previousIds = questions.filter((q) => q.disabled).map((q) => q.id);
+  const { availableCounts, previousIds } = useMemo(() => {
+    const availableCounts: Record<string, number> = {};
+    const previousIds: number[] = [];
+    for (const question of questions) {
+      if (question.disabled) previousIds.push(question.id);
+      else availableCounts[question.type] = (availableCounts[question.type] || 0) + 1;
+    }
+    return { availableCounts, previousIds };
+  }, [questions]);
   const deleteIds = deletePrevious ? previousIds : Array.from(selected);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -60,9 +73,8 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
     const ids = deleteIds;
     try {
       await deleteAdminQuestions(ids);
-      const changed = new Set(ids);
-      setQuestions((old) => old.filter((q) => !changed.has(q.id)));
       setSelected(new Set()); setConfirm(false);
+      await reload();
       setNotice(`تم حذف ${ids.length} سؤال نهائيًا من اللعب ولوحة التحكم`);
     } catch { setError("تعذّر تأكيد الحذف. أعد المحاولة أو حدّث القائمة للتحقق."); }
     finally { setBusy(false); }
@@ -77,14 +89,20 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
       </div>
     </div>
     {error && <p role="alert" className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</p>}
+    {staleBank && <p role="alert" className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm leading-7 text-amber-100">{catalog.bankRevision ? "نسخة بنك الأسئلة في Firebase لا تطابق نسخة الموقع الحالية." : "نسخة Firebase الحالية لا تدعم التحقق من تطابق بنك الأسئلة وتفصيل أعداده."} الأعداد أدناه تخص نسخة الخادم المتاحة للعب؛ حدّث gameAction ثم اضغط تحديث الأسئلة.</p>}
     {notice && <p role="status" className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-200">{notice}</p>}
     <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
       <label className="block text-sm font-bold">القسم
-        <select aria-label="القسم" value={fType} disabled={busy} onChange={(e) => changeFilter(() => setFType(e.target.value))} className="mt-2 h-12 w-full rounded-xl border border-gold/30 bg-night px-3 text-base">
+        <select aria-label="القسم" value={fType} disabled={busy || loading} onChange={(e) => changeFilter(() => setFType(e.target.value))} className="mt-2 h-12 w-full rounded-xl border border-gold/30 bg-night px-3 text-base">
           {!sections.includes(fType) && <option value={fType}>{typeLabel(fType)}</option>}
-          {sections.map((type) => <option key={type} value={type}>{typeLabel(type)} ({questions.filter((q) => q.type === type && !q.disabled).length})</option>)}
+          {sections.map((type) => <option key={type} value={type}>{typeLabel(type)} ({availableCounts[type] || 0})</option>)}
         </select>
       </label>
+      {!loading && inventory && <div className="text-sm leading-7 text-muted-foreground">
+        <p>المتاح للعب: {inventory.available} سؤال · الأساسي الصالح قبل الحذف والاستبعاد: {inventory.builtin - inventory.legacyDisabled}</p>
+        <p>محذوف من الأساسي: {inventory.deleted} · مستبعد من الأساسي: {inventory.excluded} · مضاف ومتاح: {inventory.customAvailable}</p>
+        <p className="text-xs">الأسئلة القديمة المعطّلة: {inventory.legacyDisabled}، ولا تدخل في العدد المتاح. البحث يصفّي القائمة فقط ولا يغيّر عدد القسم.</p>
+      </div>}
       <div className="grid gap-2">
         <div className="relative"><Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" /><Input aria-label="بحث في السؤال" disabled={busy} value={search} onChange={(e) => changeFilter(() => setSearch(e.target.value))} placeholder="ابحث في السؤال" className="h-11 border-white/10 bg-night pr-9" /></div>
       </div>

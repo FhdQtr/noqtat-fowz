@@ -40,7 +40,26 @@ export interface AdminQuestion {
 }
 
 export async function getAdminQuestions() {
-  return (await gameAction<{ questions: AdminQuestion[] }>("getAdminQuestions", {})).questions;
+  return (await getAdminQuestionCatalog()).questions;
+}
+
+export interface QuestionInventory {
+  builtin: number;
+  legacyDisabled: number;
+  deleted: number;
+  excluded: number;
+  customAvailable: number;
+  available: number;
+}
+
+export interface AdminQuestionCatalog {
+  questions: AdminQuestion[];
+  bankRevision?: string;
+  inventory?: Record<string, QuestionInventory>;
+}
+
+export async function getAdminQuestionCatalog() {
+  return gameAction<AdminQuestionCatalog>("getAdminQuestions", {});
 }
 
 export async function deleteAdminQuestions(ids: number[]) {

@@ -229,7 +229,7 @@ function rotationAssetKey(question) {
   return createHash("sha256").update(asset).digest("hex");
 }
 
-async function questionBank(includeCustom = true) {
+async function questionBankState(includeCustom = true) {
   const [customSnapshot, excludedSnapshot, deletedSnapshot] = await Promise.all([
     includeCustom ? db.ref("customQuestions").get() : Promise.resolve(null),
     db.ref("questionExclusions").get(),
@@ -238,17 +238,40 @@ async function questionBank(includeCustom = true) {
   const custom = customSnapshot?.val() || {};
   const excluded = excludedSnapshot.val() || {};
   const deleted = deletedSnapshot.val() || {};
-  return [...QUESTIONS, ...Object.values(custom).filter((q) => q.type !== "flag" || Number(q.createdAt) >= FLAG_BANK_REFRESH_AT).map((q) => ({ ...q, options: q.options || [] }))]
+  const bank = [...QUESTIONS, ...Object.values(custom).filter((q) => q.type !== "flag" || Number(q.createdAt) >= FLAG_BANK_REFRESH_AT).map((q) => ({ ...q, options: q.options || [] }))]
     .filter((q) => deleted[q.id] !== true)
     .map((q) => { const { level: _legacyLevel, ...question } = q; return { ...question, disabled: q.disabled === true || excluded[q.id] === true }; });
+  return { bank, excluded, deleted };
+}
+
+async function questionBank(includeCustom = true) {
+  return (await questionBankState(includeCustom)).bank;
 }
 
 async function adminQuestions(action, data) {
   if (action === "getAdminQuestions") {
-    const bank = await questionBank();
+    const { bank, excluded, deleted } = await questionBankState();
     const legacyDisabled = new Set(QUESTIONS.filter((q) => q.disabled).map((q) => q.id));
     const builtinIds = new Set(QUESTIONS.map((q) => q.id));
-    return { questions: bank.filter((q) => !legacyDisabled.has(q.id)).map((q) => ({
+    const inventory = {};
+    const section = (type) => inventory[type] ||= { builtin: 0, legacyDisabled: 0, deleted: 0, excluded: 0, customAvailable: 0, available: 0 };
+    for (const q of QUESTIONS) {
+      const counts = section(q.type);
+      counts.builtin++;
+      // Mutually exclusive reasons: do not count an inactive question twice.
+      if (q.disabled) counts.legacyDisabled++;
+      else if (deleted[q.id] === true) counts.deleted++;
+      else if (excluded[q.id] === true) counts.excluded++;
+    }
+    for (const q of bank) {
+      const counts = section(q.type);
+      if (!q.disabled) {
+        counts.available++;
+        if (!builtinIds.has(q.id)) counts.customAvailable++;
+      }
+    }
+    return { bankRevision: createHash("sha256").update(JSON.stringify(QUESTIONS)).digest("hex"), inventory,
+      questions: bank.filter((q) => !legacyDisabled.has(q.id)).map((q) => ({
       id: q.id, type: q.type, question: q.question,
       ...(q.image ? { image: q.image } : {}), ...(q.video ? { video: q.video } : {}),
       disabled: q.disabled === true, custom: !builtinIds.has(q.id),

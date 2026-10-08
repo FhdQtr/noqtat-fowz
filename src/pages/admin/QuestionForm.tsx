@@ -251,7 +251,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
             </label>
             {imageData && (
               <div className="relative mt-3 w-full max-w-xs mx-auto">
-                <img src={imageData} alt="معاينة" className="rounded-2xl border-2 border-gold/40 w-full" />
+                <img src={imageData} alt="معاينة" className={`rounded-2xl border-2 border-gold/40 w-full ${typeId === "brand" ? "aspect-[3/2] object-contain bg-white p-6" : ""}`} />
                 <button
                   onClick={() => setImageData(null)}
                   className="absolute top-2 left-2 rounded-full bg-night/80 border border-maroon/60 p-1.5 text-maroon-light"

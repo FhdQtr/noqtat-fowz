@@ -118,7 +118,7 @@ export default function ManageBank({ onEdit }: { onEdit: (q: CustomQuestion) => 
         {visible.map((q) => <div key={q.id} className={`relative overflow-hidden rounded-2xl border transition-colors ${selected.has(q.id) ? "border-gold bg-gold/15 ring-1 ring-gold" : "border-white/10 bg-white/5"}`}>
           <label className={`block h-full cursor-pointer p-4 ${busy ? "pointer-events-none opacity-60" : ""}`}>
             <div className="mb-3 flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">السؤال #{q.id}</span><span className="relative flex h-7 w-7 items-center justify-center"><input type="checkbox" aria-label={`تحديد السؤال ${q.id}: ${q.question}`} checked={selected.has(q.id)} disabled={busy} onChange={() => toggle(q.id)} className="h-7 w-7 cursor-pointer accent-[#d5b45d]" />{selected.has(q.id) && <Check aria-hidden="true" className="pointer-events-none absolute h-4 w-4 text-night" />}</span></div>
-            {q.image && <img src={q.image} alt={q.question} loading="lazy" className="mb-3 aspect-video w-full rounded-xl bg-night object-contain" />}
+            {q.image && <img src={q.image} alt={q.question} loading="lazy" className={`mb-3 aspect-video w-full rounded-xl object-contain ${q.type === "brand" ? "bg-white p-6" : "bg-night"}`} />}
             {q.video && <p className="mb-3 flex items-center gap-2 text-sm text-gold-light"><Video className="h-4 w-4" /> سؤال فيديو</p>}
             <p className="break-words text-base font-bold leading-7">{q.question}</p>
           </label>

@@ -167,6 +167,87 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
 }
 
+test('twenty logo questions have unique native assets and verified private presenter metadata', async () => {
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const logos = bank.filter((q) => q.type === 'brand' && !q.disabled);
+  const sources = JSON.parse(readFileSync(new URL('../src/data/brandSources.json', import.meta.url), 'utf8'));
+  assert.equal(logos.length, 20);
+  assert.equal(new Set(logos.map((q) => q.image)).size, 20);
+  const stats = await import('../src/data/questionStats.ts');
+  assert.equal(stats.BUILTIN_QUESTION_STATS.brand, 20);
+  for (const q of logos) {
+    const credit = sources.find((s) => s.questionId === q.id);
+    assert.ok(credit?.industrySource.startsWith('https://'));
+    assert.ok(credit.downloadUrl.startsWith('https://'));
+    assert.equal(q.options.length, 4);
+    assert.equal(new Set(q.options).size, 4);
+    assert.ok(q.brandInfo.acceptedNames.includes(q.options[q.answer]));
+    assert.ok(q.brandInfo.industry && q.brandInfo.name);
+    assert.equal('level' in q, false);
+    const svg = readFileSync(new URL(`../public${q.image}`, import.meta.url), 'utf8');
+    assert.match(svg, /<svg/);
+    assert.doesNotMatch(svg, /<(?:title|desc|text|metadata)\b|<script\b|aria-label=/);
+    assert.equal(svg.toLowerCase().includes(credit.brand.toLowerCase()), false);
+  }
+});
+
+function logoFixture() {
+  const h = harness();
+  Object.assign(h.match(), { enabledTypes: ['brand'], questionsPerTeam: 8, totalRounds: 16, timer: 30, turnIndex: 0,
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [], usedAssets: [] } });
+  return h;
+}
+
+test('logo name and industry are available only to the presenter, with hidden contestant choices', async () => {
+  const h = logoFixture();
+  assert.equal((await h.call('chooseType', 'user1', { type: 'brand' })).status, 'accepted');
+  const q = h.match().state.question;
+  assert.equal(q.answer, -1);
+  assert.equal(q.optionsHidden, true);
+  assert.equal(q.options.length, 0);
+  assert.equal('brandInfo' in q, false);
+  assert.equal(h.match().state.viewUntil, null);
+  await assert.rejects(h.call('getHostAnswer', 'user1'), { code: 'permission-denied' });
+  const details = await h.call('getHostAnswer');
+  assert.equal(details.questionId, q.id);
+  assert.ok(details.brandInfo.acceptedNames.includes(details.answerText));
+  assert.ok(details.brandInfo.industry);
+  h.data.matchSecrets.A234.questionId += 1;
+  const stale = await h.call('getHostAnswer');
+  assert.equal(stale.brandInfo, null);
+  assert.equal(stale.answerText, null);
+});
+
+test('logo assistance requires the active team and awards half points without exposing industry', async () => {
+  const h = logoFixture();
+  await h.call('chooseType', 'user1', { type: 'brand' });
+  const value = h.match().state.questionValue;
+  await assert.rejects(h.call('useAssist', 'user2', { teamCode: 'A234-1' }), { code: 'permission-denied' });
+  assert.equal((await h.call('useAssist', 'user1', { teamCode: 'A234-1' })).accepted, true);
+  assert.equal(h.match().state.question.options.length, 4);
+  assert.equal('brandInfo' in h.match().state.question, false);
+  await h.call('judgeVerbal', 'host', { correct: true });
+  assert.equal(h.match().teams['A234-1'].score, 100 + Math.round(value / 2));
+  assert.equal('brandInfo' in h.match().state.question, false);
+});
+
+test('swapping a logo refreshes presenter details and avoids reuse for the other team', async () => {
+  const h = logoFixture();
+  await h.call('chooseType', 'user1', { type: 'brand' });
+  const first = clone(h.match().state.question);
+  Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { swapQuestion: true } });
+  assert.equal((await h.call('usePowerCard', 'user1', { card: 'swapQuestion', teamCode: 'A234-1' })).accepted, true);
+  const second = clone(h.match().state.question);
+  assert.notEqual(second.image, first.image);
+  assert.equal('brandInfo' in second, false);
+  const details = await h.call('getHostAnswer');
+  assert.equal(details.questionId, second.id);
+  assert.ok(details.brandInfo.industry);
+  Object.assign(h.match().state, { phase: 'choose', targetTeam: 'A234-2', question: null, selectionRequestId: null });
+  await h.call('chooseType', 'user2', { type: 'brand' });
+  assert.ok(![first.image, second.image].includes(h.match().state.question.image));
+});
+
 test('first answer persists despite an empty transaction cache', async () => {
   const h = harness();
   assert.equal((await h.answer(1)).status, 'accepted');

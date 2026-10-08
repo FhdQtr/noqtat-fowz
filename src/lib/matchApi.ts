@@ -450,15 +450,33 @@ export async function startQuestionTimer(matchCode: string) {
   await gameAction("startQuestionTimer", { matchCode });
 }
 
-export async function getHostAnswer(matchCode: string): Promise<string | null> {
+export interface BrandInfo {
+  name: string;
+  industry: string;
+  acceptedNames: string[];
+}
+
+export interface HostAnswerDetails {
+  questionId: number | null;
+  answerText: string | null;
+  brandInfo?: BrandInfo | null;
+}
+
+export async function getHostAnswerDetails(matchCode: string, expectedQuestionId?: number): Promise<HostAnswerDetails | null> {
   // حالة السؤال تصل لحظياً قبل كتابة السر بجزء بسيط من الثانية أحياناً.
   // نعيد القراءة فترة قصيرة حتى لا تبقى إجابة العلم فارغة عند المقدم.
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const result = await gameAction<{ answerText: string | null }>("getHostAnswer", { matchCode });
-    if (result.answerText !== null) return result.answerText;
+    const result = await gameAction<HostAnswerDetails>("getHostAnswer", { matchCode });
+    // توافق مؤقت مع وظائف Firebase السابقة حتى تُنشر الوظائف الجديدة.
+    if (result.questionId === undefined && result.answerText !== null) return { ...result, questionId: expectedQuestionId ?? null };
+    if (result.answerText !== null && (expectedQuestionId === undefined || result.questionId === expectedQuestionId)) return result;
     if (attempt < 4) await new Promise((resolve) => window.setTimeout(resolve, 150 * (attempt + 1)));
   }
   return null;
+}
+
+export async function getHostAnswer(matchCode: string): Promise<string | null> {
+  return (await getHostAnswerDetails(matchCode))?.answerText ?? null;
 }
 
 /**

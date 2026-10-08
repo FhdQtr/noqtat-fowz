@@ -10,7 +10,7 @@ import {
   trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
-import { TEAM_COLORS, typeLabel, viewSecondsFor, questionTimerSeconds, canPassQuestion } from "../types/game";
+import { TEAM_COLORS, typeLabel, viewSecondsFor, questionTimerSeconds, canPassQuestion, usesVerbalChoices } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import { QuestionMeta } from "../components/QuestionCard";
 import LinearTimer from "../components/LinearTimer";
@@ -526,7 +526,7 @@ export default function Play() {
                         {/* صورة السؤال (خمّن الصورة / المعالم) تظهر للفريق صاحب الدور */}
                         {q.image && (!visual || viewing) && (
                           <div className="mt-4 overflow-hidden rounded-xl border-2 border-gold/40">
-                            <img src={q.image} alt="صورة السؤال" className="w-full object-cover aspect-[3/2]" />
+                            <img src={q.image} alt="صورة السؤال" className={`w-full aspect-[3/2] ${q.type === "brand" ? "object-contain bg-white p-8" : "object-cover"}`} />
                           </div>
                         )}
                         <h2 className="mt-4 text-center font-cairo font-extrabold text-lg leading-relaxed">
@@ -538,7 +538,7 @@ export default function Play() {
 
                     {/* التمثيل: بلا خيارات — تخمين شفهي */}
                     {q.type === "acting" ? null : /* الأعلام: شفهي أولاً أو مساعدة الخيارات */
-                    q.type === "flag" && !st!.assistUsed ? (
+                    usesVerbalChoices(q.type) && !st!.assistUsed ? (
                       <div className="glass-card !border-gold/60 p-5 flex flex-col items-center gap-4 text-center">
                         <MessageSquare className="w-8 h-8 text-gold-light" />
                         <p className="font-cairo font-bold leading-relaxed">
@@ -670,13 +670,13 @@ export default function Play() {
                     <div className="glass-card p-5 opacity-90">
                       <QuestionMeta q={q} />
                       {q.image && (!visual || viewing) && (
-                        <img src={q.image} alt="" className="mt-3 w-full rounded-xl object-cover aspect-[3/2] border border-gold-faint/40" />
+                        <img src={q.image} alt="" className={`mt-3 w-full rounded-xl aspect-[3/2] border border-gold-faint/40 ${q.type === "brand" ? "object-contain bg-white p-8" : "object-cover"}`} />
                       )}
                       <h2 className="mt-4 text-center font-cairo font-extrabold text-lg leading-relaxed">
                         {q.question}
                       </h2>
                     </div>
-                    {!(q.type === "flag" && !st!.assistUsed) && q.options.length > 0 && (
+                    {!(usesVerbalChoices(q.type) && !st!.assistUsed) && q.options.length > 0 && (
                       <div className="m-answer-grid" data-count={q.options.length} data-size="regular">
                         {q.options.map((opt, i) => (
                           <div

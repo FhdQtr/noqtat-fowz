@@ -1,4 +1,4 @@
-import { Sparkles, Swords } from "lucide-react";
+import { Sparkles, Swords, Scan } from "lucide-react";
 import type { QuestionType } from "../types/game";
 
 const TYPE_ICONS: Record<string, string> = {
@@ -19,6 +19,7 @@ interface QuestionTypeIconProps {
 }
 
 export default function QuestionTypeIcon({ type, className = "h-12 w-12" }: QuestionTypeIconProps) {
+  if (type === "brand") return <span className={`inline-flex items-center justify-center rounded-2xl bg-gold/10 text-gold ${className}`}><Scan className="h-2/3 w-2/3" /></span>;
   if (type === "punishment") return <span className={`inline-flex items-center justify-center rounded-2xl bg-maroon/20 text-gold ${className}`}><Swords className="h-2/3 w-2/3" /></span>;
   const src = TYPE_ICONS[type];
   if (!src) {

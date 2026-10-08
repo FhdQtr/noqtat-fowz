@@ -1,0 +1,219 @@
+[
+  {
+    "questionId": 400235,
+    "brand": "Corsair",
+    "image": "/img/brands/01.svg",
+    "industrySource": "https://www.corsair.com/eu/en/s/about",
+    "index": 1,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/corsair.svg",
+    "source": "https://www.corsair.com",
+    "color": "#000000",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400236,
+    "brand": "Razer",
+    "image": "/img/brands/02.svg",
+    "industrySource": "https://www.razer.com/",
+    "index": 2,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/razer.svg",
+    "source": "https://press.razer.com",
+    "color": "#00FF00",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400237,
+    "brand": "ASICS",
+    "image": "/img/brands/03.svg",
+    "industrySource": "https://me.asics.com/en-qa/",
+    "index": 3,
+    "downloadUrl": "https://upload.wikimedia.org/wikipedia/commons/b/b1/Asics_Logo.svg",
+    "source": "https://commons.wikimedia.org/wiki/File:Asics_Logo.svg",
+    "color": "preserved from SVG",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400238,
+    "brand": "The North Face",
+    "image": "/img/brands/04.svg",
+    "industrySource": "https://www.thenorthface.com/en-us",
+    "index": 4,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/thenorthface.svg",
+    "source": "https://www.thenorthface.com",
+    "color": "#000000",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400239,
+    "brand": "Montblanc",
+    "image": "/img/brands/05.svg",
+    "industrySource": "https://www.montblanc.com/en-qa",
+    "source": "https://www.montblanc.com/en-qa",
+    "downloadUrl": "https://www.montblanc.com/on/demandware.static/-/Library-Sites-WWSharedLibrary/default/dwfe8eba39/images/menu/Snowcap%20(1).svg",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400240,
+    "brand": "Under Armour",
+    "image": "/img/brands/06.svg",
+    "industrySource": "https://www.underarmour.com/en-us",
+    "index": 6,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/underarmour.svg",
+    "source": "https://www.underarmour.com/en-us",
+    "color": "#1D1D1D",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400241,
+    "brand": "New Balance",
+    "image": "/img/brands/07.svg",
+    "industrySource": "https://www.newbalance.com/",
+    "index": 7,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/newbalance.svg",
+    "source": "https://www.newbalance.com",
+    "color": "#CF0A2C",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400242,
+    "brand": "Huawei",
+    "image": "/img/brands/08.svg",
+    "industrySource": "https://www.huawei.com/en/",
+    "index": 8,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/huawei.svg",
+    "source": "https://e.huawei.com/ph/material/partner/0a72728b864949c48b22106454352483",
+    "color": "#FF0000",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400243,
+    "brand": "Maserati",
+    "image": "/img/brands/09.svg",
+    "industrySource": "https://www.maserati.com/qa/en",
+    "index": 9,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/maserati.svg",
+    "source": "https://www.stellantis.com/en/brands/maserati",
+    "color": "#0C2340",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400244,
+    "brand": "Citroën",
+    "image": "/img/brands/10.svg",
+    "industrySource": "https://www.citroen.co.uk/",
+    "index": 10,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/citroen.svg",
+    "source": "https://www.stellantis.com/en/brands/citroen",
+    "color": "#DA291C",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400245,
+    "brand": "Lacoste",
+    "image": "/img/brands/11.svg",
+    "industrySource": "https://corporate.lacoste.com/about/",
+    "index": 11,
+    "downloadUrl": "https://upload.wikimedia.org/wikipedia/en/4/43/Lacoste_logo.svg",
+    "source": "https://en.wikipedia.org/wiki/File:Lacoste_logo.svg",
+    "color": "preserved from SVG",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400246,
+    "brand": "Puma",
+    "image": "/img/brands/12.svg",
+    "industrySource": "https://us.puma.com/us/en",
+    "index": 12,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/puma.svg",
+    "source": "https://us.puma.com",
+    "color": "#242B2F",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400247,
+    "brand": "Rolex",
+    "image": "/img/brands/13.svg",
+    "industrySource": "https://www.rolex.com/",
+    "source": "https://www.rolex.com/",
+    "downloadUrl": "https://www.rolex.com/",
+    "note": "Native crown SVG extracted from official homepage",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400248,
+    "brand": "NVIDIA",
+    "image": "/img/brands/14.svg",
+    "industrySource": "https://www.nvidia.com/en-us/",
+    "index": 14,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/nvidia.svg",
+    "source": "https://www.nvidia.com/en-us",
+    "color": "#76B900",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400249,
+    "brand": "Motorola",
+    "image": "/img/brands/15.svg",
+    "industrySource": "https://www.motorola.com/",
+    "index": 15,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/motorola.svg",
+    "source": "https://motorola-global-portal-de.custhelp.com",
+    "color": "#E1140A",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400250,
+    "brand": "Logitech G",
+    "image": "/img/brands/16.svg",
+    "industrySource": "https://www.logitechg.com/en-us",
+    "index": 16,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/logitechg.svg",
+    "source": "https://www.logitechg.com",
+    "color": "#00B8FC",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400251,
+    "brand": "Peugeot",
+    "image": "/img/brands/17.svg",
+    "industrySource": "https://www.peugeot.co.uk/",
+    "index": 17,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/peugeot.svg",
+    "source": "https://www.peugeot.co.uk",
+    "color": "#000000",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400252,
+    "brand": "Renault",
+    "image": "/img/brands/18.svg",
+    "industrySource": "https://www.renault.com/",
+    "index": 18,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/renault.svg",
+    "source": "https://media.renaultgroup.com",
+    "color": "#FFCC33",
+    "modifications": "Removed written wordmarks and metadata; retained symbol colors. Renault emblem uses its black variant."
+  },
+  {
+    "questionId": 400253,
+    "brand": "Mitsubishi",
+    "image": "/img/brands/19.svg",
+    "industrySource": "https://www.mitsubishi.com/en/profile/group/mark/",
+    "index": 19,
+    "downloadUrl": "https://raw.githubusercontent.com/simple-icons/simple-icons/13.21.0/icons/mitsubishi.svg",
+    "source": "https://www.mitsubishi.com",
+    "color": "#E60012",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  },
+  {
+    "questionId": 400254,
+    "brand": "Shell",
+    "image": "/img/brands/20.svg",
+    "industrySource": "https://www.shell.com/who-we-are.html",
+    "index": 20,
+    "downloadUrl": "https://upload.wikimedia.org/wikipedia/en/e/e8/Shell_logo.svg",
+    "source": "https://en.wikipedia.org/wiki/File:Shell_logo.svg",
+    "color": "preserved from SVG",
+    "modifications": "Removed written wordmarks and descriptive metadata; retained original symbol colors."
+  }
+]

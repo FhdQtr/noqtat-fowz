@@ -467,21 +467,30 @@ async function shortTeamCodes(id, access) {
   return result;
 }
 
-function publicQuestion(question) { return { ...question, answer: -1 }; }
+function usesVerbalChoices(type) { return type === "flag" || type === "brand"; }
+function publicQuestion(question) {
+  const { brandInfo: _privateBrandInfo, ...visible } = question;
+  return { ...visible, answer: -1 };
+}
 function protectedQuestion(question) {
   const visible = publicQuestion(question);
   if (question.type === "memory") return { ...visible, question: "", options: [], promptHidden: true };
-  if (question.type === "flag") return { ...visible, options: [], optionsHidden: true };
+  if (usesVerbalChoices(question.type)) return { ...visible, options: [], optionsHidden: true };
   return visible;
 }
 function reprotectQuestionForAttempt(question) {
   if (!question) return question;
   if (question.type === "memory") return { ...question, question: "", options: [], promptHidden: true };
-  if (question.type === "flag") return { ...question, options: [], optionsHidden: true };
+  if (usesVerbalChoices(question.type)) return { ...question, options: [], optionsHidden: true };
   return question;
 }
 function questionSecret(question) {
-  return { questionId: question.id, answer: question.answer, question: question.question, options: question.options };
+  return { questionId: question.id, answer: question.answer, question: question.question, options: question.options,
+    ...(question.type === "brand" && question.brandInfo ? { brandInfo: {
+      name: text(question.brandInfo.name, 100), industry: text(question.brandInfo.industry, 300),
+      acceptedNames: (Array.isArray(question.brandInfo.acceptedNames) ? question.brandInfo.acceptedNames : []).map((name) => text(name, 100)),
+    } } : {}),
+  };
 }
 function questionAssetKey(question) {
   return question?.image ? `image:${String(question.image).toLowerCase()}` : `question:${question?.id}`;
@@ -677,7 +686,7 @@ async function joinTeam(uid, data) {
 
 async function startChallenge(uid) {
   const bank = await questionBank(false);
-  const selected = randomOrder(bank.filter((q) => !q.disabled && !["flag", "acting"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0)).slice(0, 100).map(shuffled);
+  const selected = randomOrder(bank.filter((q) => !q.disabled && !["flag", "brand", "acting"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0)).slice(0, 100).map(shuffled);
   if (selected.length < 100) fail("resource-exhausted", "بنك التحدي لا يحتوي أسئلة كافية");
   const sessionId = `${now()}_${randomInt(100000, 999999)}`;
   await db.ref(`challengeSecrets/${uid}`).set({ [sessionId]: { createdAt: now(), answers: selected.map((q) => q.answer), ids: selected.map((q) => q.id) } });
@@ -808,7 +817,7 @@ async function startShowdown(id, match) {
   const usedAssets = new Set(match.state.usedAssets || []);
   const eligible = (await questionBank()).filter((question) =>
     !question.disabled
-    && question.type !== "flag"
+    && !usesVerbalChoices(question.type)
     && Array.isArray(question.options)
     && question.options.length === 4
     && (wantsImage ? Boolean(question.image) : allowedTextTypes.has(question.type))
@@ -1135,7 +1144,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       event.targetTeam = targetTeam;
     } else if (card === "pickPlayer") {
       if (state.phase !== "question" || !targetTeam || targetTeam === teamCode || state.answer || match.answerMode === "host") return { accepted: false, reason: "timing" };
-      if (state.question?.type === "acting" || (state.question?.type === "flag" && !state.assistUsed)) return { accepted: false, reason: "verbal" };
+      if (state.question?.type === "acting" || (usesVerbalChoices(state.question?.type) && !state.assistUsed)) return { accepted: false, reason: "verbal" };
       const targetPlayerId = text(data.targetPlayerId, 80);
       const targetPlayer = match.players?.[targetPlayerId];
       const eligible = Object.values(match.players || {}).filter((player) => player.teamCode === targetTeam);
@@ -1305,8 +1314,10 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
     const valid = secret?.questionId === match.state.question?.id;
     return {
+      questionId: valid ? secret.questionId : null,
       answer: valid ? secret.answer : null,
       answerText: valid ? secret.answerText || (Array.isArray(secret.options) ? secret.options[secret.answer] ?? null : null) : null,
+      brandInfo: valid ? secret.brandInfo || null : null,
     };
   }
   if (action === "revealQuestionPrompt") {
@@ -1336,7 +1347,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const teamCode = code(data.teamCode);
     if (!canPlayFor(match, uid, teamCode) || match.state.targetTeam !== teamCode) fail("permission-denied", "المساعدة للفريق صاحب السؤال");
     const latestState = (await db.ref(`matches/${id}/state`).get()).val();
-    if (!latestState || latestState.phase !== "question" || latestState.question?.type !== "flag" || latestState.assistUsed || latestState.targetTeam !== teamCode) return { accepted: false };
+    if (!latestState || latestState.phase !== "question" || !usesVerbalChoices(latestState.question?.type) || latestState.assistUsed || latestState.targetTeam !== teamCode) return { accepted: false };
     const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
     if (!secret || secret.questionId !== latestState.question.id || !Array.isArray(secret.options)) return { accepted: false };
     await db.ref(`matches/${id}/state`).update({

@@ -28,6 +28,7 @@ function parseLine(line: string, lineNo: number): ParsedRow {
     return { ...base, error: `عدد الخانات غير صحيح (${parts.length}) — الصح/خطأ يحتاج 3 خانات والاختيارات يحتاج 7` };
   }
   const [typeName, text] = parts;
+  if (typeName === TYPE_LABEL.brand) return { ...base, error: "أضف الشعار من نموذج السؤال الفردي مع الصورة ومجال الماركة للمقدم" };
   if (typeName.length < 2) return { ...base, error: "اسم النوع قصير جداً" };
   if (text.length < 4) return { ...base, error: "نص السؤال قصير جداً" };
 

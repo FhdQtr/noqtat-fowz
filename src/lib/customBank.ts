@@ -6,8 +6,10 @@ import { ref, set, update, remove, onValue, type Unsubscribe } from "firebase/da
 import { db, ensureAuth } from "./firebase";
 import { registerTypeLabels } from "../types/game";
 import type { Question, CustomType } from "../types/game";
+import type { BrandInfo } from "./matchApi";
 
 export interface CustomQuestion extends Question {
+  brandInfo?: BrandInfo;
   disabled?: boolean;
   createdAt?: number;
 }

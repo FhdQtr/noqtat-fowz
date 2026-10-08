@@ -1,11 +1,12 @@
 import { Check, X, Image as ImageIcon, Flag, ListOrdered, Lightbulb, Quote, HelpCircle, Brain, Clapperboard, Drama } from "lucide-react";
 import type { Question } from "../types/game";
-import { typeLabel, CATEGORY_LABEL } from "../types/game";
+import { typeLabel, CATEGORY_LABEL, usesVerbalChoices } from "../types/game";
 import { ANSWER_LETTERS } from "../lib/answers";
 
 const TYPE_ICON: Record<string, typeof Flag> = {
   flag: Flag,
   image: ImageIcon,
+  brand: ImageIcon,
   ordering: ListOrdered,
   riddle: Lightbulb,
   completion: Quote,
@@ -56,7 +57,7 @@ export function QuestionBody({
           <img
             src={q.image}
             alt="صورة السؤال"
-            className={`w-full ${q.type === "flag" ? "object-contain aspect-[3/2] bg-white/5 p-3" : big ? "object-cover aspect-[16/10]" : "object-cover aspect-[3/2]"}`}
+            className={`w-full ${q.type === "brand" ? "object-contain aspect-[3/2] bg-white p-8" : usesVerbalChoices(q.type) ? "object-contain aspect-[3/2] bg-white/5 p-3" : big ? "object-cover aspect-[16/10]" : "object-cover aspect-[3/2]"}`}
             loading="eager"
           />
           <div className="absolute inset-0 ring-1 ring-inset ring-white/10 rounded-2xl" />

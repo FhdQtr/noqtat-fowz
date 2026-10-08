@@ -1,5 +1,6 @@
 export const BUILTIN_QUESTION_STATS: Record<string, number> = {
   "acting": 30,
+  "brand": 20,
   "completion": 50,
   "flag": 160,
   "image": 56,

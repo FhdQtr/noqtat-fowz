@@ -9,11 +9,11 @@ import {
   subscribeMatch, startMatch, revealAnswer, judgeVerbal,
   passToNextTeam, advanceTurn, endMatch, deleteMatch, setCaptain,
   setAnswerMode, submitHostAnswer, startQuestionTimer, useAssist as requestAssist,
-  getHostAnswer, isShowdownDue, getTeamInvites, revealQuestionPrompt,
+  getHostAnswerDetails, isShowdownDue, getTeamInvites, revealQuestionPrompt,
 } from "../lib/matchApi";
-import type { TeamInvites } from "../lib/matchApi";
+import type { TeamInvites, HostAnswerDetails } from "../lib/matchApi";
 import type { AnswerMode, Match } from "../types/game";
-import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
+import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion, usesVerbalChoices } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
@@ -36,7 +36,7 @@ export default function HostRoom() {
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [connErr, setConnErr] = useState("");
-  const [hostAnswer, setHostAnswer] = useState<string | null>(null);
+  const [hostAnswer, setHostAnswer] = useState<HostAnswerDetails | null>(null);
   const [invites, setInvites] = useState<TeamInvites | null>(null);
   const prevPhase = useRef<string>("");
   const lastTimerSecond = useRef<number | null>(null);
@@ -58,7 +58,8 @@ export default function HostRoom() {
       setHostAnswer(null);
       return () => { cancelled = true; };
     }
-    void getHostAnswer(code)
+    setHostAnswer(null);
+    void getHostAnswerDetails(code, questionId)
       .then((answer) => { if (!cancelled) setHostAnswer(answer); })
       .catch(() => { if (!cancelled) setHostAnswer(null); });
     return () => { cancelled = true; };
@@ -161,7 +162,7 @@ export default function HostRoom() {
   const viewLeft = st.viewUntil ? Math.max(0, Math.ceil((st.viewUntil - now) / 1000)) : 0;
   const showImage = !visual || viewing || st.phase === "revealed";
   const flagVerbal =
-    st.question?.type === "flag" && st.phase === "question" && !st.assistUsed;
+    usesVerbalChoices(st.question?.type) && st.phase === "question" && !st.assistUsed;
   // مثّل المثل: حكم شفهي دائماً (الفريق يخمّن والمقدم يحكم)
   const actingVerbal = st.question?.type === "acting" && st.phase === "question";
   const verbalJudge = flagVerbal || actingVerbal;
@@ -169,7 +170,7 @@ export default function HostRoom() {
   const hostCanSelect = match.answerMode === "host"
     && st.phase === "question"
     && st.question?.type !== "acting"
-    && !(st.question?.type === "flag" && !st.assistUsed);
+    && !(usesVerbalChoices(st.question?.type) && !st.assistUsed);
   const missingRepresentatives = match.answerMode === "representative"
     ? teams.some((team) => !team.captainId || !match.players?.[team.captainId])
     : false;
@@ -596,14 +597,21 @@ export default function HostRoom() {
               <QuestionBody q={st.question} reveal={st.phase === "revealed"} showImage={showImage} />
             </div>
             {/* المقدم يشوف الإجابة للحكم الشفهي في الأعلام */}
-            {st.question.type === "flag" && st.phase !== "revealed" && (
+            {usesVerbalChoices(st.question.type) && st.phase !== "revealed" && (
               <p className="mt-3 text-center text-sm font-cairo font-bold text-emerald2-light">
-                الإجابة الصحيحة: {hostAnswer === null ? "جاري التحميل…" : hostAnswer}
+                الإجابة الصحيحة: {hostAnswer?.questionId === st.question.id ? hostAnswer.answerText : "جاري التحميل…"}
               </p>
+            )}
+            {st.question.type === "brand" && hostAnswer?.questionId === st.question.id && hostAnswer.brandInfo && (
+              <div className="mt-3 rounded-xl border border-gold/30 bg-gold/5 p-4 text-center text-sm leading-7">
+                <p className="font-bold text-gold-light">للمقدم فقط: {hostAnswer.brandInfo.name}</p>
+                <p>مجال الماركة: {hostAnswer.brandInfo.industry}</p>
+                <p className="text-muted-foreground">أسماء مقبولة: {hostAnswer.brandInfo.acceptedNames.join("، ")}</p>
+              </div>
             )}
             {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة — والتمثيل بلا خيارات أصلاً */}
             {st.question.type !== "acting" &&
-              !(st.question.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
+              !(usesVerbalChoices(st.question.type) && !st.assistUsed && st.phase !== "revealed") && (
               <div className="mt-6">
                 {hostCanSelect ? (
                   <div className="m-answer-grid" data-count={st.question.options.length} data-size="regular">

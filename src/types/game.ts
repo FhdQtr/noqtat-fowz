@@ -8,6 +8,7 @@ export type BuiltinQuestionType =
   | "true_false"
   | "image"
   | "flag"
+  | "brand"
   | "completion"
   | "ordering"
   | "riddle"
@@ -134,7 +135,7 @@ export interface GameState {
   usedAssets?: string[]; // الصور والأسئلة المستخدمة لمنع تكرار الأصل نفسه بين الفرق
   questionValue?: number; // قيمة السؤال الأساسية (٥٠ × رقم اختيار النوع)
   viewUntil?: number | null; // للصور/الأعلام: وقت إخفاء الصورة (مللي ثانية)
-  assistUsed?: boolean; // الأعلام: الفريق طلب "اختيار من الإجابات" (ربع النقاط)
+  assistUsed?: boolean; // الأعلام والشعارات: أربعة خيارات بنصف النقاط
   pointMultiplier?: number; // بطاقة مضاعفة النقاط
   extraTimeUsed?: boolean; // بطاقة +١٥ ثانية
   stealFullValue?: boolean; // السرقة بالقيمة الكاملة بدل نصف قيمة النقل
@@ -244,6 +245,7 @@ export const TYPE_LABEL: Record<string, string> = {
   true_false: "صح أم خطأ",
   image: "خمّن الصورة",
   flag: "أعلام الدول",
+  brand: "شعارات عالمية",
   completion: "أكمل المثل",
   ordering: "ترتيب",
   riddle: "لغز",
@@ -268,6 +270,11 @@ export function typeLabel(type: QuestionType): string {
 
 /** مدة عرض صورة العلم قبل إخفائها */
 export const VIEW_SECONDS = 10;
+
+/** إجابة شفهية أولاً، ثم أربعة خيارات عند طلب المساعدة. */
+export function usesVerbalChoices(type?: QuestionType): boolean {
+  return type === "flag" || type === "brand";
+}
 
 /** الأنواع اللي تعتمد على مشاهدة الصورة أولاً */
 export const VISUAL_TYPES: QuestionType[] = ["memory", "flag"];
@@ -334,6 +341,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   sports: "رياضة",
   landmarks: "معالم العالم",
   flags: "أعلام",
+  brands: "ماركات عالمية",
   memory: "ذاكرة",
   proverbs: "أمثال شعبية",
   custom: "أسئلة المقدم",

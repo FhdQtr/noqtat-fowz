@@ -31,6 +31,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
   const [text, setText] = useState("");
   const [options, setOptions] = useState<string[]>(["", "", "", ""]);
   const [correctIdx, setCorrectIdx] = useState(0);
+  const [brandIndustry, setBrandIndustry] = useState("");
   const [imageData, setImageData] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState("");
   const [vStart, setVStart] = useState("0");
@@ -50,6 +51,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
     while (opts.length < 4) opts.push("");
     setOptions(opts.slice(0, 4));
     setCorrectIdx(editTarget.answer);
+    setBrandIndustry(editTarget.brandInfo?.industry ?? "");
     setImageData(editTarget.image ?? null);
     setVideoUrl(editTarget.video ? `https://youtu.be/${editTarget.video.youtubeId}` : "");
     setVStart(String(editTarget.video?.start ?? 0));
@@ -61,6 +63,9 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
 
   const validate = (): string => {
     if (!text.trim()) return "اكتب نص السؤال";
+    if (typeId === "brand" && (media !== "image" || !imageData)) return "ارفع صورة شعار الماركة";
+    if (typeId === "brand" && !brandIndustry.trim()) return "اكتب مجال الماركة للمقدم";
+    if (typeId === "brand" && answerFormat !== "mc") return "الشعار يحتاج أربعة خيارات بأسماء الماركات";
     if (typeId === "__new__" && newTypeName.trim().length < 2) return "اكتب اسم النوع الجديد";
     if (media === "image" && !imageData) return "ارفع الصورة أولاً";
     if (media === "video") {
@@ -113,6 +118,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
           ? { youtubeId: ytId, start: Number(vStart) || 0, end: Number(vEnd) || 25 }
           : undefined,
         disabled: false,
+        ...(finalType === "brand" ? { brandInfo: { name: options[correctIdx].trim(), industry: brandIndustry.trim(), acceptedNames: [options[correctIdx].trim()] } } : {}),
       };
       // Firebase يحذف القيم الفارغة — نبني الكائن بدون undefined
       const clean = JSON.parse(JSON.stringify(payload));
@@ -127,6 +133,7 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
         setText("");
         setOptions(["", "", "", ""]);
         setCorrectIdx(0);
+        setBrandIndustry("");
         setImageData(null);
         setVideoUrl("");
       }
@@ -150,6 +157,10 @@ export default function QuestionForm({ editTarget, onDone }: Props) {
 
   return (
     <div className="flex flex-col gap-5 animate-fade-up">
+      {typeId === "brand" && <div className="glass-card p-5">
+        <label htmlFor="brand-industry" className="mb-2 block text-sm font-bold text-gold-light/90">مجال الماركة، يظهر للمقدم فقط</label>
+        <input id="brand-industry" className="input-night" value={brandIndustry} onChange={(event) => setBrandIndustry(event.target.value)} maxLength={300} placeholder="مثال: قطع كمبيوتر وملحقات ألعاب" />
+      </div>}
       {/* نوع السؤال */}
       <div className="glass-card p-5">
         <label className="block text-sm font-bold mb-2 text-gold-light/90">نوع السؤال</label>

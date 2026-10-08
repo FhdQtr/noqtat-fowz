@@ -21,6 +21,7 @@ const TYPE_OPTIONS: { id: QuestionType; label: string }[] = [
   { id: "image", label: "معالم بالصور" },
   { id: "memory", label: "اختبار الذاكرة" },
   { id: "flag", label: "أعلام الدول" },
+  { id: "brand", label: "شعارات عالمية" },
   { id: "completion", label: "أكمل المثل" },
   { id: "ordering", label: "ترتيب" },
   { id: "riddle", label: "ألغاز" },

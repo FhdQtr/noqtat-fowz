@@ -12,13 +12,14 @@ const builtinTypes = new Set([
   "true_false",
   "image",
   "flag",
+  "brand",
   "completion",
   "ordering",
   "riddle",
   "memory",
   "acting",
 ]);
-const visualTypes = new Set(["image", "flag", "memory"]);
+const visualTypes = new Set(["image", "flag", "brand", "memory"]);
 
 function normalizedQuestion(value) {
   return String(value)
@@ -73,7 +74,7 @@ for (const [index, q] of questions.entries()) {
     if (q.type === "true_false" && q.options?.length !== 2) {
       errors.push(`${at}: سؤال صح أو خطأ يجب أن يحتوي خيارين فقط`);
     }
-    if (["multiple_choice", "image", "flag", "completion", "ordering", "riddle", "memory"].includes(q.type)
+    if (["multiple_choice", "image", "flag", "brand", "completion", "ordering", "riddle", "memory"].includes(q.type)
       && q.options?.length < 2) {
       errors.push(`${at}: هذا النوع يحتاج خيارين على الأقل`);
     }
@@ -89,7 +90,10 @@ for (const [index, q] of questions.entries()) {
     errors.push(`${at}: بيانات الفيديو غير صحيحة`);
   }
 
-  if (!q.disabled && q.type !== "flag") {
+  if (!q.disabled && q.type === "brand" && (!q.brandInfo?.name || !q.brandInfo?.industry || q.options.length !== 4)) {
+    errors.push(`${at}: الشعار يحتاج اسم الماركة ومجالها وأربعة خيارات`);
+  }
+  if (!q.disabled && !["flag", "brand"].includes(q.type)) {
     const textKey = `${q.type}:${normalizedQuestion(q.question)}`;
     const duplicateId = activeTexts.get(textKey);
     if (duplicateId) errors.push(`${at}: مكرر بالمعنى مع السؤال ${duplicateId}`);

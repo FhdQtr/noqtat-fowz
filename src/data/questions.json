@@ -17700,5 +17700,454 @@
       "تجارة ثم تجربة ثم تجريد ثم تجويد"
     ],
     "answer": 3
+  },
+  {
+    "id": 400235,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/01.svg",
+    "options": [
+      "Corsair",
+      "Razer",
+      "Under Armour",
+      "Citroën"
+    ],
+    "answer": 0,
+    "brandInfo": {
+      "name": "Corsair / كورسير",
+      "industry": "مكونات الكمبيوتر وملحقات الألعاب",
+      "acceptedNames": [
+        "Corsair",
+        "كورسير"
+      ]
+    }
+  },
+  {
+    "id": 400236,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/02.svg",
+    "options": [
+      "ASICS",
+      "Razer",
+      "New Balance",
+      "Lacoste"
+    ],
+    "answer": 1,
+    "brandInfo": {
+      "name": "Razer / ريزر",
+      "industry": "أجهزة وملحقات الألعاب",
+      "acceptedNames": [
+        "Razer",
+        "ريزر"
+      ]
+    }
+  },
+  {
+    "id": 400237,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/03.svg",
+    "options": [
+      "Huawei",
+      "The North Face",
+      "ASICS",
+      "Puma"
+    ],
+    "answer": 2,
+    "brandInfo": {
+      "name": "ASICS / أسيكس",
+      "industry": "أحذية وملابس رياضية",
+      "acceptedNames": [
+        "ASICS",
+        "أسيكس",
+        "اسيكس",
+        "أسكس"
+      ]
+    }
+  },
+  {
+    "id": 400238,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/04.svg",
+    "options": [
+      "Rolex",
+      "Montblanc",
+      "Maserati",
+      "The North Face"
+    ],
+    "answer": 3,
+    "brandInfo": {
+      "name": "The North Face / ذا نورث فيس",
+      "industry": "ملابس ومعدات الأنشطة الخارجية",
+      "acceptedNames": [
+        "The North Face",
+        "ذا نورث فيس"
+      ]
+    }
+  },
+  {
+    "id": 400239,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/05.svg",
+    "options": [
+      "Montblanc",
+      "Under Armour",
+      "Citroën",
+      "NVIDIA"
+    ],
+    "answer": 0,
+    "brandInfo": {
+      "name": "Montblanc / مون بلان",
+      "industry": "أقلام وساعات ومصنوعات جلدية فاخرة",
+      "acceptedNames": [
+        "Montblanc",
+        "مون بلان",
+        "مونت بلانك",
+        "مون بلانك"
+      ]
+    }
+  },
+  {
+    "id": 400240,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/06.svg",
+    "options": [
+      "New Balance",
+      "Under Armour",
+      "Lacoste",
+      "Motorola"
+    ],
+    "answer": 1,
+    "brandInfo": {
+      "name": "Under Armour / أندر آرمور",
+      "industry": "ملابس وأحذية رياضية",
+      "acceptedNames": [
+        "Under Armour",
+        "أندر آرمور"
+      ]
+    }
+  },
+  {
+    "id": 400241,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/07.svg",
+    "options": [
+      "Puma",
+      "Huawei",
+      "New Balance",
+      "Logitech G"
+    ],
+    "answer": 2,
+    "brandInfo": {
+      "name": "New Balance / نيو بالانس",
+      "industry": "أحذية وملابس رياضية",
+      "acceptedNames": [
+        "New Balance",
+        "نيو بالانس"
+      ]
+    }
+  },
+  {
+    "id": 400242,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/08.svg",
+    "options": [
+      "Peugeot",
+      "Maserati",
+      "Rolex",
+      "Huawei"
+    ],
+    "answer": 3,
+    "brandInfo": {
+      "name": "Huawei / هواوي",
+      "industry": "تقنية الاتصالات والأجهزة الذكية",
+      "acceptedNames": [
+        "Huawei",
+        "هواوي"
+      ]
+    }
+  },
+  {
+    "id": 400243,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/09.svg",
+    "options": [
+      "Maserati",
+      "Citroën",
+      "NVIDIA",
+      "Renault"
+    ],
+    "answer": 0,
+    "brandInfo": {
+      "name": "Maserati / مازيراتي",
+      "industry": "سيارات فاخرة",
+      "acceptedNames": [
+        "Maserati",
+        "مازيراتي"
+      ]
+    }
+  },
+  {
+    "id": 400244,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/10.svg",
+    "options": [
+      "Lacoste",
+      "Citroën",
+      "Motorola",
+      "Mitsubishi"
+    ],
+    "answer": 1,
+    "brandInfo": {
+      "name": "Citroën / سيتروين",
+      "industry": "سيارات",
+      "acceptedNames": [
+        "Citroën",
+        "سيتروين"
+      ]
+    }
+  },
+  {
+    "id": 400245,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/11.svg",
+    "options": [
+      "Logitech G",
+      "Puma",
+      "Lacoste",
+      "Shell"
+    ],
+    "answer": 2,
+    "brandInfo": {
+      "name": "Lacoste / لاكوست",
+      "industry": "ملابس وأحذية وإكسسوارات",
+      "acceptedNames": [
+        "Lacoste",
+        "لاكوست"
+      ]
+    }
+  },
+  {
+    "id": 400246,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/12.svg",
+    "options": [
+      "Corsair",
+      "Rolex",
+      "Peugeot",
+      "Puma"
+    ],
+    "answer": 3,
+    "brandInfo": {
+      "name": "Puma / بوما",
+      "industry": "أحذية وملابس رياضية",
+      "acceptedNames": [
+        "Puma",
+        "بوما"
+      ]
+    }
+  },
+  {
+    "id": 400247,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/13.svg",
+    "options": [
+      "Rolex",
+      "NVIDIA",
+      "Renault",
+      "Razer"
+    ],
+    "answer": 0,
+    "brandInfo": {
+      "name": "Rolex / رولكس",
+      "industry": "ساعات فاخرة",
+      "acceptedNames": [
+        "Rolex",
+        "رولكس"
+      ]
+    }
+  },
+  {
+    "id": 400248,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/14.svg",
+    "options": [
+      "Motorola",
+      "NVIDIA",
+      "Mitsubishi",
+      "ASICS"
+    ],
+    "answer": 1,
+    "brandInfo": {
+      "name": "NVIDIA / إنفيديا",
+      "industry": "معالجات الرسوميات وتقنيات الذكاء الاصطناعي",
+      "acceptedNames": [
+        "NVIDIA",
+        "إنفيديا",
+        "نفيديا",
+        "انفيديا"
+      ]
+    }
+  },
+  {
+    "id": 400249,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/15.svg",
+    "options": [
+      "Shell",
+      "Logitech G",
+      "Motorola",
+      "The North Face"
+    ],
+    "answer": 2,
+    "brandInfo": {
+      "name": "Motorola / موتورولا",
+      "industry": "هواتف ذكية",
+      "acceptedNames": [
+        "Motorola",
+        "موتورولا"
+      ]
+    }
+  },
+  {
+    "id": 400250,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/16.svg",
+    "options": [
+      "Montblanc",
+      "Peugeot",
+      "Corsair",
+      "Logitech G"
+    ],
+    "answer": 3,
+    "brandInfo": {
+      "name": "Logitech G / لوجيتك",
+      "industry": "ملحقات الكمبيوتر والألعاب",
+      "acceptedNames": [
+        "Logitech G",
+        "لوجيتك",
+        "Logitech",
+        "لوجيتك جي",
+        "لوجيتيك"
+      ]
+    }
+  },
+  {
+    "id": 400251,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/17.svg",
+    "options": [
+      "Peugeot",
+      "Renault",
+      "Razer",
+      "Under Armour"
+    ],
+    "answer": 0,
+    "brandInfo": {
+      "name": "Peugeot / بيجو",
+      "industry": "سيارات",
+      "acceptedNames": [
+        "Peugeot",
+        "بيجو"
+      ]
+    }
+  },
+  {
+    "id": 400252,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/18.svg",
+    "options": [
+      "Mitsubishi",
+      "Renault",
+      "ASICS",
+      "New Balance"
+    ],
+    "answer": 1,
+    "brandInfo": {
+      "name": "Renault / رينو",
+      "industry": "سيارات",
+      "acceptedNames": [
+        "Renault",
+        "رينو"
+      ]
+    }
+  },
+  {
+    "id": 400253,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/19.svg",
+    "options": [
+      "The North Face",
+      "Shell",
+      "Mitsubishi",
+      "Huawei"
+    ],
+    "answer": 2,
+    "brandInfo": {
+      "name": "Mitsubishi / ميتسوبيشي",
+      "industry": "شركات ميتسوبيشي: سيارات وصناعات متعددة، والرمز مشترك بينها",
+      "acceptedNames": [
+        "Mitsubishi",
+        "ميتسوبيشي"
+      ]
+    }
+  },
+  {
+    "id": 400254,
+    "type": "brand",
+    "category": "brands",
+    "question": "لأي ماركة ينتمي هذا الشعار؟",
+    "image": "/img/brands/20.svg",
+    "options": [
+      "Maserati",
+      "Corsair",
+      "Montblanc",
+      "Shell"
+    ],
+    "answer": 3,
+    "brandInfo": {
+      "name": "Shell / شل",
+      "industry": "طاقة ووقود وبتروكيماويات",
+      "acceptedNames": [
+        "Shell",
+        "شل"
+      ]
+    }
   }
 ]

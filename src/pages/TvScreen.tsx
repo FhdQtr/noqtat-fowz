@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from "react-router";
 import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap } from "lucide-react";
 import { getTeamInvites, revealQuestionPrompt, subscribeMatch } from "../lib/matchApi";
 import type { Match } from "../types/game";
-import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion } from "../types/game";
+import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion, usesVerbalChoices } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
 import QrCode from "../components/QrCode";
 import GoldConfetti from "../components/GoldConfetti";
@@ -361,7 +361,7 @@ export default function TvScreen() {
                   showCorrect={!canPassAfterWrong}
                 />
                 {/* خيارات الأعلام مخفية حتى يطلبوا المساعدة أو ينكشف الجواب */}
-                {q.type !== "acting" && !(q.type === "flag" && !st.assistUsed && st.phase !== "revealed") && (
+                {q.type !== "acting" && !(usesVerbalChoices(q.type) && !st.assistUsed && st.phase !== "revealed") && (
                   <div className="mt-7">
                     <OptionsDisplay
                       q={q}
@@ -372,7 +372,7 @@ export default function TvScreen() {
                     />
                   </div>
                 )}
-                {q.type === "flag" && !st.assistUsed && st.phase !== "revealed" && (
+                {usesVerbalChoices(q.type) && !st.assistUsed && st.phase !== "revealed" && (
                   <p className="mt-6 text-center text-muted-foreground font-cairo text-xl">
                     الفريق يجاوب شفهياً… أو يطلب أربعة خيارات بنصف النقاط
                   </p>

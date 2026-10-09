@@ -11,7 +11,8 @@
     "prepare:functions": "node scripts/prepare-functions.mjs",
     "check:functions": "npm run prepare:functions && node --check functions/index.js",
     "test:showdown": "npm run prepare:functions && node --test scripts/showdown.test.mjs",
-    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run test:showdown && npm run test:admin && npm run test:connection && npm run build",
+    "check": "npm run validate:questions && npm run lint && npm run check:functions && npm run test:showdown && npm run test:admin && npm run test:connection && npm run test:picture-ui && npm run build",
+    "test:picture-ui": "node --test scripts/picture-guess-ui.test.mjs",
     "preview": "vite preview",
     "test:admin": "node --test scripts/admin-auth.test.mjs",
     "test:connection": "node --test scripts/connection.test.mjs"

@@ -1,0 +1,154 @@
+[
+  {
+    "id": 1,
+    "name": "دباسة",
+    "image": "/img/picture-guess/01.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single دباسة centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 2,
+    "name": "طماط",
+    "image": "/img/picture-guess/02.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single طماط centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 3,
+    "name": "بيت",
+    "image": "/img/picture-guess/03.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single بيت centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 4,
+    "name": "قلامة أظافر",
+    "image": "/img/picture-guess/04.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single قلامة أظافر centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 5,
+    "name": "أسد",
+    "image": "/img/picture-guess/05.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single أسد centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 6,
+    "name": "صقر",
+    "image": "/img/picture-guess/06.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single صقر centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 7,
+    "name": "سيارة",
+    "image": "/img/picture-guess/07.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single سيارة centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 8,
+    "name": "سرير",
+    "image": "/img/picture-guess/08.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single سرير centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 9,
+    "name": "تلفزيون",
+    "image": "/img/picture-guess/09.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single تلفزيون centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 10,
+    "name": "طيارة",
+    "image": "/img/picture-guess/10.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single طيارة centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 11,
+    "name": "قلم",
+    "image": "/img/picture-guess/11.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single قلم centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 12,
+    "name": "مدرسة",
+    "image": "/img/picture-guess/12.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single مدرسة centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 13,
+    "name": "نمر",
+    "image": "/img/picture-guess/13.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single نمر centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 14,
+    "name": "فراشة",
+    "image": "/img/picture-guess/14.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single فراشة centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 15,
+    "name": "مكيف",
+    "image": "/img/picture-guess/15.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single مكيف centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 16,
+    "name": "جوال",
+    "image": "/img/picture-guess/16.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single جوال centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 17,
+    "name": "خروف",
+    "image": "/img/picture-guess/17.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single خروف centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 18,
+    "name": "ليمون",
+    "image": "/img/picture-guess/18.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single ليمون centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  },
+  {
+    "id": 19,
+    "name": "خيار",
+    "image": "/img/picture-guess/19.webp",
+    "method": "Built-in image generation",
+    "prompt": "Photorealistic single خيار centered and fully visible on a pure white background; square catalog photo; no extra objects, text, logos or watermarks.",
+    "processing": "Format conversion to WebP, 768px, without semantic edits"
+  }
+]

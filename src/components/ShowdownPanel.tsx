@@ -4,8 +4,11 @@ import type { Match } from "../types/game";
 import { ANSWER_LETTERS } from "../lib/answers";
 import { TEAM_COLORS } from "../types/game";
 import { useServerNow } from "../lib/useServerNow";
+import PictureGuessPanel from "./PictureGuessPanel";
 
 interface ShowdownPanelProps {
+  matchCode?: string;
+  host?: boolean;
   match: Match;
   teamCode?: string;
   submitting?: boolean;
@@ -16,7 +19,7 @@ interface ShowdownPanelProps {
   onRetryFinish?: () => void;
 }
 
-export default function ShowdownPanel({ match, teamCode, submitting = false, onAnswer, size = "regular", finishError, finishing, onRetryFinish }: ShowdownPanelProps) {
+export default function ShowdownPanel({ match, matchCode, host, teamCode, submitting = false, onAnswer, size = "regular", finishError, finishing, onRetryFinish }: ShowdownPanelProps) {
   const { state } = match;
   const showdown = state.showdown;
   const question = state.question;
@@ -40,6 +43,7 @@ export default function ShowdownPanel({ match, teamCode, submitting = false, onA
   }, [questionImage, showdownNumber]);
 
   if (!showdown || !question) return null;
+  if (showdown.kind === "picture_guess") return <PictureGuessPanel match={match} matchCode={matchCode} host={host} teamCode={teamCode} finishError={finishError} finishing={finishing} onRetryFinish={onRetryFinish} />;
 
   return (
     <section className={`relative w-full overflow-hidden rounded-[28px] border-2 border-gold/70 bg-gradient-to-b from-[#24170f]/95 to-[#100b09]/95 ${large ? "max-w-5xl p-8" : "max-w-xl p-5"}`}

@@ -52,9 +52,10 @@ export default function HostRoom() {
   }, [code]);
 
   const questionId = match?.state.question?.id ?? null;
+  const pictureQuestion = match?.state.showdown?.kind === "picture_guess";
   useEffect(() => {
     let cancelled = false;
-    if (questionId === null) {
+    if (questionId === null || pictureQuestion) {
       setHostAnswer(null);
       return () => { cancelled = true; };
     }
@@ -63,7 +64,7 @@ export default function HostRoom() {
       .then((answer) => { if (!cancelled) setHostAnswer(answer); })
       .catch(() => { if (!cancelled) setHostAnswer(null); });
     return () => { cancelled = true; };
-  }, [code, questionId]);
+  }, [code, questionId, pictureQuestion]);
 
   const players = useMemo(() => Object.values(match?.players ?? {}), [match]);
 
@@ -373,7 +374,7 @@ export default function HostRoom() {
       {/* الشريط العلوي */}
       <div className="flex items-center justify-between mb-4">
         <div className="text-xs text-muted-foreground">
-          {st.phase === "showdown" || st.phase === "showdown_revealed" ? "مواجهة الجميع" : <>سؤال <span className="text-gold-light font-bold">{st.round}</span> من {match.totalRounds}</>}
+          {st.phase === "showdown" || st.phase === "showdown_revealed" ? st.showdown?.kind === "picture_guess" ? "تحدي الصور" : "مواجهة الجميع" : <>سؤال <span className="text-gold-light font-bold">{st.round}</span> من {match.totalRounds}</>}
         </div>
         <ScoreBoard match={match} highlight={st.targetTeam} />
         <div className="flex gap-2">
@@ -420,7 +421,7 @@ export default function HostRoom() {
 
       {(st.phase === "showdown" || st.phase === "showdown_revealed") ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 pb-5">
-          <ShowdownPanel match={match} size="regular" finishError={showdownFinish.error}
+          <ShowdownPanel match={match} matchCode={code} host size="regular" finishError={showdownFinish.error}
             finishing={showdownFinish.pending} onRetryFinish={showdownFinish.retry} />
           {st.phase === "showdown_revealed" ? (
             <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
@@ -734,7 +735,7 @@ export default function HostRoom() {
                 )}
                 <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
                   <SkipForward className="w-5 h-5" />
-                  {isShowdownDue(match) ? "مواجهة الجميع" : st.round >= match.totalRounds ? "إعلان الفائز" : "السؤال التالي"}
+                  {isShowdownDue(match) ? match.challengeMode === "picture_guess" ? "تحدي الصور" : "مواجهة الجميع" : st.round >= match.totalRounds ? "إعلان الفائز" : "السؤال التالي"}
                 </button>
               </>
             )}

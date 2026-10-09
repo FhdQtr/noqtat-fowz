@@ -1,0 +1,21 @@
+[
+  { "id": 1, "name": "دباسة", "image": "/img/picture-guess/01.webp" },
+  { "id": 2, "name": "طماط", "image": "/img/picture-guess/02.webp" },
+  { "id": 3, "name": "بيت", "image": "/img/picture-guess/03.webp" },
+  { "id": 4, "name": "قلامة أظافر", "image": "/img/picture-guess/04.webp" },
+  { "id": 5, "name": "أسد", "image": "/img/picture-guess/05.webp" },
+  { "id": 6, "name": "صقر", "image": "/img/picture-guess/06.webp" },
+  { "id": 7, "name": "سيارة", "image": "/img/picture-guess/07.webp" },
+  { "id": 8, "name": "سرير", "image": "/img/picture-guess/08.webp" },
+  { "id": 9, "name": "تلفزيون", "image": "/img/picture-guess/09.webp" },
+  { "id": 10, "name": "طيارة", "image": "/img/picture-guess/10.webp" },
+  { "id": 11, "name": "قلم", "image": "/img/picture-guess/11.webp" },
+  { "id": 12, "name": "مدرسة", "image": "/img/picture-guess/12.webp" },
+  { "id": 13, "name": "نمر", "image": "/img/picture-guess/13.webp" },
+  { "id": 14, "name": "فراشة", "image": "/img/picture-guess/14.webp" },
+  { "id": 15, "name": "مكيف", "image": "/img/picture-guess/15.webp" },
+  { "id": 16, "name": "جوال", "image": "/img/picture-guess/16.webp" },
+  { "id": 17, "name": "خروف", "image": "/img/picture-guess/17.webp" },
+  { "id": 18, "name": "ليمون", "image": "/img/picture-guess/18.webp" },
+  { "id": 19, "name": "خيار", "image": "/img/picture-guess/19.webp" }
+]

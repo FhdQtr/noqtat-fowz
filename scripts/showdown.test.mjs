@@ -198,6 +198,102 @@ function logoFixture() {
   return h;
 }
 
+function pictureGuessFixture() {
+  const h = harness(true);
+  Object.assign(h.match(), { challengeMode: 'picture_guess', showdownCount: 0, questionsPerTeam: 8, timer: 30,
+    state: { phase: 'revealed', round: 6, targetTeam: 'A234-2', question: { id: 43, options: ['أ', 'ب', 'ج', 'د'], answer: 0 }, usedIds: [43], usedAssets: [] } });
+  return h;
+}
+
+test('picture challenge starts after three questions per team, with distinct private pictures and 120 seconds', async () => {
+  const h = pictureGuessFixture();
+  await h.call('advanceTurn');
+  const s = h.match().state;
+  assert.equal(s.showdown.kind, 'picture_guess');
+  assert.equal(s.showdown.closesAt - s.showdown.opensAt, 120000);
+  assert.equal(s.round, 6);
+  assert.equal(s.question.image, undefined);
+  assert.equal(s.question.options, undefined); // RTDB prunes deliberately empty arrays.
+  assert.equal(JSON.stringify(h.match()).includes('/img/picture-guess/'), false);
+  assert.equal('pictures' in s.showdown, false);
+  const pictures = h.data.matchSecrets.A234.pictures;
+  assert.notEqual(pictures['A234-1'].id, pictures['A234-2'].id);
+  assert.equal(pictures['A234-1'].targetTeam, 'A234-2');
+  assert.equal(pictures['A234-2'].targetTeam, 'A234-1');
+  await assert.rejects(h.call('advanceTurn'), { code: 'failed-precondition' });
+});
+
+test('picture challenge views are scoped to each authenticated team and both images only to the host', async () => {
+  const h = pictureGuessFixture(); await h.call('advanceTurn');
+  const questionId = h.match().state.question.id;
+  const first = await h.call('getPictureGuessView', 'user1', { questionId, teamCode: 'A234-2', host: true });
+  assert.deepEqual(Object.keys(first.pictures), ['A234-1']);
+  const second = await h.call('getPictureGuessView', 'user2', { questionId });
+  assert.deepEqual(Object.keys(second.pictures), ['A234-2']);
+  assert.equal(Object.keys((await h.call('getPictureGuessView', 'host', { questionId })).pictures).length, 2);
+  await assert.rejects(h.call('getPictureGuessView', 'outsider', { questionId }), { code: 'permission-denied' });
+  assert.equal((await h.call('getPictureGuessView', 'user1', { questionId: questionId - 1 })).questionId, null);
+});
+
+test('yes/no picture feedback is host-only and never awards points; final guess scores exactly once', async () => {
+  const h = pictureGuessFixture(); await h.call('advanceTurn');
+  const questionId = h.match().state.question.id;
+  const extra = { questionId, teamCode: 'A234-1', result: 'yes' };
+  await assert.rejects(h.call('judgePictureGuess', 'user1', extra), { code: 'permission-denied' });
+  assert.equal((await h.call('judgePictureGuess', 'host', extra)).accepted, false); // opening countdown
+  h.setClock(h.match().state.showdown.opensAt + 1);
+  for (const result of ['yes', 'no']) assert.equal((await h.call('judgePictureGuess', 'host', { ...extra, result })).accepted, true);
+  assert.equal(h.match().teams['A234-1'].score, 100);
+  assert.equal(h.match().state.phase, 'showdown');
+  assert.equal((await h.call('judgePictureGuess', 'host', { ...extra, questionId: questionId - 1, result: 'win' })).accepted, false);
+  assert.equal((await h.call('judgePictureGuess', 'host', { ...extra, result: 'win' })).accepted, true);
+  assert.equal(h.match().teams['A234-1'].score, 300);
+  assert.equal(h.match().state.showdown.winnerTeam, 'A234-1');
+  assert.equal((await h.call('judgePictureGuess', 'host', { ...extra, result: 'win' })).accepted, false);
+  await h.call('finishShowdown');
+  assert.equal(h.match().teams['A234-1'].score, 300);
+  await h.call('advanceTurn');
+  assert.equal(h.match().state.phase, 'choose');
+  assert.equal(h.match().state.targetTeam, 'A234-1');
+});
+
+test('two concurrent picture winner decisions cannot award both teams or double-score', async () => {
+  const h = pictureGuessFixture(); await h.call('advanceTurn');
+  h.setClock(h.match().state.showdown.opensAt + 1);
+  const questionId = h.match().state.question.id;
+  const results = await Promise.all(h.match().teamOrder.map((teamCode) => h.call('judgePictureGuess', 'host', { questionId, teamCode, result: 'win' })));
+  assert.equal(results.filter((r) => r.accepted).length, 1);
+  assert.equal(h.match().teams['A234-1'].score + h.match().teams['A234-2'].score, 450);
+});
+
+test('picture timeout yields no winner, rejects late guesses and resumes ordinary play', async () => {
+  const h = pictureGuessFixture(); await h.call('advanceTurn');
+  const questionId = h.match().state.question.id;
+  assert.equal((await h.call('finishShowdown', 'user1', { questionId })).finished, false);
+  h.setClock(h.match().state.showdown.closesAt);
+  assert.equal((await h.call('judgePictureGuess', 'host', { questionId, teamCode: 'A234-1', result: 'win' })).accepted, false);
+  await assert.rejects(h.call('finishShowdown', 'outsider', { questionId }), { code: 'permission-denied' });
+  const results = await Promise.all([h.call('finishShowdown', 'host', { questionId }), h.call('finishShowdown', 'user2', { questionId })]);
+  assert.ok(results.every((r) => r.finished));
+  assert.equal(h.match().state.showdown.winnerTeam, undefined);
+  assert.equal(h.match().teams['A234-1'].score, 100);
+  assert.equal(h.match().teams['A234-2'].score, 150);
+  await h.call('advanceTurn');
+  assert.equal(h.match().state.phase, 'choose');
+});
+
+test('picture mode never starts early, does not accept option submissions, and creation requires two teams', async () => {
+  const h = pictureGuessFixture();
+  h.match().state.round = 3;
+  await h.call('advanceTurn');
+  assert.equal(h.match().state.phase, 'choose');
+  h.match().state.phase = 'revealed'; h.match().state.round = 6;
+  await h.call('advanceTurn');
+  h.setClock(h.match().state.showdown.opensAt + 1);
+  assert.equal((await h.call('submitShowdownAnswer', 'user1', { questionId: h.match().state.question.id, playerId: 'p1', choice: 0 })).status, 'late');
+  await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['أ', 'ب', 'ج'], challengeMode: 'picture_guess', enabledTypes: ['multiple_choice'], questionsPerTeam: 4 } }), { code: 'invalid-argument' });
+});
+
 test('logo name and industry are available only to the presenter, with hidden contestant choices', async () => {
   const h = logoFixture();
   assert.equal((await h.call('chooseType', 'user1', { type: 'brand' })).status, 'accepted');

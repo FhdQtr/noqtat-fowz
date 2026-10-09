@@ -351,7 +351,7 @@ export default function Play() {
         )}
         {(st!.phase === "showdown" || st!.phase === "showdown_revealed") ? (
           <div className="flex w-full flex-col items-center gap-3">
-            <ShowdownPanel match={match} teamCode={teamCode} submitting={showdownSubmitting} onAnswer={answerShowdown}
+            <ShowdownPanel match={match} matchCode={matchCode} teamCode={teamCode} submitting={showdownSubmitting} onAnswer={answerShowdown}
               finishError={showdownFinish.error} finishing={showdownFinish.pending} onRetryFinish={showdownFinish.retry} />
             {showdownMsg && st!.phase === "showdown" ? <p className="text-center text-sm font-cairo font-bold text-maroon-light">{showdownMsg}</p> : null}
           </div>

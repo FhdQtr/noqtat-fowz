@@ -9,6 +9,7 @@ const { getDatabase, ServerValue } = require("firebase-admin/database");
 initializeApp({ databaseURL: "https://noqtat-fowz-d13aa-default-rtdb.asia-southeast1.firebasedatabase.app" });
 const db = getDatabase();
 const QUESTIONS = JSON.parse(readFileSync(require.resolve("./questions.json"), "utf8"));
+const PICTURE_GUESS_ITEMS = JSON.parse(readFileSync(require.resolve("./pictureGuessItems.json"), "utf8"));
 const FLAG_BANK_REFRESH_AT = Date.UTC(2026, 9, 2, 23, 18, 47);
 const LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const DIGITS = "23456789";
@@ -579,6 +580,8 @@ function requireHost(match, uid) {
 async function createMatch(uid, options) {
   const names = Array.isArray(options?.teamNames) ? options.teamNames.slice(0, 4) : [];
   if (names.length < 2) fail("invalid-argument", "اختر فريقين على الأقل");
+  const challengeMode = options.challengeMode === "picture_guess" ? "picture_guess" : "classic";
+  if (challengeMode === "picture_guess" && names.length !== 2) fail("invalid-argument", "تحدي الصور يحتاج فريقين");
   const enabledTypes = Array.isArray(options.enabledTypes) ? [...new Set(options.enabledTypes.map((x) => text(x, 50)).filter(Boolean))] : [];
   if (!enabledTypes.length) fail("invalid-argument", "اختر نوع سؤال واحداً على الأقل");
   // توافق مؤقت مع الواجهة الحالية في الإنتاج التي ترسل totalRounds،
@@ -622,7 +625,7 @@ async function createMatch(uid, options) {
     const createdAt = now();
     const match = {
       hostName: text(options.hostName, 20) || "المقدم",
-      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, answerMode, enabledTypes, typeCaps, teams,
+      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, answerMode, challengeMode, enabledTypes, typeCaps, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], usedAssets: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     // A cold transaction cache retries against the remote record. Never overwrite
@@ -810,6 +813,7 @@ async function chooseType(uid, data) {
 }
 
 async function startShowdown(id, match) {
+  if (match.challengeMode === "picture_guess") return startPictureGuess(id, match);
   const showdownNumber = (match.showdownCount || 0) + 1;
   const wantsImage = showdownNumber % 2 === 0;
   const allowedTextTypes = new Set(["multiple_choice", "riddle", "completion"]);
@@ -861,6 +865,72 @@ async function startShowdown(id, match) {
   return { showdown: true };
 }
 
+async function startPictureGuess(id, match) {
+  if (match.teamOrder.length !== 2) fail("failed-precondition", "تحدي الصور يحتاج فريقين");
+  const stateRef = db.ref(`matches/${id}/state`);
+  const claim = `${now()}_${randomInt(100000, 999999)}`;
+  if (!await acquireClaim(stateRef.child("pictureStartClaim"), claim)) return { showdown: true };
+  try {
+    const latest = (await stateRef.get()).val();
+    if (!latest || latest.round !== match.state.round || latest.phase !== match.state.phase || latest.pictureStartClaim !== claim) {
+      await releaseClaim(stateRef.child("pictureStartClaim"), claim);
+      return { showdown: false };
+    }
+    const number = (match.showdownCount || 0) + 1;
+    const chosen = randomOrder(PICTURE_GUESS_ITEMS).slice(0, 2);
+    const pictures = Object.fromEntries(match.teamOrder.map((team, i) => [team, { ...chosen[i], targetTeam: match.teamOrder[1 - i] }]));
+    const opensAt = now() + SHOWDOWN_OPEN_DELAY_MS;
+    const questionId = 800000 + number;
+    // الصور وتوزيعها تبقى في السر فقط؛ سجل المسابقة المشترك لا يحتوي أي مسار صورة.
+    await db.ref().update({
+      [`matchSecrets/${id}`]: { questionId, mode: "picture_guess", pictures },
+      [`matches/${id}/showdownCount`]: number,
+      [`matches/${id}/state`]: { ...latest, phase: "showdown", pictureStartClaim: null,
+        question: { id: questionId, type: "picture_guess", category: "challenge", question: "اسألوا بصيغة هل هو… وخمّنوا صورة الفريق المنافس", options: [], answer: -1 },
+        showdown: { kind: "picture_guess", number, points: SHOWDOWN_POINTS, opensAt, closesAt: opensAt + 120000, winnerTeam: null, answers: {} },
+        answer: null, isCorrect: null, targetTeam: null, originalTeam: null, viewUntil: null,
+        questionStartedAt: opensAt, questionDuration: 120, punishment: null, assistUsed: false },
+    });
+    return { showdown: true };
+  } catch (error) {
+    await releaseClaim(stateRef.child("pictureStartClaim"), claim);
+    throw error;
+  }
+}
+
+async function pictureGuessView(uid, data, id, match) {
+  const host = match.hostUid === uid;
+  const player = Object.values(match.players || {}).find((p) => p.authUid === uid);
+  if (!host && !player) fail("permission-denied", "صور التحدي للمشاركين فقط");
+  if (match.state.showdown?.kind !== "picture_guess" || !["showdown", "showdown_revealed"].includes(match.state.phase) || data.questionId !== match.state.question?.id) return { questionId: null, pictures: {} };
+  const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+  if (secret?.questionId !== data.questionId || secret.mode !== "picture_guess") return { questionId: null, pictures: {} };
+  const pictures = host ? secret.pictures : { [player.teamCode]: secret.pictures[player.teamCode] };
+  return { questionId: secret.questionId, pictures };
+}
+
+async function judgePictureGuess(uid, data, id, match) {
+  requireHost(match, uid);
+  const team = code(data.teamCode);
+  if (!match.teams[team] || !["yes", "no", "win"].includes(data.result)) fail("invalid-argument", "اختر الفريق والنتيجة");
+  if (data.questionId !== match.state.question?.id) return { accepted: false };
+  const arrivedAt = now();
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (current === null) return null;
+    const s = current?.state;
+    if (!s || s.phase !== "showdown" || s.question?.id !== data.questionId || s.showdown?.kind !== "picture_guess" || arrivedAt < s.showdown.opensAt || arrivedAt >= s.showdown.closesAt || s.showdown.winnerTeam) return;
+    s.showdown.lastFeedback = { teamCode: team, result: data.result, at: arrivedAt };
+    if (data.result === "win") {
+      s.showdown.winnerTeam = team;
+      s.showdown.pointsAwarded = true;
+      s.phase = "showdown_revealed";
+      current.teams[team].score = (current.teams[team].score || 0) + s.showdown.points;
+    }
+    return current;
+  }, undefined, false);
+  return { accepted: result.committed };
+}
+
 async function submitShowdownAnswer(uid, data, receivedAt = now()) {
   // Measure arrival before database reads so their latency cannot reorder players.
   const id = code(data.matchCode);
@@ -871,7 +941,7 @@ async function submitShowdownAnswer(uid, data, receivedAt = now()) {
   const player = playerForUid(match, uid, text(data.playerId, 80));
   const choice = Number(data.choice);
   const showdown = match.state.showdown;
-  if (!player || match.state.phase !== "showdown" || !showdown) return { status: "late" };
+  if (!player || match.state.phase !== "showdown" || !showdown || showdown.kind === "picture_guess") return { status: "late" };
   if (data.questionId != null && data.questionId !== match.state.question?.id) return { status: "stale" };
   if (!Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
   if (receivedAt < showdown.opensAt) return { status: "early" };
@@ -936,6 +1006,19 @@ async function finishShowdown(uid, data) {
   if (match.state.phase !== "showdown" || !match.state.showdown || now() < match.state.showdown.closesAt) return { finished: false };
   const secret = secretSnapshot.val();
   if (!secret || secret.questionId !== match.state.question?.id) fail("failed-precondition", "تعذّر التحقق من سؤال المواجهة، أعد المحاولة");
+  if (match.state.showdown.kind === "picture_guess") {
+    if (secret.mode !== "picture_guess") fail("failed-precondition", "تعذّر التحقق من صور التحدي");
+    const closed = await db.ref(`matches/${id}`).transaction((current) => {
+      if (current === null) return null;
+      const s = current?.state;
+      if (!s || s.phase !== "showdown" || s.question?.id !== secret.questionId || s.showdown?.kind !== "picture_guess" || now() < s.showdown.closesAt) return;
+      s.phase = "showdown_revealed";
+      s.showdown.winnerTeam = null;
+      s.showdown.pointsAwarded = false;
+      return current;
+    }, undefined, false);
+    return { finished: closed.snapshot.val()?.state?.phase === "showdown_revealed" };
+  }
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (current === null) return null;
     if (!current || current.state?.phase !== "showdown" || now() < current.state.showdown?.closesAt) return;
@@ -1261,6 +1344,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { totals: totalsSnapshot.val() || {}, daily: daily.reverse() };
   }
   if (action === "startChallenge") return startChallenge(uid);
+  if (action === "getGameCapabilities") return { pictureGuess: true };
   if (action === "answerChallenge") return answerChallenge(uid, data);
   if (action === "createMatch") return createMatch(uid, data.options || {});
   if (action === "joinTeam") return joinTeam(uid, data);
@@ -1297,6 +1381,8 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { matchCode: invite.matchCode, teamCode: invite.teamCode, inviteKey: invite.inviteKey };
   }
   const { id, match, access } = await loadMatch(data.matchCode);
+  if (action === "getPictureGuessView") return pictureGuessView(uid, data, id, match);
+  if (action === "judgePictureGuess") return judgePictureGuess(uid, data, id, match);
   if (["preparePunishment", "judgePunishment", "requestPunishmentOutcome", "resolvePunishment", "cancelPunishment"].includes(action)) return punishmentAction(uid, data, id, match);
   if (action === "getTeamInvites") {
     const isHost = match.hostUid === uid;
@@ -1315,7 +1401,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const valid = secret?.questionId === match.state.question?.id;
     return {
       questionId: valid ? secret.questionId : null,
-      answer: valid ? secret.answer : null,
+      answer: valid ? secret.answer ?? null : null,
       answerText: valid ? secret.answerText || (Array.isArray(secret.options) ? secret.options[secret.answer] ?? null : null) : null,
       brandInfo: valid ? secret.brandInfo || null : null,
     };
@@ -1413,6 +1499,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const isActing = match.state.question?.type === "acting";
     await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, attemptedTeams, question: reprotectQuestionForAttempt(match.state.question), answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardClaimId: null });
   } else if (action === "advanceTurn") {
+    if (match.state.phase === "showdown" && match.state.showdown?.kind === "picture_guess") fail("failed-precondition", "انتظر انتهاء تحدي الصور أو ثبّت الفائز");
     if (match.state.punishment && match.state.punishment.stage !== "resolved") fail("failed-precondition", "ثبّت نتيجة سؤال وعقاب أولاً");
     return advance(id, match);
   } else if (action === "setCaptain") {

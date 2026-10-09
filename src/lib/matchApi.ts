@@ -13,9 +13,11 @@ export interface CreateMatchOptions {
   timer: number;
   answerMode: AnswerMode;
   enabledTypes: QuestionType[];
+  challengeMode?: "classic" | "picture_guess";
 }
 
 type ActionName =
+  | "getPictureGuessView" | "judgePictureGuess" | "getGameCapabilities"
   | "createMatch" | "joinTeam" | "leaveMatch" | "startMatch" | "chooseType"
   | "submitAnswer" | "useAssist" | "judgeVerbal" | "revealAnswer"
   | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
@@ -121,6 +123,14 @@ async function gameAction<T>(action: ActionName, payload: Record<string, unknown
 }
 
 export async function createMatch(opts: CreateMatchOptions): Promise<string> {
+  if (opts.challengeMode === "picture_guess") {
+    try {
+      const capabilities = await gameAction<{ pictureGuess?: boolean }>("getGameCapabilities", {});
+      if (!capabilities.pictureGuess) throw new Error("unsupported");
+    } catch {
+      throw new Error("تحدي الصور يحتاج تحديث وظائف Firebase إلى آخر نسخة. المسابقة العادية ما زالت متاحة.");
+    }
+  }
   const result = await gameAction<{ code: string }>("createMatch", { options: opts });
   return result.code;
 }
@@ -374,6 +384,19 @@ export async function submitShowdownAnswer(
 export async function finishShowdown(matchCode: string, questionId?: number | string): Promise<boolean> {
   const result = await gameAction<{ finished: boolean }>("finishShowdown", { matchCode, questionId: questionId ?? null });
   return result.finished;
+}
+
+export interface PictureGuessView {
+  questionId: number | null;
+  pictures: Record<string, { id: number; name: string; image: string; targetTeam: string }>;
+}
+
+export async function getPictureGuessView(matchCode: string, questionId: number): Promise<PictureGuessView> {
+  return gameAction<PictureGuessView>("getPictureGuessView", { matchCode, questionId });
+}
+
+export async function judgePictureGuess(matchCode: string, questionId: number, teamCode: string, result: "yes" | "no" | "win"): Promise<boolean> {
+  return (await gameAction<{ accepted: boolean }>("judgePictureGuess", { matchCode, questionId, teamCode, result })).accepted;
 }
 
 export function isShowdownDue(match: Match): boolean {

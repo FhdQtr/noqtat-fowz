@@ -108,6 +108,8 @@ export interface ShowdownAnswer {
 }
 
 export interface ShowdownState {
+  kind?: "picture_guess";
+  lastFeedback?: { teamCode: string; result: "yes" | "no" | "win"; at: number };
   number: number;
   points: number;
   opensAt: number;
@@ -180,6 +182,7 @@ export interface Match {
   questionsPerTeam?: number; // عدد الأسئلة لكل فريق
   timer: number; // ثواني لكل سؤال (0 = يدوي)
   answerMode?: AnswerMode;
+  challengeMode?: "classic" | "picture_guess";
   enabledTypes: QuestionType[];
   rotationBlocked?: Record<string, Record<string, Record<string, boolean>>>;
   typeCaps?: Record<string, number>; // الحصة العادلة لكل قسم بحسب حجم البنك وعدد الفرق

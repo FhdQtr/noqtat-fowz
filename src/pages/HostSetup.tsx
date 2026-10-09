@@ -46,6 +46,7 @@ export default function HostSetup() {
   const [questionsPerTeam, setQuestionsPerTeam] = useState(8);
   const [timer, setTimer] = useState(0);
   const [answerMode, setAnswerMode] = useState<AnswerMode>("representative");
+  const [challengeMode, setChallengeMode] = useState<"classic" | "picture_guess">("classic");
   const [types, setTypes] = useState<QuestionType[]>(TYPE_OPTIONS.map((t) => t.id));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -65,6 +66,7 @@ export default function HostSetup() {
   const setCount = (n: number) => {
     const c = Math.min(4, Math.max(2, n));
     setTeamCount(c);
+    if (c !== 2) setChallengeMode("classic");
     setTeamNames((prev) => {
       const next = [...prev];
       while (next.length < c) next.push("");
@@ -94,6 +96,7 @@ export default function HostSetup() {
           timer,
           answerMode,
           enabledTypes: types,
+          challengeMode,
         }),
         new Promise<never>((_, rej) =>
           setTimeout(() => rej(new Error("الاتصال بالسيرفر أخذ وقتًا أطول من المعتاد — تأكد من الإنترنت أو جرّب شبكة ثانية")), 20000)
@@ -215,6 +218,18 @@ export default function HostSetup() {
               </button>
             ))}
           </div>
+
+          <fieldset className="mb-6">
+            <legend className="mb-2 text-sm font-bold text-gold-light/90">نوع التحدي بعد 3 أسئلة لكل فريق</legend>
+            <div className="grid gap-2">
+              {([{ id: "classic", label: "مواجهة الجميع: اختيارات", hint: "سؤال مشترك؛ الأسرع بالإجابة الصحيحة يفوز" }, { id: "picture_guess", label: "تحدي الصور: هل هو…؟", hint: "فريقان، صورتان مختلفتان، دقيقتان، والحكم يثبت أول تخمين صحيح" }] as const).map((option) => (
+                <button key={option.id} type="button" disabled={option.id === "picture_guess" && teamCount !== 2} onClick={() => setChallengeMode(option.id)} aria-pressed={challengeMode === option.id}
+                  className={`rounded-xl border px-4 py-3 text-right font-cairo disabled:opacity-40 ${challengeMode === option.id ? "border-gold bg-gold/20 text-gold-light" : "border-gold-faint/40 text-muted-foreground"}`}>
+                  <span className="block font-bold">{option.label}</span><span className="mt-1 block text-xs">{option.hint}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
 
           {/* المؤقت */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90">وقت الإجابة لكل سؤال</label>

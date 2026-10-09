@@ -172,7 +172,7 @@ export default function TvScreen() {
         <div className="w-28 text-left">
           {match.status === "playing" && (
             <span className="text-sm text-muted-foreground font-cairo">
-              {st.phase === "showdown" || st.phase === "showdown_revealed" ? "مواجهة الجميع" : `سؤال ${st.round} / ${match.totalRounds}`}
+              {st.phase === "showdown" || st.phase === "showdown_revealed" ? st.showdown?.kind === "picture_guess" ? "تحدي الصور" : "مواجهة الجميع" : `سؤال ${st.round} / ${match.totalRounds}`}
             </span>
           )}
         </div>

@@ -83,6 +83,10 @@ export default function ScoreBoard({
                 <span>المركز {i + 1}</span>
               </div>
             )}
+            {t.scoreAdjustment ? <p role="status" className="mt-2 max-w-52 text-center text-xs font-cairo text-gold-light">
+              الحكم {t.scoreAdjustment.delta > 0 ? "زاد" : "خصم"} {Math.abs(t.scoreAdjustment.delta)} نقطة لفريق {t.name}
+              <span className="mt-1 block text-muted-foreground">{t.scoreAdjustment.reason}</span>
+            </p> : null}
           </div>
         );
       })}

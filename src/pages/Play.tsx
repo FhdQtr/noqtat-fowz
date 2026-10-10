@@ -307,6 +307,7 @@ export default function Play() {
           {won ? "مبروك! فريقكم البطل" : `فريقكم بالمركز ${myRank}`}
         </h1>
         <p className="mt-2 text-gold-light font-cairo text-xl">{team.score} نقطة · {team.correctCount} إجابة صحيحة</p>
+        <div className="mt-5"><ScoreBoard match={match} /></div>
         <button
           onClick={async () => {
             await leaveMatch(matchCode, player.id);

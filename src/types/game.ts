@@ -63,6 +63,7 @@ export interface CustomType {
 export type TeamColor = "maroon" | "emerald" | "royal" | "gold";
 
 export interface Team {
+  scoreAdjustment?: { requestId: string; teamCode: string; delta: number; before: number; after: number; reason: string; at: number };
   code: string; // كود الفريق (يدخل به اللاعبون)
   name: string;
   color: TeamColor;
@@ -109,7 +110,6 @@ export interface ShowdownAnswer {
 
 export interface ShowdownState {
   kind?: "picture_guess";
-  lastFeedback?: { teamCode: string; result: "yes" | "no" | "win"; at: number };
   number: number;
   points: number;
   opensAt: number;

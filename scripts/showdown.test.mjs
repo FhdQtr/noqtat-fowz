@@ -205,12 +205,13 @@ function pictureGuessFixture() {
   return h;
 }
 
-test('picture challenge starts after three questions per team, with distinct private pictures and 120 seconds', async () => {
+test('picture challenge prepares private pictures after three questions per team and waits for host timer', async () => {
   const h = pictureGuessFixture();
   await h.call('advanceTurn');
   const s = h.match().state;
   assert.equal(s.showdown.kind, 'picture_guess');
-  assert.equal(s.showdown.closesAt - s.showdown.opensAt, 120000);
+  assert.equal(s.showdown.opensAt, 0);
+  assert.equal(s.showdown.closesAt, 0);
   assert.equal(s.round, 6);
   assert.equal(s.question.image, undefined);
   assert.equal(s.question.options, undefined); // RTDB prunes deliberately empty arrays.
@@ -235,15 +236,26 @@ test('picture challenge views are scoped to each authenticated team and both ima
   assert.equal((await h.call('getPictureGuessView', 'user1', { questionId: questionId - 1 })).questionId, null);
 });
 
-test('yes/no picture feedback is host-only and never awards points; final guess scores exactly once', async () => {
+test('only host starts two-minute timer once and chooses a winner after expiry exactly once', async () => {
   const h = pictureGuessFixture(); await h.call('advanceTurn');
   const questionId = h.match().state.question.id;
-  const extra = { questionId, teamCode: 'A234-1', result: 'yes' };
+  const extra = { questionId, teamCode: 'A234-1', result: 'win' };
   await assert.rejects(h.call('judgePictureGuess', 'user1', extra), { code: 'permission-denied' });
-  assert.equal((await h.call('judgePictureGuess', 'host', extra)).accepted, false); // opening countdown
-  h.setClock(h.match().state.showdown.opensAt + 1);
-  for (const result of ['yes', 'no']) assert.equal((await h.call('judgePictureGuess', 'host', { ...extra, result })).accepted, true);
+  assert.equal((await h.call('judgePictureGuess', 'host', extra)).accepted, false);
+  await assert.rejects(h.call('startPictureGuessTimer', 'user1', { questionId }), { code: 'permission-denied' });
+  assert.equal((await h.call('startPictureGuessTimer', 'host', { questionId: questionId - 1 })).accepted, false);
+  assert.equal((await h.call('startPictureGuessTimer', 'host', { questionId })).accepted, true);
+  assert.equal(h.match().state.showdown.closesAt - h.match().state.showdown.opensAt, 120000);
+  const deadline = h.match().state.showdown.closesAt;
+  h.setClock(deadline - 1);
+  assert.equal((await h.call('startPictureGuessTimer', 'host', { questionId })).accepted, false);
+  assert.equal(h.match().state.showdown.closesAt, deadline);
+  assert.equal((await h.call('judgePictureGuess', 'host', extra)).accepted, false);
+  await assert.rejects(h.call('judgePictureGuess', 'host', { ...extra, result: 'yes' }), { code: 'invalid-argument' });
   assert.equal(h.match().teams['A234-1'].score, 100);
+  assert.equal(h.match().state.phase, 'showdown');
+  h.setClock(deadline);
+  assert.equal((await h.call('finishShowdown', 'user1', { questionId })).finished, false);
   assert.equal(h.match().state.phase, 'showdown');
   assert.equal((await h.call('judgePictureGuess', 'host', { ...extra, questionId: questionId - 1, result: 'win' })).accepted, false);
   assert.equal((await h.call('judgePictureGuess', 'host', { ...extra, result: 'win' })).accepted, true);
@@ -259,27 +271,61 @@ test('yes/no picture feedback is host-only and never awards points; final guess 
 
 test('two concurrent picture winner decisions cannot award both teams or double-score', async () => {
   const h = pictureGuessFixture(); await h.call('advanceTurn');
-  h.setClock(h.match().state.showdown.opensAt + 1);
   const questionId = h.match().state.question.id;
+  await h.call('startPictureGuessTimer', 'host', { questionId });
+  h.setClock(h.match().state.showdown.closesAt);
   const results = await Promise.all(h.match().teamOrder.map((teamCode) => h.call('judgePictureGuess', 'host', { questionId, teamCode, result: 'win' })));
   assert.equal(results.filter((r) => r.accepted).length, 1);
   assert.equal(h.match().teams['A234-1'].score + h.match().teams['A234-2'].score, 450);
 });
 
-test('picture timeout yields no winner, rejects late guesses and resumes ordinary play', async () => {
+test('picture timeout waits for host no-winner decision without awarding points and resumes play', async () => {
   const h = pictureGuessFixture(); await h.call('advanceTurn');
   const questionId = h.match().state.question.id;
   assert.equal((await h.call('finishShowdown', 'user1', { questionId })).finished, false);
+  await h.call('startPictureGuessTimer', 'host', { questionId });
   h.setClock(h.match().state.showdown.closesAt);
-  assert.equal((await h.call('judgePictureGuess', 'host', { questionId, teamCode: 'A234-1', result: 'win' })).accepted, false);
   await assert.rejects(h.call('finishShowdown', 'outsider', { questionId }), { code: 'permission-denied' });
   const results = await Promise.all([h.call('finishShowdown', 'host', { questionId }), h.call('finishShowdown', 'user2', { questionId })]);
-  assert.ok(results.every((r) => r.finished));
+  assert.ok(results.every((r) => !r.finished));
+  await assert.rejects(h.call('advanceTurn'), { code: 'failed-precondition' });
+  assert.equal((await h.call('judgePictureGuess', 'host', { questionId, teamCode: '', result: 'none' })).accepted, true);
   assert.equal(h.match().state.showdown.winnerTeam, undefined);
   assert.equal(h.match().teams['A234-1'].score, 100);
   assert.equal(h.match().teams['A234-2'].score, 150);
   await h.call('advanceTurn');
   assert.equal(h.match().state.phase, 'choose');
+});
+
+test('host score corrections allow increases and deductions, record reason, reject outsiders and invalid input', async () => {
+  const h = harness(true);
+  const request = { teamCode: 'A234-1', delta: 200, reason: 'تصحيح نتيجة', requestId: 'score-request-0001' };
+  await assert.rejects(h.call('adjustTeamScore', 'user1', request), { code: 'permission-denied' });
+  for (const extra of [{ delta: 0 }, { delta: 1.5 }, { delta: 100001 }, { delta: '200' }, { reason: '' }, { teamCode: 'NOPE' }, { requestId: 'bad.id' }]) {
+    await assert.rejects(h.call('adjustTeamScore', 'host', { ...request, ...extra }), { code: 'invalid-argument' });
+  }
+  const results = await Promise.all([h.call('adjustTeamScore', 'host', request), h.call('adjustTeamScore', 'host', request)]);
+  assert.ok(results.every((r) => r.accepted));
+  assert.equal(h.match().teams['A234-1'].score, 300);
+  assert.equal(h.match().teams['A234-2'].score, 150);
+  assert.equal(h.match().teams['A234-1'].scoreAdjustment.reason, request.reason);
+  assert.equal(h.match().scoreAdjustments[request.requestId].before, 100);
+  assert.equal((await h.call('adjustTeamScore', 'host', { ...request, delta: 300 })).accepted, false);
+  await h.call('adjustTeamScore', 'host', { ...request, delta: -400, reason: 'مخالفة', requestId: 'score-request-0002' });
+  assert.equal(h.match().teams['A234-1'].score, -100);
+  assert.equal(h.match().teams['A234-1'].scoreAdjustment.delta, -400);
+});
+
+test('simultaneous host score correction and ordinary question judgment preserve both awards', async () => {
+  const h = logoFixture();
+  await h.call('chooseType', 'user1', { type: 'brand' });
+  const value = h.match().state.questionValue;
+  await Promise.all([
+    h.call('judgeVerbal', 'host', { correct: true }),
+    h.call('adjustTeamScore', 'host', { teamCode: 'A234-1', delta: 50, reason: 'تصحيح', requestId: 'score-request-0003' }),
+  ]);
+  assert.equal(h.match().teams['A234-1'].score, 150 + value);
+  assert.equal(h.match().teams['A234-1'].correctCount, 1);
 });
 
 test('picture mode never starts early, does not accept option submissions, and creation requires two teams', async () => {

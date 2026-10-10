@@ -17,7 +17,7 @@ export interface CreateMatchOptions {
 }
 
 type ActionName =
-  | "getPictureGuessView" | "judgePictureGuess" | "getGameCapabilities"
+  | "getPictureGuessView" | "judgePictureGuess" | "startPictureGuessTimer" | "adjustTeamScore" | "getGameCapabilities"
   | "createMatch" | "joinTeam" | "leaveMatch" | "startMatch" | "chooseType"
   | "submitAnswer" | "useAssist" | "judgeVerbal" | "revealAnswer"
   | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
@@ -125,8 +125,8 @@ async function gameAction<T>(action: ActionName, payload: Record<string, unknown
 export async function createMatch(opts: CreateMatchOptions): Promise<string> {
   if (opts.challengeMode === "picture_guess") {
     try {
-      const capabilities = await gameAction<{ pictureGuess?: boolean }>("getGameCapabilities", {});
-      if (!capabilities.pictureGuess) throw new Error("unsupported");
+      const capabilities = await gameAction<{ pictureGuessManual?: boolean }>("getGameCapabilities", {});
+      if (!capabilities.pictureGuessManual) throw new Error("unsupported");
     } catch {
       throw new Error("تحدي الصور يحتاج تحديث وظائف Firebase إلى آخر نسخة. المسابقة العادية ما زالت متاحة.");
     }
@@ -395,8 +395,16 @@ export async function getPictureGuessView(matchCode: string, questionId: number)
   return gameAction<PictureGuessView>("getPictureGuessView", { matchCode, questionId });
 }
 
-export async function judgePictureGuess(matchCode: string, questionId: number, teamCode: string, result: "yes" | "no" | "win"): Promise<boolean> {
+export async function judgePictureGuess(matchCode: string, questionId: number, teamCode: string, result: "win" | "none"): Promise<boolean> {
   return (await gameAction<{ accepted: boolean }>("judgePictureGuess", { matchCode, questionId, teamCode, result })).accepted;
+}
+
+export async function startPictureGuessTimer(matchCode: string, questionId: number): Promise<boolean> {
+  return (await gameAction<{ accepted: boolean }>("startPictureGuessTimer", { matchCode, questionId })).accepted;
+}
+
+export async function adjustTeamScore(matchCode: string, teamCode: string, delta: number, reason: string, requestId: string): Promise<boolean> {
+  return (await gameAction<{ accepted: boolean }>("adjustTeamScore", { matchCode, teamCode, delta, reason, requestId })).accepted;
 }
 
 export function isShowdownDue(match: Match): boolean {

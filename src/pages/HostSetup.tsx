@@ -222,7 +222,7 @@ export default function HostSetup() {
           <fieldset className="mb-6">
             <legend className="mb-2 text-sm font-bold text-gold-light/90">نوع التحدي بعد 3 أسئلة لكل فريق</legend>
             <div className="grid gap-2">
-              {([{ id: "classic", label: "مواجهة الجميع: اختيارات", hint: "سؤال مشترك؛ الأسرع بالإجابة الصحيحة يفوز" }, { id: "picture_guess", label: "تحدي الصور: هل هو…؟", hint: "فريقان، صورتان مختلفتان، دقيقتان، والحكم يثبت أول تخمين صحيح" }] as const).map((option) => (
+              {([{ id: "classic", label: "مواجهة الجميع: اختيارات", hint: "سؤال مشترك؛ الأسرع بالإجابة الصحيحة يفوز" }, { id: "picture_guess", label: "تحدي الصور: هل هو…؟", hint: "فريقان، صورتان مختلفتان؛ الحكم يبدأ الدقيقتين ويختار الفائز بعد الوقت" }] as const).map((option) => (
                 <button key={option.id} type="button" disabled={option.id === "picture_guess" && teamCount !== 2} onClick={() => setChallengeMode(option.id)} aria-pressed={challengeMode === option.id}
                   className={`rounded-xl border px-4 py-3 text-right font-cairo disabled:opacity-40 ${challengeMode === option.id ? "border-gold bg-gold/20 text-gold-light" : "border-gold-faint/40 text-muted-foreground"}`}>
                   <span className="block font-bold">{option.label}</span><span className="mt-1 block text-xs">{option.hint}</span>

@@ -5,7 +5,7 @@ import { useServerNow } from "./useServerNow";
 
 /** One sequential retry loop per participant, using the same clock as the panel. */
 export function useShowdownFinish(code: string, match: Match | null | undefined, enabled = true) {
-  const closesAt = match?.state.phase === "showdown" ? match.state.showdown?.closesAt : null;
+  const closesAt = match?.state.phase === "showdown" && match.state.showdown?.kind !== "picture_guess" ? match.state.showdown?.closesAt : null;
   const questionId = match?.state.question?.id;
   const serverNow = useServerNow(enabled && closesAt ? 250 : null);
   const expired = Boolean(enabled && closesAt && serverNow >= closesAt + 300);

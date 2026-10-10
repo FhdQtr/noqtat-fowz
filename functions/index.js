@@ -879,7 +879,7 @@ async function startPictureGuess(id, match) {
     const number = (match.showdownCount || 0) + 1;
     const chosen = randomOrder(PICTURE_GUESS_ITEMS).slice(0, 2);
     const pictures = Object.fromEntries(match.teamOrder.map((team, i) => [team, { ...chosen[i], targetTeam: match.teamOrder[1 - i] }]));
-    const opensAt = now() + SHOWDOWN_OPEN_DELAY_MS;
+    const opensAt = 0;
     const questionId = 800000 + number;
     // الصور وتوزيعها تبقى في السر فقط؛ سجل المسابقة المشترك لا يحتوي أي مسار صورة.
     await db.ref().update({
@@ -887,7 +887,7 @@ async function startPictureGuess(id, match) {
       [`matches/${id}/showdownCount`]: number,
       [`matches/${id}/state`]: { ...latest, phase: "showdown", pictureStartClaim: null,
         question: { id: questionId, type: "picture_guess", category: "challenge", question: "اسألوا بصيغة هل هو… وخمّنوا صورة الفريق المنافس", options: [], answer: -1 },
-        showdown: { kind: "picture_guess", number, points: SHOWDOWN_POINTS, opensAt, closesAt: opensAt + 120000, winnerTeam: null, answers: {} },
+        showdown: { kind: "picture_guess", number, points: SHOWDOWN_POINTS, opensAt, closesAt: 0, winnerTeam: null, answers: {} },
         answer: null, isCorrect: null, targetTeam: null, originalTeam: null, viewUntil: null,
         questionStartedAt: opensAt, questionDuration: 120, punishment: null, assistUsed: false },
     });
@@ -912,23 +912,61 @@ async function pictureGuessView(uid, data, id, match) {
 async function judgePictureGuess(uid, data, id, match) {
   requireHost(match, uid);
   const team = code(data.teamCode);
-  if (!match.teams[team] || !["yes", "no", "win"].includes(data.result)) fail("invalid-argument", "اختر الفريق والنتيجة");
+  if (!["win", "none"].includes(data.result) || (data.result === "win" && !match.teams[team])) fail("invalid-argument", "اختر الفريق الفائز أو لا أحد");
   if (data.questionId !== match.state.question?.id) return { accepted: false };
   const arrivedAt = now();
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (current === null) return null;
     const s = current?.state;
-    if (!s || s.phase !== "showdown" || s.question?.id !== data.questionId || s.showdown?.kind !== "picture_guess" || arrivedAt < s.showdown.opensAt || arrivedAt >= s.showdown.closesAt || s.showdown.winnerTeam) return;
-    s.showdown.lastFeedback = { teamCode: team, result: data.result, at: arrivedAt };
+    if (!s || s.phase !== "showdown" || s.question?.id !== data.questionId || s.showdown?.kind !== "picture_guess" || !s.showdown.opensAt || arrivedAt < s.showdown.closesAt) return;
+    s.phase = "showdown_revealed";
+    s.showdown.winnerTeam = data.result === "win" ? team : null;
+    s.showdown.pointsAwarded = data.result === "win";
     if (data.result === "win") {
-      s.showdown.winnerTeam = team;
-      s.showdown.pointsAwarded = true;
-      s.phase = "showdown_revealed";
       current.teams[team].score = (current.teams[team].score || 0) + s.showdown.points;
     }
     return current;
   }, undefined, false);
   return { accepted: result.committed };
+}
+
+async function startPictureGuessTimer(uid, data, id, match) {
+  requireHost(match, uid);
+  const startedAt = now();
+  const result = await db.ref(`matches/${id}/state`).transaction((s) => {
+    if (s === null) return null;
+    if (s.phase !== "showdown" || s.question?.id !== data.questionId || s.showdown?.kind !== "picture_guess" || s.showdown.opensAt) return;
+    s.showdown.opensAt = startedAt;
+    s.showdown.closesAt = startedAt + 120000;
+    s.questionStartedAt = startedAt;
+    return s;
+  }, undefined, false);
+  return { accepted: result.committed };
+}
+
+async function adjustTeamScore(uid, data, id, match) {
+  requireHost(match, uid);
+  const team = code(data.teamCode);
+  const delta = data.delta;
+  const reason = text(data.reason, 160);
+  const requestId = text(data.requestId, 80);
+  if (!match.teams[team] || !Number.isSafeInteger(delta) || !delta || Math.abs(delta) > 100000 || !reason || !/^[a-zA-Z0-9_-]{16,80}$/.test(requestId)) fail("invalid-argument", "حدد الفريق ومقدار النقاط وسبب التعديل");
+  const at = now();
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (current === null) return null;
+    if (!current.teams?.[team] || current.scoreAdjustments?.[requestId]) return;
+    const before = current.teams[team].score || 0;
+    const after = before + delta;
+    if (!Number.isSafeInteger(after)) return;
+    const event = { requestId, teamCode: team, delta, before, after, reason, at };
+    current.teams[team].score = after;
+    current.teams[team].scoreAdjustment = event;
+    current.scoreAdjustments = current.scoreAdjustments || {};
+    current.scoreAdjustments[requestId] = event;
+    return current;
+  }, undefined, false);
+  const saved = result.snapshot.val()?.scoreAdjustments?.[requestId];
+  return { accepted: result.committed || Boolean(saved && saved.teamCode === team && saved.delta === delta && saved.reason === reason) };
 }
 
 async function submitShowdownAnswer(uid, data, receivedAt = now()) {
@@ -1003,22 +1041,11 @@ async function finishShowdown(uid, data) {
   if (!isParticipant) fail("permission-denied", "هذه العملية للمشاركين في الميدان فقط");
   if (data.questionId != null && data.questionId !== match.state.question?.id) return { finished: false };
   if (match.state.phase === "showdown_revealed") return { finished: true };
+  // لا تعتمد نهاية تحدي الصور أي نتيجة؛ الحكم يختار أحد الخيارات الثلاثة.
+  if (match.state.showdown?.kind === "picture_guess") return { finished: false };
   if (match.state.phase !== "showdown" || !match.state.showdown || now() < match.state.showdown.closesAt) return { finished: false };
   const secret = secretSnapshot.val();
   if (!secret || secret.questionId !== match.state.question?.id) fail("failed-precondition", "تعذّر التحقق من سؤال المواجهة، أعد المحاولة");
-  if (match.state.showdown.kind === "picture_guess") {
-    if (secret.mode !== "picture_guess") fail("failed-precondition", "تعذّر التحقق من صور التحدي");
-    const closed = await db.ref(`matches/${id}`).transaction((current) => {
-      if (current === null) return null;
-      const s = current?.state;
-      if (!s || s.phase !== "showdown" || s.question?.id !== secret.questionId || s.showdown?.kind !== "picture_guess" || now() < s.showdown.closesAt) return;
-      s.phase = "showdown_revealed";
-      s.showdown.winnerTeam = null;
-      s.showdown.pointsAwarded = false;
-      return current;
-    }, undefined, false);
-    return { finished: closed.snapshot.val()?.state?.phase === "showdown_revealed" };
-  }
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (current === null) return null;
     if (!current || current.state?.phase !== "showdown" || now() < current.state.showdown?.closesAt) return;
@@ -1110,7 +1137,6 @@ async function reveal(id, match, correctOverride) {
   if (!state.question || !secret || secret.questionId !== state.question.id) fail("failed-precondition", "تعذّر التحقق من السؤال");
   const correct = typeof correctOverride === "boolean" ? correctOverride : state.answer?.choice === secret.answer;
   const teamCode = state.targetTeam;
-  const team = match.teams[teamCode];
   const attemptedTeams = correct
     ? (state.attemptedTeams || [])
     : [...new Set([...(state.attemptedTeams || []), teamCode])];
@@ -1122,8 +1148,6 @@ async function reveal(id, match, correctOverride) {
     [`matches/${id}/state/isCorrect`]: correct,
     [`matches/${id}/state/attemptedTeams`]: attemptedTeams,
     [`matches/${id}/state/question/answer`]: correct || !canPass ? secret.answer : -1,
-    [`matches/${id}/teams/${teamCode}/correctCount`]: team.correctCount + (correct ? 1 : 0),
-    [`matches/${id}/teams/${teamCode}/wrongCount`]: team.wrongCount + (correct ? 0 : 1),
   };
   if ((correct || !canPass) && Array.isArray(secret.options)) {
     updates[`matches/${id}/state/question/question`] = text(secret.question, 500);
@@ -1131,11 +1155,26 @@ async function reveal(id, match, correctOverride) {
     updates[`matches/${id}/state/question/promptHidden`] = null;
     updates[`matches/${id}/state/question/optionsHidden`] = null;
   }
-  if (correct) {
-    updates[`matches/${id}/teams/${teamCode}/score`] = team.score + points(state);
-    updates[`matches/${id}/teams/${teamCode}/cardBalance`] = (team.cardBalance || 0) + cardReward(state);
-  }
-  await db.ref().update(updates);
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (current === null) return null;
+    const s = current.state;
+    if (!s || !["question", "locked"].includes(s.phase) || s.question?.id !== state.question.id || s.targetTeam !== teamCode || s.passCount !== state.passCount) return;
+    for (const [path, value] of Object.entries(updates)) {
+      const keys = path.split("/").slice(2);
+      const last = keys.pop();
+      const parent = keys.reduce((node, key) => node[key] ||= {}, current);
+      if (value === null) delete parent[last]; else parent[last] = value;
+    }
+    const team = current.teams[teamCode];
+    team.correctCount = (team.correctCount || 0) + (correct ? 1 : 0);
+    team.wrongCount = (team.wrongCount || 0) + (correct ? 0 : 1);
+    if (correct) {
+      team.score = (team.score || 0) + points(state);
+      team.cardBalance = (team.cardBalance || 0) + cardReward(state);
+    }
+    return current;
+  }, undefined, false);
+  if (!result.committed) fail("failed-precondition", "تم كشف هذا السؤال مسبقاً أو تغيّر السؤال");
   return { correct };
 }
 
@@ -1344,7 +1383,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { totals: totalsSnapshot.val() || {}, daily: daily.reverse() };
   }
   if (action === "startChallenge") return startChallenge(uid);
-  if (action === "getGameCapabilities") return { pictureGuess: true };
+  if (action === "getGameCapabilities") return { pictureGuess: true, pictureGuessManual: true };
   if (action === "answerChallenge") return answerChallenge(uid, data);
   if (action === "createMatch") return createMatch(uid, data.options || {});
   if (action === "joinTeam") return joinTeam(uid, data);
@@ -1383,6 +1422,8 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   const { id, match, access } = await loadMatch(data.matchCode);
   if (action === "getPictureGuessView") return pictureGuessView(uid, data, id, match);
   if (action === "judgePictureGuess") return judgePictureGuess(uid, data, id, match);
+  if (action === "startPictureGuessTimer") return startPictureGuessTimer(uid, data, id, match);
+  if (action === "adjustTeamScore") return adjustTeamScore(uid, data, id, match);
   if (["preparePunishment", "judgePunishment", "requestPunishmentOutcome", "resolvePunishment", "cancelPunishment"].includes(action)) return punishmentAction(uid, data, id, match);
   if (action === "getTeamInvites") {
     const isHost = match.hostUid === uid;

@@ -25,6 +25,7 @@ import PowerCardEvent from "../components/PowerCardEvent";
 import ShowdownPanel from "../components/ShowdownPanel";
 import { useShowdownFinish } from "../lib/useShowdownFinish";
 import PunishmentPanel from "../components/PunishmentPanel";
+import ScoreAdjustmentPanel from "../components/ScoreAdjustmentPanel";
 
 const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
 
@@ -234,6 +235,7 @@ export default function HostRoom() {
             );
           })}
         </div>
+        <ScoreAdjustmentPanel match={match} matchCode={code} />
         <div className="mt-8 flex flex-wrap gap-3 justify-center">
           <button onClick={() => nav("/host")} className="btn-gold flex items-center gap-2">
             <Trophy className="w-5 h-5" />
@@ -366,6 +368,7 @@ export default function HostRoom() {
   return (
     <div className="min-h-dvh px-4 py-5 flex flex-col max-w-3xl mx-auto w-full">
       <PowerCardEvent match={match} />
+      <ScoreAdjustmentPanel match={match} matchCode={code} />
       <div className="fixed inset-0 -z-10">
         <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-20" />
         <div className="absolute inset-0 bg-night/88" />

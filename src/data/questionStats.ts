@@ -1,13 +1,13 @@
 export const BUILTIN_QUESTION_STATS: Record<string, number> = {
   "acting": 30,
   "brand": 20,
-  "completion": 50,
+  "completion": 49,
   "flag": 160,
   "image": 56,
   "memory": 30,
   "multiple_choice": 739,
-  "ordering": 41,
-  "riddle": 71,
+  "ordering": 40,
+  "riddle": 64,
   "true_false": 105
 };
 

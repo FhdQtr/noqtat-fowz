@@ -10470,6 +10470,7 @@
   },
   {
     "id": 815,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "ما هو الشيء الذي يمشي بلا أرجل؟",
@@ -10483,6 +10484,7 @@
   },
   {
     "id": 816,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "له رأس وليس له عيون؟",
@@ -10535,6 +10537,7 @@
   },
   {
     "id": 820,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "أنا ابن الماء وإذا تركوني في الماء أموت؟",
@@ -10639,6 +10642,7 @@
   },
   {
     "id": 828,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "ما هو الشيء الذي له أسنان ولا يأكل؟",
@@ -10756,6 +10760,7 @@
   },
   {
     "id": 837,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "يراك ولا تراه؟",
@@ -10886,6 +10891,7 @@
   },
   {
     "id": 847,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "كلمة مؤلفة من 8 حروف ولكنها تجمع كل الحروف؟",
@@ -10912,6 +10918,7 @@
   },
   {
     "id": 849,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "ما هو الشيء الذي يوجد مرة في الدقيقة ومرتين في اللحظة ولا يوجد في الساعة؟",
@@ -11686,7 +11693,7 @@
     "id": 909,
     "type": "completion",
     "category": "language",
-    "question": "أكمل: من جدّ ___ وجد",
+    "question": "أكمل: من جدّ ___",
     "options": [
       "جلس",
       "نام",
@@ -11983,6 +11990,7 @@
   },
   {
     "id": 932,
+    "disabled": true,
     "type": "completion",
     "category": "language",
     "question": "أكمل بيت الشافعي: تموت الأسد في الغابات جوعاً ولحم الضأن ___",
@@ -12165,6 +12173,7 @@
   },
   {
     "id": 946,
+    "disabled": true,
     "type": "ordering",
     "category": "culture",
     "question": "رتب الألوان من الأفتح للأغمق: أبيض - أصفر - أخضر - أسود",

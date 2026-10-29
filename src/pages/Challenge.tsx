@@ -163,7 +163,7 @@ export default function Challenge() {
         <p className="mt-2 font-ruqaa text-gold-light/80 text-xl">١٠٠ سؤال… فرصة وحدة تنجيك</p>
         <div className="glass-card mt-8 p-6 w-full max-w-md space-y-3 text-sm">
           {[
-            "١٠٠ سؤال متصاعدة الصعوبة كل ١٠ أسئلة",
+            "١٠٠ سؤال بترتيب عشوائي، دون تصاعد تلقائي للصعوبة",
             "٢٠ ثانية لكل سؤال",
             "فرصة واحدة للغلط (الفرصة الأخيرة)",
             "تمديد وقت مرة واحدة +١٥ ثانية",

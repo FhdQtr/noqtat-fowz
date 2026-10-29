@@ -167,6 +167,80 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
 }
 
+test('room endpoints reject missing and malformed codes before any room read', async () => {
+  for (const action of ['getMatch', 'getTeamInvites', 'getHostAnswer', 'submitAnswer', 'advanceTurn']) {
+    for (const matchCode of [undefined, '', ' ', '../', 'A234/players', 'A2345', {}, 1234]) {
+      const h = harness();
+      let reads = 0;
+      h.afterRead(() => { reads += 1; });
+      await assert.rejects(h.call(action, 'host', { matchCode }), { code: 'invalid-argument' }, `${action}: ${String(matchCode)}`);
+      assert.equal(reads, 0, 'invalid room paths never reach Admin SDK reads');
+    }
+  }
+});
+
+function ordinaryAnswerFixture() {
+  const h = harness();
+  Object.assign(h.match().state, { phase: 'question', round: 1, targetTeam: 'A234-1', passCount: 0, revision: 4, selectionRequestId: 'selection-1', answer: null });
+  const context = { playerId: 'p1', choice: 3, questionId: 42, attemptId: '1:A234-1:0:selection-1', revision: 4, requestId: 'answer-1' };
+  return { h, context };
+}
+
+test('ordinary answers require exact question attempt and revision context', async () => {
+  for (const change of [{ questionId: undefined }, { questionId: 41 }, { attemptId: undefined }, { attemptId: 'old' }, { revision: undefined }, { revision: 3 }, { requestId: undefined }]) {
+    const { h, context } = ordinaryAnswerFixture();
+    const result = await h.call('submitAnswer', 'user1', { ...context, ...change });
+    assert.equal(result.status, 'stale');
+    assert.equal(h.match().state.phase, 'question');
+    assert.equal(h.match().state.answer, null);
+  }
+});
+
+test('ordinary answer cannot lock a question replaced between read and commit', async () => {
+  const { h, context } = ordinaryAnswerFixture();
+  h.beforeTransaction(() => { h.match().state.question.id = 43; });
+  const result = await h.call('submitAnswer', 'user1', context);
+  assert.equal(result.status, 'stale');
+  assert.equal(h.match().state.phase, 'question');
+  assert.equal(h.match().state.answer, null);
+});
+
+test('accepted ordinary answer retries are idempotent and cannot change the choice', async () => {
+  const { h, context } = ordinaryAnswerFixture();
+  assert.equal((await h.call('submitAnswer', 'user1', context)).status, 'accepted');
+  const accepted = clone(h.match().state);
+  assert.equal((await h.call('submitAnswer', 'user1', context)).status, 'accepted');
+  assert.deepEqual(h.match().state, accepted);
+  assert.equal((await h.call('submitAnswer', 'user1', { ...context, choice: 0 })).status, 'stale');
+  assert.equal((await h.call('submitAnswer', 'user2', context)).status, 'stale');
+  assert.deepEqual(h.match().state, accepted);
+});
+
+test('presenter ordinary answers enforce context, atomic mode checks and safe retries', async () => {
+  const { h, context } = ordinaryAnswerFixture();
+  h.match().answerMode = 'host';
+  assert.equal((await h.call('submitHostAnswer', 'host', { ...context, questionId: 41 })).status, 'stale');
+  assert.equal((await h.call('submitHostAnswer', 'host', context)).status, 'accepted');
+  assert.equal((await h.call('submitHostAnswer', 'host', context)).status, 'accepted');
+  assert.equal(h.match().state.answer.playerId, 'host');
+  const other = ordinaryAnswerFixture(); other.h.match().answerMode = 'host';
+  other.h.beforeTransaction(() => { other.h.match().answerMode = 'anyone'; });
+  await assert.rejects(other.h.call('submitHostAnswer', 'host', other.context), { code: 'failed-precondition' });
+  assert.equal(other.h.match().state.phase, 'question');
+});
+
+test('solo excludes memory questions until a real view-hide phase exists', async () => {
+  const h = harness(false, true);
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const enabled = bank.filter((q) => !q.disabled && q.type === 'multiple_choice').slice(0, 100);
+  const memory = bank.filter((q) => !q.disabled && q.type === 'memory');
+  const keep = new Set([...enabled, ...memory].map((q) => q.id));
+  h.data.questionExclusions = Object.fromEntries(bank.filter((q) => !keep.has(q.id)).map((q) => [q.id, true]));
+  const result = await h.call('startChallenge', 'solo-user');
+  assert.equal(result.questions.length, 100);
+  assert.equal(result.questions.some((q) => q.type === 'memory'), false);
+});
+
 test('twenty logo questions have unique native assets and verified private presenter metadata', async () => {
   const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
   const logos = bank.filter((q) => q.type === 'brand' && !q.disabled);

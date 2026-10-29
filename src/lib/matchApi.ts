@@ -359,9 +359,19 @@ export async function chooseType(matchCode: string, type: QuestionType): Promise
   }
 }
 
-export async function submitAnswer(matchCode: string, playerId: string, playerName: string, choice: number): Promise<"accepted" | "late" | "error"> {
+export interface AnswerContext {
+  questionId: number;
+  attemptId: string;
+  revision: number;
+  requestId: string;
+}
+export function captureAnswerContext(state: Match["state"], requestId = crypto.randomUUID()): AnswerContext {
+  if (!state.question) throw new Error("لا يوجد سؤال نشط");
+  return { questionId: state.question.id, attemptId: `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`, revision: state.revision || 0, requestId };
+}
+export async function submitAnswer(matchCode: string, playerId: string, playerName: string, choice: number, context: AnswerContext): Promise<"accepted" | "late" | "stale" | "error"> {
   try {
-    const result = await gameAction<{ status: "accepted" | "late" }>("submitAnswer", { matchCode, playerId, playerName, choice });
+    const result = await gameAction<{ status: "accepted" | "late" | "stale" }>("submitAnswer", { matchCode, playerId, playerName, choice, ...context });
     return result.status;
   } catch {
     return "error";
@@ -472,8 +482,10 @@ export async function setAnswerMode(matchCode: string, answerMode: AnswerMode) {
   await gameAction("setAnswerMode", { matchCode, answerMode });
 }
 
-export async function submitHostAnswer(matchCode: string, choice: number): Promise<"accepted" | "late"> {
-  const result = await gameAction<{ status: "accepted" | "late" }>("submitHostAnswer", { matchCode, choice });
+export async function submitHostAnswer(matchCode: string, choice: number, state: Match["state"]): Promise<"accepted" | "late" | "stale"> {
+  const payload = { matchCode, choice, ...captureAnswerContext(state) };
+  const send = () => gameAction<{ status: "accepted" | "late" | "stale" }>("submitHostAnswer", payload);
+  const result = await send().catch(() => send());
   return result.status;
 }
 

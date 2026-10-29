@@ -120,6 +120,7 @@ export interface ShowdownState {
 }
 
 export interface GameState {
+  revision?: number; // Answer contract revision; old rooms default to zero.
   phase: MatchPhase;
   round: number; // رقم السؤال
   targetTeam: string | null; // الفريق صاحب السؤال الحالي
@@ -305,12 +306,13 @@ export function questionPoints(st: {
   questionValue?: number;
   passCount: number;
   assistUsed?: boolean;
+  stealFullValue?: boolean;
   pointMultiplier?: number;
 }): number {
   const base = st.questionValue ?? (st.question ? 50 : 0);
   let result = base;
   if (st.assistUsed) result = Math.max(1, Math.round(result / 2));
-  else if (st.passCount > 0) result = Math.max(1, Math.round(result / 2));
+  else if (st.passCount > 0 && !st.stealFullValue) result = Math.max(1, Math.round(result / 2));
   return result * (st.pointMultiplier ?? 1);
 }
 

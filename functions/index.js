@@ -40,6 +40,13 @@ const RATE_LIMIT_SCOPES = [...Object.keys(REQUEST_LIMITS), "game"].flatMap((acti
 function fail(code, message) { throw new HttpsError(code, message); }
 function text(value, max = 30) { return String(value ?? "").trim().slice(0, max); }
 function code(value) { return text(value, 12).toUpperCase(); }
+function requireRoomCode(value) {
+  // Validate the original length before normalization: never truncate into a valid path.
+  if (typeof value !== "string" || !/^[A-Z][0-9]{3}$/i.test(value.trim())) {
+    fail("invalid-argument", "كود الميدان حرف وثلاثة أرقام كما يظهر عند المقدم");
+  }
+  return value.trim().toUpperCase();
+}
 function dbKey(value) { return text(value, 50).replace(/[.#$\[\]\/]/g, "_"); }
 function now() { return Date.now(); }
 function qatarBucket(timestamp = now()) {
@@ -564,7 +571,7 @@ async function releaseClaim(claimRef, claimId) {
   await claimRef.transaction((currentClaim) => currentClaim === claimId ? null : currentClaim, undefined, false);
 }
 async function loadMatch(rawCode) {
-  const id = code(rawCode);
+  const id = requireRoomCode(rawCode);
   const [snapshot, accessSnapshot] = await Promise.all([
     db.ref(`matches/${id}`).get(),
     db.ref(`matchAccess/${id}`).get(),
@@ -689,7 +696,7 @@ async function joinTeam(uid, data) {
 
 async function startChallenge(uid) {
   const bank = await questionBank(false);
-  const selected = randomOrder(bank.filter((q) => !q.disabled && !["flag", "brand", "acting"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0)).slice(0, 100).map(shuffled);
+  const selected = randomOrder(bank.filter((q) => !q.disabled && !["flag", "brand", "acting", "memory"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0)).slice(0, 100).map(shuffled);
   if (selected.length < 100) fail("resource-exhausted", "بنك التحدي لا يحتوي أسئلة كافية");
   const sessionId = `${now()}_${randomInt(100000, 999999)}`;
   await db.ref(`challengeSecrets/${uid}`).set({ [sessionId]: { createdAt: now(), answers: selected.map((q) => q.answer), ids: selected.map((q) => q.id) } });
@@ -1066,68 +1073,57 @@ async function finishShowdown(uid, data) {
   return { finished: result.snapshot.val()?.state?.phase === "showdown_revealed" };
 }
 
-async function submitAnswer(uid, data) {
-  const { id, match } = await loadMatch(data.matchCode);
-  const player = playerForUid(match, uid, text(data.playerId, 80));
-  if (!player || player.teamCode !== match.state.targetTeam) fail("permission-denied", "الإجابة للفريق صاحب السؤال");
-  const answerMode = match.answerMode || "anyone";
-  if (match.state.forcedPlayerId) {
-    if (match.state.forcedPlayerId !== player.id) fail("permission-denied", "الإجابة للاعب الذي اختاره الفريق المنافس");
-  } else {
-    if (answerMode === "host") fail("permission-denied", "المقدم هو من يثبت الإجابة");
-    const representativeId = match.teams[player.teamCode]?.captainId;
-    if (answerMode === "representative" && representativeId !== player.id) fail("permission-denied", "الإجابة لممثل الفريق");
-  }
-  const choice = Number(data.choice);
-  if (match.state.phase !== "question" || match.state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
-  const stateRef = db.ref(`matches/${id}/state`);
-  const claimId = `${uid}_${now()}_${randomInt(100000, 999999)}`;
-  const claimRef = stateRef.child("answerClaimId");
-  if (!await acquireClaim(claimRef, claimId)) return { status: "late" };
-  try {
-    const latestState = (await stateRef.get()).val();
-    if (!latestState || latestState.phase !== "question" || latestState.answer || latestState.answerClaimId !== claimId) {
-      await releaseClaim(claimRef, claimId);
-      return { status: "late" };
+function answerAttemptId(state) {
+  return `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`;
+}
+function answerContextMatches(state, data) {
+  return data.questionId === state.question?.id && data.attemptId === answerAttemptId(state)
+    && Number.isSafeInteger(data.revision) && data.revision === (state.revision || 0)
+    && typeof data.requestId === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(data.requestId);
+}
+function acceptedAnswerRetry(state, data, playerId) {
+  const receipt = state.answer?.receipt;
+  return Boolean(receipt && playerId && state.answer.playerId === playerId
+    && state.question?.id === data.questionId && answerAttemptId(state) === data.attemptId
+    && receipt.requestId === data.requestId && receipt.revision === data.revision
+    && state.answer.choice === data.choice);
+}
+async function submitAnswer(uid, data, asHost = false) {
+  const { id, match, access } = await loadMatch(data.matchCode);
+  if (asHost) requireHost(match, uid);
+  const existingPlayer = asHost ? { id: "host" } : playerForUid(match, uid, text(data.playerId, 80));
+  if (acceptedAnswerRetry(match.state, data, existingPlayer?.id)) return { status: "accepted" };
+  if (!answerContextMatches(match.state, data)) return { status: "stale" };
+  const choice = data.choice;
+  let status = "late";
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (current === null) return null; // RTDB cold-cache retry, not an abort.
+    const state = current.state;
+    if (!state) { status = "stale"; return; }
+    const latest = attachAccess(current, access);
+    if (asHost) requireHost(latest, uid);
+    const player = asHost ? { id: "host", name: current.hostName || "المقدم", teamCode: state.targetTeam } : playerForUid(latest, uid, text(data.playerId, 80));
+    if (acceptedAnswerRetry(state, data, player?.id)) { status = "accepted"; return; }
+    if (!answerContextMatches(state, data)) { status = "stale"; return; }
+    if (!player || player.teamCode !== state.targetTeam) fail("permission-denied", "الإجابة للفريق صاحب السؤال");
+    const mode = current.answerMode || "anyone";
+    if (asHost && mode !== "host") fail("failed-precondition", "وضع الإجابة ليس للمقدم");
+    if (!asHost && (state.forcedPlayerId ? state.forcedPlayerId !== player.id
+      : mode === "host" || (mode === "representative" && current.teams[player.teamCode]?.captainId !== player.id))) {
+      fail("permission-denied", "الإجابة للاعب المخول فقط");
     }
-    await stateRef.update({
-      phase: "locked",
-      answer: { playerId: player.id, playerName: player.name, choice, at: now() },
-      answerClaimId: null,
-    });
-    return { status: "accepted" };
-  } catch (error) {
-    await releaseClaim(claimRef, claimId);
-    throw error;
-  }
+    if (state.phase !== "question" || state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (state.question?.options?.length || 0)) { status = "late"; return; }
+    state.phase = "locked";
+    state.answer = { playerId: player.id, playerName: player.name, choice, at: now(), receipt: { requestId: data.requestId, revision: data.revision } };
+    state.revision = (state.revision || 0) + 1;
+    status = "accepted";
+    return current;
+  }, undefined, false);
+  return { status: result.snapshot.val() ? status : "late" };
 }
 
 async function submitHostAnswer(uid, data) {
-  const { id, match } = await loadMatch(data.matchCode);
-  requireHost(match, uid);
-  if (match.answerMode !== "host") fail("failed-precondition", "وضع الإجابة ليس للمقدم");
-  const choice = Number(data.choice);
-  if (match.state.phase !== "question" || match.state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
-  const stateRef = db.ref(`matches/${id}/state`);
-  const claimId = `${uid}_${now()}_${randomInt(100000, 999999)}`;
-  const claimRef = stateRef.child("answerClaimId");
-  if (!await acquireClaim(claimRef, claimId)) return { status: "late" };
-  try {
-    const latestState = (await stateRef.get()).val();
-    if (!latestState || latestState.phase !== "question" || latestState.answer || latestState.answerClaimId !== claimId) {
-      await releaseClaim(claimRef, claimId);
-      return { status: "late" };
-    }
-    await stateRef.update({
-      phase: "locked",
-      answer: { playerId: "host", playerName: match.hostName || "المقدم", choice, at: now() },
-      answerClaimId: null,
-    });
-    return { status: "accepted" };
-  } catch (error) {
-    await releaseClaim(claimRef, claimId);
-    throw error;
-  }
+  return submitAnswer(uid, data, true);
 }
 
 async function reveal(id, match, correctOverride) {
@@ -1403,7 +1399,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { admin: true };
   }
   if (action === "getMatch") {
-    const snapshot = await db.ref(`matches/${code(data.matchCode)}`).get();
+    const snapshot = await db.ref(`matches/${requireRoomCode(data.matchCode)}`).get();
     if (!snapshot.exists()) fail("not-found", "الميدان غير موجود");
     return { match: publicMatch(snapshot.val()) };
   }

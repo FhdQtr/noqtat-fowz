@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress, sectionCycleProgress,
-  trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt,
+  trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt, captureAnswerContext, type AnswerContext,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, viewSecondsFor, questionTimerSeconds, canPassQuestion, usesVerbalChoices } from "../types/game";
@@ -45,7 +45,8 @@ export default function Play() {
   const [joinError, setJoinError] = useState("");
   const [busy, setBusy] = useState(false);
   const [myPick, setMyPick] = useState<number | null>(null);
-  const [status, setStatus] = useState<"" | "accepted" | "late">("");
+  const [status, setStatus] = useState<"" | "sending" | "accepted" | "late" | "stale" | "error">("");
+  const pendingAnswer = useRef<{ choice: number; context: AnswerContext } | null>(null);
   const [chooseMsg, setChooseMsg] = useState("");
   const [choosingType, setChoosingType] = useState<QuestionType | null>(null);
   const [cardMsg, setCardMsg] = useState("");
@@ -112,6 +113,7 @@ export default function Play() {
     if (prevPhase.current !== st.phase || prevQid.current !== qid) {
       if (st.phase === "question" && (prevPhase.current !== "question" || prevQid.current !== qid)) {
         setMyPick(null);
+        pendingAnswer.current = null;
         setStatus("");
         if (st.targetTeam === teamCode) sfx.questionIn();
       }
@@ -152,11 +154,15 @@ export default function Play() {
   };
 
   const answer = async (i: number) => {
-    if (!player || !isMyTurn || myPick !== null || !canAnswer) return;
-    setMyPick(i);
+    if (!player || !isMyTurn || !st || !canAnswer || status === "sending" || (myPick !== null && status !== "error")) return;
+    const pending = pendingAnswer.current ?? { choice: i, context: captureAnswerContext(st) };
+    pendingAnswer.current = pending;
+    setMyPick(pending.choice);
+    setStatus("sending");
     unlockAudio();
-    const res = await submitAnswer(matchCode, player.id, player.name, i);
-    setStatus(res === "accepted" ? "accepted" : "late");
+    const res = await submitAnswer(matchCode, player.id, player.name, pending.choice, pending.context);
+    if (pendingAnswer.current !== pending) return; // Ignore response to an older attempt.
+    setStatus(res);
     if (res === "accepted") sfx.lock();
   };
 
@@ -588,6 +594,12 @@ export default function Play() {
                   </>
                 )}
 
+                {status === "sending" && <p role="status">جاري إرسال الإجابة…</p>}
+                {status === "error" && <div role="alert" className="text-center text-gold-light">
+                  <p>تعذّر تأكيد وصول الإجابة. أعد إرسال الاختيار نفسه بأمان.</p>
+                  <button className="btn-ghost-gold mt-3" onClick={() => answer(myPick!)}>إعادة إرسال الإجابة</button>
+                </div>}
+                {status === "stale" && <p role="status">تغيّر السؤال أو المحاولة؛ انتظر تحديث الشاشة.</p>}
                 {status === "accepted" && (
                   <div className="flex items-center justify-center gap-2 text-gold-light font-cairo animate-scale-in">
                     <Lock className="w-4 h-4" />

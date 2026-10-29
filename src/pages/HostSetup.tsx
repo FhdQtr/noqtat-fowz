@@ -232,10 +232,11 @@ export default function HostSetup() {
           </fieldset>
 
           {/* المؤقت */}
-          <label className="block text-sm font-bold mb-2 text-gold-light/90">وقت الإجابة لكل سؤال</label>
+          <label htmlFor="question-timer" className="block text-sm font-bold mb-2 text-gold-light/90">المؤقت الإرشادي للسؤال</label>
           <div className="flex gap-2 mb-6">
             <button
               onClick={() => setTimer(0)}
+              aria-pressed={timer === 0}
               className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
                 timer === 0 ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
               }`}
@@ -250,20 +251,22 @@ export default function HostSetup() {
             >
               <Timer className={`w-4 h-4 shrink-0 ${timer > 0 ? "text-gold-light" : "text-muted-foreground"}`} />
               <select
-                value={timer > 0 ? timer : 30}
-                onClick={() => { if (timer === 0) setTimer(30); }}
-                onFocus={() => { if (timer === 0) setTimer(30); }}
+                id="question-timer"
+                value={timer}
                 onChange={(e) => setTimer(Number(e.target.value))}
                 className={`w-full bg-transparent py-2.5 font-cairo font-bold outline-none cursor-pointer ${
                   timer > 0 ? "text-gold-light" : "text-muted-foreground"
                 } [&>option]:bg-night-800`}
               >
+                <option value={0}>بدون وقت</option>
                 {TIMER_OPTIONS.map((s) => (
                   <option key={s} value={s}>{s} ثانية</option>
                 ))}
               </select>
             </div>
           </div>
+
+          <p className="-mt-4 mb-6 text-xs text-muted-foreground">المؤقت تنبيه للمجلس، ولا يقفل الإجابة عند الصفر؛ القرار للمقدم. مؤقت مواجهة الجميع ملزم على الخادم.</p>
 
           {/* أنواع الأسئلة */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90 flex items-center gap-2">
@@ -295,7 +298,7 @@ export default function HostSetup() {
             </p>
           )}
           <p className="text-xs text-muted-foreground leading-relaxed mb-8">
-            في كل دور يختار الفريق نوع سؤاله من الأنواع المفعّلة. مستوى السؤال يتبع اختيارك أعلاه،
+            في كل دور يختار الفريق نوع سؤاله من الأنواع المفعّلة. لا يوجد تصاعد تلقائي للصعوبة،
             وتزيد قيمة النوع كلما كرره الفريق، مع حد أقصى يحافظ على تنوع المسابقة.
           </p>
 

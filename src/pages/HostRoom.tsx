@@ -622,7 +622,7 @@ export default function HostRoom() {
                     {st.question.options.map((option, index) => (
                       <button
                         key={index}
-                        onClick={() => act(() => submitHostAnswer(code, index))}
+                        onClick={() => act(() => submitHostAnswer(code, index, st))}
                         disabled={busy}
                         className="m-answer-option m-answer-option--interactive"
                         data-state="default"

@@ -167,6 +167,22 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
 }
 
+test('new and legacy create requests persist an explicit advisory timer contract', async () => {
+  for (const timerMode of [undefined, 'advisory']) {
+    const h = harness();
+    const created = await h.helpers.createMatch('timer-host', { teamNames: ['Hermes QA A', 'Hermes QA B'], questionsPerTeam: 4, enabledTypes: ['multiple_choice'], timer: 10, ...(timerMode ? { timerMode } : {}) });
+    const match = h.data.matches[created.code];
+    assert.equal(match.timerMode, 'advisory');
+    assert.equal(match.timer, 10);
+  }
+});
+
+test('unsupported strict timers are rejected before a misleading advisory lobby can be created', async () => {
+  const h = harness();
+  await assert.rejects(h.helpers.createMatch('timer-host', { teamNames: ['Hermes QA A', 'Hermes QA B'], questionsPerTeam: 4, enabledTypes: ['multiple_choice'], timer: 10, timerMode: 'strict' }), { code: 'invalid-argument' });
+  assert.equal(Object.keys(h.data.matches).length, 1);
+});
+
 test('room endpoints reject missing and malformed codes before any room read', async () => {
   for (const action of ['getMatch', 'getTeamInvites', 'getHostAnswer', 'submitAnswer', 'advanceTurn']) {
     for (const matchCode of [undefined, '', ' ', '../', 'A234/players', 'A2345', {}, 1234]) {

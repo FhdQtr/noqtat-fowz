@@ -9,6 +9,15 @@ const raw = readFileSync(new URL('../src/lib/matchApi.ts', import.meta.url), 'ut
 const source = ts.transpileModule(raw.slice(raw.indexOf('export async function submitAnswer('), raw.indexOf('export async function submitShowdownAnswer(')), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 function api(gameAction) { const exports = {}; runInNewContext(source, { exports, gameAction }); return exports; }
 const context = { questionId: 42, attemptId: '1:A234-1:0:selection-1', revision: 4, requestId: 'answer-1' };
+test('client explicitly requests advisory ordinary timers, including a no-timer setup', async () => {
+  const exports = {}, calls = [];
+  const createSource = ts.transpileModule(raw.slice(raw.indexOf('export async function createMatch('), raw.indexOf('export function subscribeMatch(')), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  runInNewContext(createSource, { exports, gameAction: async (action, payload) => { calls.push({ action, payload }); return { code: 'Q234' }; } });
+  assert.equal(await exports.createMatch({ timer: 0 }), 'Q234');
+  assert.equal(calls[0].payload.options.timerMode, 'advisory');
+  assert.equal(calls[0].payload.options.timer, 0);
+});
+
 test('ordinary API preserves captured context and retry identity on every request', async () => {
   const calls = [];
   const helper = api(async (action, payload) => { calls.push({ action, payload }); return { status: 'accepted' }; });

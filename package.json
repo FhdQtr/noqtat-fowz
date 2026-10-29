@@ -15,7 +15,9 @@
     "test:picture-ui": "node --test scripts/picture-guess-ui.test.mjs",
     "preview": "vite preview",
     "test:admin": "node --test scripts/admin-auth.test.mjs",
-    "test:connection": "node --test scripts/connection.test.mjs scripts/ordinary-answer-ui.test.mjs scripts/content-review.test.mjs scripts/backend-policy.test.mjs"
+    "test:rules": "node --test scripts/rules.test.mjs",
+    "test:emulators": "npm run prepare:functions && node --test scripts/rules.test.mjs scripts/rotation-emulator.test.mjs",
+    "test:connection": "node --test scripts/connection.test.mjs scripts/match-subscription.test.mjs scripts/ordinary-answer-ui.test.mjs scripts/content-review.test.mjs scripts/backend-policy.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -74,6 +76,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/node": "^24.10.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.5",

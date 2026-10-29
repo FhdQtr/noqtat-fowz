@@ -182,6 +182,7 @@ export interface Match {
   totalRounds: number; // عدد الأسئلة المخطط
   questionsPerTeam?: number; // عدد الأسئلة لكل فريق
   timer: number; // ثواني لكل سؤال (0 = يدوي)
+  timerMode?: "advisory"; // غيابه في الغرف القديمة يعني إرشادياً أيضاً؛ المواجهة بعقد منفصل
   answerMode?: AnswerMode;
   challengeMode?: "classic" | "picture_guess";
   enabledTypes: QuestionType[];

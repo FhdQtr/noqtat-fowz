@@ -6,7 +6,14 @@ const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getDatabase, ServerValue } = require("firebase-admin/database");
 
-initializeApp({ databaseURL: "https://noqtat-fowz-d13aa-default-rtdb.asia-southeast1.firebasedatabase.app" });
+const FUNCTIONS_EMULATOR = process.env.FUNCTIONS_EMULATOR === "true";
+if (FUNCTIONS_EMULATOR && (process.env.GCLOUD_PROJECT !== "demo-al-midan"
+  || process.env.FIREBASE_DATABASE_EMULATOR_HOST !== "127.0.0.1:9000")) {
+  throw new Error("Functions emulator requires the isolated demo project and loopback database");
+}
+initializeApp(FUNCTIONS_EMULATOR
+  ? { projectId: "demo-al-midan", databaseURL: "https://demo-al-midan-default-rtdb.firebaseio.com" }
+  : { databaseURL: "https://noqtat-fowz-d13aa-default-rtdb.asia-southeast1.firebasedatabase.app" });
 const db = getDatabase();
 const QUESTIONS = JSON.parse(readFileSync(require.resolve("./questions.json"), "utf8"));
 const PICTURE_GUESS_ITEMS = JSON.parse(readFileSync(require.resolve("./pictureGuessItems.json"), "utf8"));
@@ -630,6 +637,9 @@ function requireHost(match, uid) {
 async function createMatch(uid, options) {
   const names = Array.isArray(options?.teamNames) ? options.teamNames.slice(0, 4) : [];
   if (names.length < 2) fail("invalid-argument", "اختر فريقين على الأقل");
+  if (options.timerMode !== undefined && options.timerMode !== "advisory") {
+    fail("invalid-argument", "المؤقت العادي إرشادي فقط؛ القفل عند الصفر غير مدعوم");
+  }
   const challengeMode = options.challengeMode === "picture_guess" ? "picture_guess" : "classic";
   if (challengeMode === "picture_guess" && names.length !== 2) fail("invalid-argument", "تحدي الصور يحتاج فريقين");
   const enabledTypes = Array.isArray(options.enabledTypes) ? [...new Set(options.enabledTypes.map((x) => text(x, 50)).filter(Boolean))] : [];
@@ -678,7 +688,7 @@ async function createMatch(uid, options) {
     const createdAt = now();
     const match = {
       hostName: text(options.hostName, 20) || "المقدم",
-      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, answerMode, challengeMode, enabledTypes, typeCaps, teams,
+      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, timerMode: "advisory", answerMode, challengeMode, enabledTypes, typeCaps, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], usedAssets: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     // A cold transaction cache retries against the remote record. Never overwrite

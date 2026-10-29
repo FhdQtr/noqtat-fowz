@@ -436,9 +436,13 @@ export async function usePowerCard(
   teamCode: string,
   card: PowerCardId,
   targetPlayerId?: string,
+  match?: Match,
 ): Promise<{ accepted: boolean; reason?: string }> {
+  if (!match) return { accepted: false, reason: "stale" };
+  const payload = { matchCode, teamCode, card, targetPlayerId, transition: captureHostTransition(match.state) };
+  const send = () => gameAction<{ accepted: boolean; reason?: string }>("usePowerCard", payload);
   try {
-    return await gameAction<{ accepted: boolean; reason?: string }>("usePowerCard", { matchCode, teamCode, card, targetPlayerId });
+    return await send().catch(() => send());
   } catch {
     return { accepted: false, reason: "error" };
   }

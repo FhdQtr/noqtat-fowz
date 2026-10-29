@@ -213,9 +213,10 @@ export default function Play() {
   };
 
   const activateCard = async (card: PowerCardId, targetPlayerId?: string) => {
+    if (!match) return { accepted: false, reason: "stale" };
     setCardMsg("");
     unlockAudio();
-    const result = await requestPowerCard(matchCode, teamCode, card, targetPlayerId);
+    const result = await requestPowerCard(matchCode, teamCode, card, targetPlayerId, match);
     if (result.accepted) {
       sfx.correct();
       setCardMsg("تم تفعيل الكرت");

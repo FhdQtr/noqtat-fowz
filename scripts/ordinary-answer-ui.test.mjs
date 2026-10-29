@@ -37,6 +37,24 @@ test('section selection freezes the displayed choose context across a lost-respo
   assert.deepEqual(calls[0], calls[1]);
 });
 
+test('card client freezes displayed context and exact command for a lost-response retry', async () => {
+  const exports = {}, calls = [];
+  const fragment = raw.slice(raw.indexOf('export async function usePowerCard('), raw.indexOf('export function captureHostTransition('));
+  const match = { state: { phase: 'choose', round: 2, revision: 7 } };
+  runInNewContext(ts.transpileModule(fragment, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
+    exports, captureHostTransition: (s) => ({ phase: s.phase, round: s.round, revision: s.revision, requestId: 'card-request' }),
+    gameAction: async (action, payload) => {
+      calls.push(JSON.parse(JSON.stringify({ action, payload })));
+      if (calls.length === 1) { match.state.revision = 99; throw new Error('response lost'); }
+      return { accepted: true };
+    },
+  });
+  assert.equal((await exports.usePowerCard('A234', 'A', 'doublePoints', undefined, match)).accepted, true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].payload.transition?.revision, 7);
+  assert.deepEqual(calls[0], calls[1]);
+});
+
 test('presenter APIs freeze turn context and reuse the same payload after a lost response', async () => {
   const exports = {}, calls = [];
   const start = raw.indexOf('export function captureHostTransition(');

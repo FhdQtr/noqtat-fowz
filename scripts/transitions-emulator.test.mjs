@@ -68,6 +68,8 @@ test('real concurrent classic and picture showdown publication commits one priva
       assert.equal(Object.keys(view.pictures).length, 2);
     } else {
       assert.equal((await f.call('getHostAnswer')).questionId, secret.questionId);
+      const versions = (await db.ref(`matchSecrets/${f.ref.key}/versions`).get()).val();
+      assert.equal(Object.keys(versions).length, 1, 'concurrent bank preparation must stage one immutable version per reservation');
     }
   }
 });
@@ -115,6 +117,30 @@ test('real selection lease permits expired recovery and prevents stale executors
   await f.ref.child('state/selectionLease/expiresAt').set(Date.now() - 1);
   assert.equal((await send()).status, 'accepted');
   assert.equal((await f.read()).typeCounts.A.brand, 1);
+});
+
+test('real card lease recovery and concurrent immutable retries spend once without changing command identity', async () => {
+  const f = await fixture();
+  await f.ref.child('teams/A/powerCards').set({ doublePoints: true });
+  await f.ref.child('state').set({ phase: 'choose', round: 0, targetTeam: 'A', revision: 0,
+    cardClaimId: 'crashed', cardLease: { owner: 'crashed', expiresAt: Date.now() + 60000 } });
+  const transition = f.context((await f.read()).state);
+  const extra = { teamCode: 'A', card: 'doublePoints' };
+  assert.equal((await f.call('usePowerCard', transition, extra)).reason, 'busy');
+  await f.ref.child('state/cardLease/expiresAt').set(Date.now() - 1);
+  const results = await Promise.all([1,2,3].map(() => f.call('usePowerCard', transition, extra)));
+  assert.ok(results.some((r) => r.accepted));
+  const saved = await f.read();
+  assert.equal(saved.state.revision, 1);
+  assert.equal(saved.state.pointMultiplier, 2);
+  assert.equal(saved.state.selectionRequestId ?? null, null);
+  assert.equal(saved.state.cardLease ?? null, null);
+  assert.equal(saved.state.cardClaimId ?? null, null);
+  assert.equal(saved.teams.A.cardBalance, 850);
+  assert.equal((await f.call('usePowerCard', transition, extra)).accepted, true);
+  assert.deepEqual(await f.read(), saved);
+  assert.equal((await f.call('usePowerCard', transition, { ...extra, card: 'extraTime' })).accepted, false);
+  assert.deepEqual(await f.read(), saved);
 });
 
 test('real concurrent pass requests commit one attempt and replay a lost response immutably', async () => {

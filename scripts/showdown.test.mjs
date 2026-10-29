@@ -173,7 +173,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
     }
     return exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: {
       action, matchCode: 'A234', ...selection,
-      ...(['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer'].includes(action)
+      ...(['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer', 'usePowerCard'].includes(action)
         ? { transition: presenterContext(data.matches.A234.state, `presenter-${++presenterSequence}`) } : {}), ...extra,
     } });
   };
@@ -187,6 +187,127 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
     answer: (n, choice = 3) => call('submitShowdownAnswer', `user${n}`, { playerId: `p${n}`, questionId: 42, choice }),
   };
 }
+
+test('unpublished expired ordinary selection does not consume a competition or section asset', async () => {
+  const h = harness();
+  const match = h.match();
+  match.hostUid = 'host';
+  match.enabledTypes = ['multiple_choice'];
+  match.typeCounts = {}; match.usedIdsByTeam = {}; match.sectionCycleByTeam = {};
+  match.state = { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] };
+  let staged = false;
+  h.afterRead((path) => {
+    if (path === 'matches/A234/state') staged = true;
+  });
+  h.beforeTransaction(() => {
+    // Selection lease is acquired first; expire it only after preparation starts.
+    if (staged) h.setClock(40000);
+  });
+  const reply = await h.call('chooseType', 'user1', { teamCode: 'A234-1', type: 'multiple_choice', requestId: 'expired-preparation' });
+  assert.equal(reply.status, 'late');
+  assert.equal(match.state.question ?? null, null);
+  const ledger = h.data.questionRotation?.host;
+  assert.equal(Object.values(ledger?.games || {}).length, 0, 'an unshown selection must not age consumed-game history');
+  assert.equal(Object.values(ledger?.cycles || {}).length, 0, 'an unshown selection must not consume its cycle');
+});
+
+test('expired preparation is fenced, releases inventory and permits a fresh executor retry without consuming history', async () => {
+  const h = harness();
+  const pool = [{ id: 70001, type: 'flag', question: 'Fixture flag', options: ['A','B','C','D'], answer: 0, image: '/fixture/flag.webp' }];
+  const first = await h.helpers.rotateQuestion(pool, 'g0', 'host', pool, 'retryable', false, 'A234');
+  assert.equal(Object.values(h.data.questionRotation.host.games || {}).length, 0);
+  h.setClock(40000);
+  const next = await h.helpers.rotateQuestion(pool, 'g0', 'host', pool, 'retryable', false, 'A234');
+  assert.notEqual(next.reservation.key, first.reservation.key, 'recovery needs a fresh publication generation, not a permanently cancelled marker');
+  assert.equal(h.data.matches.A234.rotationPublications[first.reservation.key], 'cancelled');
+  assert.equal(next.question.id, first.question.id, 'unshown inventory remains available');
+  assert.equal(Object.values(h.data.questionRotation.host.games || {}).length, 0);
+});
+
+test('pending publication migration retains undated legacy flags in recent history', async () => {
+  const h = logoFixture();
+  const flag = { id: 70002, type: 'flag', question: 'Legacy flag', image: '/fixture/legacy.webp', options: ['A','B','C','D'], answer: 0 };
+  const key = h.helpers.rotationAssetKey(flag);
+  h.data.flagRotation = { v1: { host: { cycle: 4, used: [key] } } };
+  await h.call('chooseType', 'user1', { type: 'brand', requestId: 'migrate-on-publication' });
+  await assert.rejects(h.helpers.rotateQuestion([flag], 'next-game', 'host', [flag], 'legacy-recent'), { code: 'resource-exhausted' });
+  assert.deepEqual(h.data.flagRotation.v1.host, { cycle: 4, used: [key] });
+});
+
+test('power cards reject missing and stale displayed context before effects or claims', async () => {
+  for (const transition of [null, presenterContext({ phase: 'choose', round: 99 }, 'stale-card')]) {
+    const h = logoFixture();
+    Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { doublePoints: true } });
+    const before = clone(h.match());
+    const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'doublePoints', transition });
+    assert.deepEqual(clone(result), { accepted: false, reason: 'stale' });
+    assert.deepEqual(h.match(), before);
+  }
+});
+
+test('card lost-response retry replays the same immutable result and cannot change its command', async () => {
+  const h = logoFixture();
+  Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { doublePoints: true } });
+  const transition = presenterContext(h.match().state, 'card-lost-response');
+  const command = { teamCode: 'A234-1', card: 'doublePoints', transition };
+  assert.equal((await h.call('usePowerCard', 'user1', command)).accepted, true);
+  const saved = clone(h.match());
+  assert.equal((await h.call('usePowerCard', 'user1', command)).accepted, true);
+  assert.deepEqual(h.match(), saved);
+  const changed = await h.call('usePowerCard', 'user1', { ...command, card: 'freeze' });
+  assert.equal(changed.accepted, false);
+  assert.deepEqual(h.match(), saved);
+});
+
+test('card execution recovers an expired lease, rejects live ownership and does not change the displayed attempt', async () => {
+  for (const expired of [true, false]) {
+    const h = logoFixture();
+    Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { doublePoints: true } });
+    h.match().state.cardClaimId = 'crashed';
+    h.match().state.cardLease = { owner: 'crashed', expiresAt: expired ? 1999 : 9000 };
+    const transition = presenterContext(h.match().state, 'recover-card');
+    const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'doublePoints', transition });
+    assert.equal(result.accepted, expired);
+    assert.equal(h.match().state.selectionRequestId ?? null, null);
+    if (expired) {
+      assert.equal(h.match().state.cardClaimId ?? null, null);
+      assert.equal(h.match().state.cardLease ?? null, null);
+      assert.equal(h.match().teams['A234-1'].cardBalance, 1000 - h.helpers.powerCardCost('doublePoints', h.match().questionsPerTeam));
+    } else assert.equal(result.reason, 'busy');
+  }
+});
+
+test('temporary inventory holds report retryable busy rather than permanent rotation exhaustion', async () => {
+  const h = harness();
+  const pool = [{ id: 70004, type: 'brand', question: 'Held fixture', options: ['A','B','C','D'], answer: 0 }];
+  await h.helpers.rotateQuestion(pool, 'g0', 'host', pool, 'active', false, 'A234');
+  await assert.rejects(h.helpers.rotateQuestion(pool, 'g1', 'host', pool, 'competitor', false, 'A234'), { code: 'unavailable' });
+  assert.equal(Object.values(h.data.questionRotation.host.games || {}).length, 0);
+});
+
+test('new-game preflight reconciles expired unshown reservations before testing effective capacity', async () => {
+  const h = harness();
+  const bank = (await h.helpers.questionBank()).filter((q) => q.type === 'brand' && !q.disabled);
+  const pool = bank.slice(0, 2);
+  h.data.questionExclusions = Object.fromEntries(bank.slice(2).map((q) => [q.id, true]));
+  await h.helpers.rotateQuestion(pool, 'crashed-game', 'host', pool, 'hold-a', false, 'A234');
+  await h.helpers.rotateQuestion(pool, 'crashed-game', 'host', pool, 'hold-b', false, 'A234');
+  h.setClock(40000);
+  const created = await h.helpers.createMatch('host', { teamNames: ['Hermes QA A','Hermes QA B'], questionsPerTeam: 1, enabledTypes: ['brand'] });
+  assert.ok(created.code);
+  assert.equal(Object.values(h.data.questionRotation.host.games || {}).length, 0);
+  assert.equal(Object.values(h.data.questionRotation.host.pending || {}).length, 0);
+});
+
+test('capacity inspection with an expired pending preparation remains no-write', async () => {
+  const h = harness();
+  const pool = [{ id: 70003, type: 'brand', question: 'Pending logo', options: ['A','B','C','D'], answer: 0 }];
+  await h.helpers.rotateQuestion(pool, 'g0', 'host', pool, 'inspect-request', false, 'A234');
+  h.setClock(40000);
+  const before = clone(h.data);
+  await h.helpers.rotateQuestion(pool, 'g1', 'host', pool, null, true);
+  assert.deepEqual(h.data, before, 'capacity preview must not fence rooms or mutate history');
+});
 
 test('new and legacy create requests persist an explicit advisory timer contract', async () => {
   for (const timerMode of [undefined, 'advisory']) {
@@ -689,6 +810,7 @@ test('classic showdown preparation cannot replace a room ended while loading its
   assert.equal(r.showdown, false);
   assert.equal(h.match().state.phase, 'ended');
   assert.equal(h.match().showdownCount, 0);
+  assert.equal(Object.values(h.data.questionRotation?.host?.games || {}).length, 0, 'unpublished showdown must not age history');
 });
 
 test('selection execution ownership never changes the displayed choose attempt before publication', async () => {
@@ -738,6 +860,7 @@ test('swap cannot replace a question or spend a card after a concurrent answer',
   assert.equal(h.match().teams['A234-1'].cardBalance, 1000);
   assert.equal(h.match().teams['A234-1'].powerCards.swapQuestion, true);
   assert.equal((await h.call('getHostAnswer')).questionId, oldQuestion);
+  assert.equal(Object.values(h.data.questionRotation.host.games[0].reservations).length, 1, 'failed swap must not consume a second question');
 });
 
 test('ordinary selection recovers an expired executor lease but never takes a live one', async () => {

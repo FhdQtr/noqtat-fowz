@@ -120,6 +120,8 @@ export interface ShowdownState {
 }
 
 export interface GameState {
+  revision?: number; // Answer contract revision; old rooms default to zero.
+  selectionPause?: { reason: "capacity" | "busy"; at: number } | null;
   phase: MatchPhase;
   round: number; // رقم السؤال
   targetTeam: string | null; // الفريق صاحب السؤال الحالي
@@ -181,6 +183,7 @@ export interface Match {
   totalRounds: number; // عدد الأسئلة المخطط
   questionsPerTeam?: number; // عدد الأسئلة لكل فريق
   timer: number; // ثواني لكل سؤال (0 = يدوي)
+  timerMode?: "advisory"; // غيابه في الغرف القديمة يعني إرشادياً أيضاً؛ المواجهة بعقد منفصل
   answerMode?: AnswerMode;
   challengeMode?: "classic" | "picture_guess";
   enabledTypes: QuestionType[];
@@ -305,12 +308,13 @@ export function questionPoints(st: {
   questionValue?: number;
   passCount: number;
   assistUsed?: boolean;
+  stealFullValue?: boolean;
   pointMultiplier?: number;
 }): number {
   const base = st.questionValue ?? (st.question ? 50 : 0);
   let result = base;
   if (st.assistUsed) result = Math.max(1, Math.round(result / 2));
-  else if (st.passCount > 0) result = Math.max(1, Math.round(result / 2));
+  else if (st.passCount > 0 && !st.stealFullValue) result = Math.max(1, Math.round(result / 2));
   return result * (st.pointMultiplier ?? 1);
 }
 

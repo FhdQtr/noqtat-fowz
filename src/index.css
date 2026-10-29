@@ -45,7 +45,7 @@
   button, input, select {
     -webkit-tap-highlight-color: transparent;
   }
-  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
     outline: 2px solid #e8c96a;
     outline-offset: 3px;
   }
@@ -954,6 +954,11 @@ body::before {
   touch-action: manipulation;
 }
 .power-wallet-trigger:active { transform: scale(.96); }
+@media (max-width: 640px) {
+  /* Keep wallet and leave controls in flow, clear of the floating sound toggle. */
+  .team-play-footer { flex-wrap: wrap; align-items: center; gap: var(--m-space-sm); padding: var(--m-space-md) var(--m-space-md) max(var(--m-space-md), env(safe-area-inset-bottom)); padding-inline-end: calc(var(--m-space-2xl) + var(--m-space-md)); }
+  .team-play-footer .power-wallet-trigger { position: static; }
+}
 .power-wallet-trigger > svg { width: 1.8rem; height: 1.8rem; margin: auto; color: var(--team-card-color); filter: drop-shadow(0 0 .55rem var(--team-card-color)); }
 .power-wallet-trigger span { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; line-height: 1.05; }
 .power-wallet-trigger b { font-family: var(--m-font-display); font-size: 1.2rem; font-variant-numeric: tabular-nums; }

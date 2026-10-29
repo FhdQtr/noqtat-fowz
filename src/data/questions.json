@@ -823,6 +823,7 @@
   },
   {
     "id": 62,
+    "conceptId": "gcc-foundation-year",
     "type": "multiple_choice",
     "category": "culture",
     "question": "في أي عام أُسست دول مجلس التعاون الخليجي؟",
@@ -10470,6 +10471,7 @@
   },
   {
     "id": 815,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "ما هو الشيء الذي يمشي بلا أرجل؟",
@@ -10483,6 +10485,7 @@
   },
   {
     "id": 816,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "له رأس وليس له عيون؟",
@@ -10535,6 +10538,7 @@
   },
   {
     "id": 820,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "أنا ابن الماء وإذا تركوني في الماء أموت؟",
@@ -10613,6 +10617,7 @@
   },
   {
     "id": 826,
+    "conceptId": "riddle-light-water",
     "type": "riddle",
     "category": "riddles",
     "question": "ما هو الشيء الذي إذا دخل الماء لا يبتل؟",
@@ -10639,6 +10644,7 @@
   },
   {
     "id": 828,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "ما هو الشيء الذي له أسنان ولا يأكل؟",
@@ -10756,6 +10762,7 @@
   },
   {
     "id": 837,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "يراك ولا تراه؟",
@@ -10782,6 +10789,7 @@
   },
   {
     "id": 839,
+    "conceptId": "riddle-light-water",
     "type": "riddle",
     "category": "riddles",
     "question": "شيء يدخل الماء ولا يبتل؟",
@@ -10886,6 +10894,7 @@
   },
   {
     "id": 847,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "كلمة مؤلفة من 8 حروف ولكنها تجمع كل الحروف؟",
@@ -10912,6 +10921,7 @@
   },
   {
     "id": 849,
+    "disabled": true,
     "type": "riddle",
     "category": "riddles",
     "question": "ما هو الشيء الذي يوجد مرة في الدقيقة ومرتين في اللحظة ولا يوجد في الساعة؟",
@@ -11553,6 +11563,7 @@
   },
   {
     "id": 899,
+    "conceptId": "gcc-foundation-year",
     "type": "multiple_choice",
     "category": "gulf",
     "question": "في أي عام تأسس مجلس التعاون الخليجي؟",
@@ -11686,7 +11697,9 @@
     "id": 909,
     "type": "completion",
     "category": "language",
-    "question": "أكمل: من جدّ ___ وجد",
+    "conceptId": "proverb-man-jadda-wajada",
+    "rotationLegacyPrompts": ["أكمل: من جدّ ___ وجد"],
+    "question": "أكمل: من جدّ ___",
     "options": [
       "جلس",
       "نام",
@@ -11829,9 +11842,11 @@
     "id": 920,
     "type": "completion",
     "category": "language",
-    "question": "أكمل: إذا غامرت في شرف مروم فلا تقنع بما ___",
+    "conceptId": "poem-itha-ghamarta-mutanabbi",
+    "rotationLegacyPrompts": ["أكمل: إذا غامرت في شرف مروم فلا تقنع بما ___"],
+    "question": "أكمل لفظ البيت: إذا غامرت في شرف مروم فلا تقنع بما ___",
     "options": [
-      "دونه",
+      "دون النجوم",
       "فوقه",
       "حوله",
       "بعده"
@@ -11983,6 +11998,7 @@
   },
   {
     "id": 932,
+    "disabled": true,
     "type": "completion",
     "category": "language",
     "question": "أكمل بيت الشافعي: تموت الأسد في الغابات جوعاً ولحم الضأن ___",
@@ -12102,7 +12118,9 @@
     "id": 941,
     "type": "ordering",
     "category": "culture",
-    "question": "رتب الكواكب من الأقرب للشمس: عطارد - الزهرة - الأرض - المريخ",
+    "conceptId": "inner-planets-distance-from-sun",
+    "rotationLegacyPrompts": ["رتب الكواكب من الأقرب للشمس: عطارد - الزهرة - الأرض - المريخ"],
+    "question": "أي ترتيب صحيح لهذه الكواكب من الأقرب إلى الشمس إلى الأبعد: الأرض، عطارد، المريخ، الزهرة؟",
     "options": [
       "عطارد - الزهرة - الأرض - المريخ",
       "الزهرة - عطارد - الأرض - المريخ",
@@ -12165,6 +12183,7 @@
   },
   {
     "id": 946,
+    "disabled": true,
     "type": "ordering",
     "category": "culture",
     "question": "رتب الألوان من الأفتح للأغمق: أبيض - أصفر - أخضر - أسود",
@@ -18149,5 +18168,81 @@
         "شل"
       ]
     }
+  },
+  {
+    "id": 410001,
+    "type": "multiple_choice",
+    "category": "sports",
+    "conceptId": "tokyo2020-high-jump-final",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "qatar-sports-1",
+    "question": "ما الارتفاع الذي اجتازه معتز برشم وجانماركو تمبيري في نهائي الوثب العالي للرجال بأولمبياد طوكيو 2020 قبل تقاسمهما الذهب؟",
+    "options": ["2.31 متر", "2.35 متر", "2.37 متر", "2.39 متر"],
+    "answer": 2
+  },
+  {
+    "id": 410002,
+    "type": "multiple_choice",
+    "category": "sports",
+    "conceptId": "tokyo2020-high-jump-final",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "qatar-sports-1",
+    "question": "أي دولة مثّلها ماكسيم نيداسيكاو، صاحب برونزية الوثب العالي للرجال في أولمبياد طوكيو 2020؟",
+    "options": ["أوكرانيا", "بيلاروسيا", "بولندا", "جورجيا"],
+    "answer": 1
+  },
+  {
+    "id": 410003,
+    "type": "multiple_choice",
+    "category": "sports",
+    "conceptId": "tokyo2020-fares-weightlifting-final",
+    "editorialDifficulty": "medium",
+    "editorialBatch": "qatar-sports-1",
+    "question": "في أي فئة وزن أحرز الرباع القطري فارس إبراهيم ذهبية رفع الأثقال في أولمبياد طوكيو 2020؟",
+    "options": ["81 كجم", "96 كجم", "109 كجم", "73 كجم"],
+    "answer": 1
+  },
+  {
+    "id": 410004,
+    "type": "multiple_choice",
+    "category": "sports",
+    "conceptId": "tokyo2020-fares-weightlifting-final",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "qatar-sports-1",
+    "question": "كم بلغ مجموع الخطف والنتر الناجحين لفارس إبراهيم عند فوزه بذهبية فئة 96 كجم في أولمبياد طوكيو 2020؟",
+    "options": ["387 كجم", "395 كجم", "402 كجم", "410 كجم"],
+    "answer": 2
+  },
+  {
+    "id": 410101,
+    "type": "ordering",
+    "category": "science",
+    "conceptId": "si-small-length-prefixes",
+    "editorialDifficulty": "medium",
+    "editorialBatch": "varied-refresh-1",
+    "question": "رتّب وحدات الطول التالية من الأصغر إلى الأكبر: مليمتر، نانومتر، سنتيمتر، ميكرومتر.",
+    "options": [
+      "ميكرومتر ثم نانومتر ثم مليمتر ثم سنتيمتر",
+      "نانومتر ثم مليمتر ثم ميكرومتر ثم سنتيمتر",
+      "نانومتر ثم ميكرومتر ثم مليمتر ثم سنتيمتر",
+      "نانومتر ثم ميكرومتر ثم سنتيمتر ثم مليمتر"
+    ],
+    "answer": 2
+  },
+  {
+    "id": 410102,
+    "type": "ordering",
+    "category": "gulf",
+    "conceptId": "qatar-three-museums-opening-order",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "varied-refresh-1",
+    "question": "ما ترتيب افتتاح هذه المتاحف من الأقدم إلى الأحدث؟ المقصود متحف قطر الوطني بمبناه الجديد، لا المتحف القديم.",
+    "options": [
+      "متحف: المتحف العربي للفن الحديث ثم متحف الفن الإسلامي ثم متحف قطر الوطني",
+      "متحف الفن الإسلامي ثم متحف: المتحف العربي للفن الحديث ثم متحف قطر الوطني",
+      "متحف الفن الإسلامي ثم متحف قطر الوطني ثم متحف: المتحف العربي للفن الحديث",
+      "متحف قطر الوطني ثم متحف الفن الإسلامي ثم متحف: المتحف العربي للفن الحديث"
+    ],
+    "answer": 1
   }
 ]

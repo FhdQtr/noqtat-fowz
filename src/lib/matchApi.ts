@@ -20,7 +20,7 @@ type ActionName =
   | "getPictureGuessView" | "judgePictureGuess" | "startPictureGuessTimer" | "adjustTeamScore" | "getGameCapabilities"
   | "createMatch" | "joinTeam" | "leaveMatch" | "startMatch" | "chooseType"
   | "submitAnswer" | "useAssist" | "judgeVerbal" | "revealAnswer"
-  | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
+  | "passToNextTeam" | "advanceTurn" | "recheckSelectionCapacity" | "endMatch" | "deleteMatch" | "setCaptain"
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
   | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats" | "getTeamInvites"
@@ -131,45 +131,25 @@ export async function createMatch(opts: CreateMatchOptions): Promise<string> {
       throw new Error("تحدي الصور يحتاج تحديث وظائف Firebase إلى آخر نسخة. المسابقة العادية ما زالت متاحة.");
     }
   }
-  const result = await gameAction<{ code: string }>("createMatch", { options: opts });
+  const result = await gameAction<{ code: string }>("createMatch", { options: { ...opts, timerMode: "advisory" } });
   return result.code;
-}
-
-async function fetchMatchDirect(code: string): Promise<Match | null> {
-  const user = await ensureAuth();
-  const databaseURL = db.app.options.databaseURL;
-  if (!databaseURL) throw new Error("database-url");
-
-  const request = async (forceRefresh = false) => {
-    const token = await user.getIdToken(forceRefresh);
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 7000);
-    try {
-      return await fetch(
-        `${databaseURL.replace(/\/$/, "")}/matches/${encodeURIComponent(code.toUpperCase())}.json?auth=${encodeURIComponent(token)}`,
-        { cache: "no-store", signal: controller.signal },
-      );
-    } finally {
-      window.clearTimeout(timer);
-    }
-  };
-
-  let response = await request();
-  if (response.status === 401 || response.status === 403) response = await request(true);
-  if (!response.ok) throw new Error(`database-${response.status}`);
-  return await response.json() as Match | null;
 }
 
 export function subscribeMatch(code: string, cb: (m: Match | null) => void, onError?: (reason: string) => void): Unsubscribe {
   let unsubscribe: Unsubscribe = () => undefined;
+  let unsubscribeConnection: Unsubscribe = () => undefined;
   let cancelled = false;
   let received = false;
   let timeout: number | undefined;
   let fallbackTimer: number | undefined;
   let pollTimer: number | undefined;
   let polling = false;
+  let retryDelay = 2000;
+  let generation = 0;
+  let connected: boolean | undefined;
 
   const stopPolling = () => {
+    generation += 1;
     if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer);
     if (pollTimer !== undefined) window.clearTimeout(pollTimer);
     fallbackTimer = undefined;
@@ -180,25 +160,27 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
   const startPolling = () => {
     if (cancelled || polling) return;
     polling = true;
+    const pollGeneration = generation;
+    const current = () => !cancelled && polling && generation === pollGeneration;
     const poll = async () => {
-      if (cancelled || !polling) return;
+      if (!current()) return;
       try {
-        let match: Match | null;
-        try {
-          match = await fetchMatchDirect(code);
-        } catch {
-          const result = await gameAction<{ match: Match }>("getMatch", { matchCode: code });
-          match = result.match;
-        }
-        if (cancelled) return;
+        const result = await gameAction<{ match: Match | null }>("getMatch", { matchCode: code });
+        const match = result.match;
+        if (!current()) return;
         received = true;
+        retryDelay = 2000;
         if (timeout !== undefined) window.clearTimeout(timeout);
-        onError?.("");
+        onError?.(connected === false ? "reconnecting" : "");
         cb(normalizeMatch(match));
+        if (connected === true) stopPolling();
       } catch {
-        // Keep retrying until the overall connection timeout reports the error.
+        if (current()) {
+          onError?.("reconnecting");
+          retryDelay = Math.min(30000, retryDelay * 2);
+        }
       } finally {
-        if (!cancelled && polling) pollTimer = window.setTimeout(() => void poll(), 1000);
+        if (current()) pollTimer = window.setTimeout(() => void poll(), retryDelay);
       }
     };
     void poll();
@@ -210,13 +192,25 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
       if (!cancelled && !received) onError?.("timeout");
     }, 30000);
     fallbackTimer = window.setTimeout(startPolling, 1200);
+    unsubscribeConnection = onValue(ref(db, ".info/connected"), (snapshot) => {
+      if (cancelled) return;
+      connected = snapshot.val() === true;
+      if (!connected) {
+        onError?.("reconnecting");
+        startPolling();
+      } else if (received) {
+        // Confirm freshness even if reconnecting to an unchanged room produces no new room event.
+        startPolling();
+      }
+    });
     unsubscribe = onValue(
       ref(db, `matches/${code.toUpperCase()}`),
       (snapshot) => {
+        if (cancelled || (connected === false && received)) return;
         received = true;
-        stopPolling();
+        if (connected !== false) stopPolling();
         if (timeout !== undefined) window.clearTimeout(timeout);
-        onError?.("");
+        onError?.(connected === false ? "reconnecting" : "");
         cb(normalizeMatch(snapshot.exists() ? snapshot.val() as Match : null));
       },
       (error) => {
@@ -226,7 +220,7 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
     );
   }).catch((error: unknown) => {
     if (timeout !== undefined) window.clearTimeout(timeout);
-    onError?.(error instanceof Error ? error.message : "auth");
+    if (!cancelled) onError?.(error instanceof Error ? error.message : "auth");
   });
 
   return () => {
@@ -234,6 +228,7 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
     stopPolling();
     if (timeout !== undefined) window.clearTimeout(timeout);
     unsubscribe();
+    unsubscribeConnection();
   };
 }
 
@@ -335,15 +330,19 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
 export function sectionCycleProgress(match: Match, teamCode: string) {
   const saved = match.sectionCycleByTeam?.[teamCode];
   const previous = !saved && match.lastChosenTypeByTeam?.[teamCode];
-  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => match.enabledTypes.includes(type));
-  return { used, number: saved?.number || 1, remaining: match.enabledTypes.length - used.length };
+  const activeTypes = match.enabledTypes.filter((type) => !match.rotationBlocked?.[teamCode]?.[type]?.bank
+    && (match.typeCounts?.[teamCode]?.[type] || 0) < typeCap(match, type));
+  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => activeTypes.includes(type));
+  const completed = activeTypes.length > 0 && activeTypes.every((type) => used.includes(type));
+  return { used: completed ? [] : used, number: (saved?.number || 1) + (completed ? 1 : 0), remaining: completed ? activeTypes.length : activeTypes.length - used.length };
 }
 
-export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {
+export async function chooseType(matchCode: string, type: QuestionType, match: Match): Promise<"accepted" | "late" | "busy" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {
   const requestId = typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" }>("chooseType", { matchCode, type, requestId });
+  const payload = { matchCode, type, requestId, transition: captureHostTransition(match.state, requestId) };
+  const send = () => gameAction<{ status: "accepted" | "late" | "busy" | "cap" | "empty" | "rotation" | "cooldown" }>("chooseType", payload);
   try {
     const result = await send();
     return result.status;
@@ -359,9 +358,19 @@ export async function chooseType(matchCode: string, type: QuestionType): Promise
   }
 }
 
-export async function submitAnswer(matchCode: string, playerId: string, playerName: string, choice: number): Promise<"accepted" | "late" | "error"> {
+export interface AnswerContext {
+  questionId: number;
+  attemptId: string;
+  revision: number;
+  requestId: string;
+}
+export function captureAnswerContext(state: Match["state"], requestId = crypto.randomUUID()): AnswerContext {
+  if (!state.question) throw new Error("لا يوجد سؤال نشط");
+  return { questionId: state.question.id, attemptId: `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`, revision: state.revision || 0, requestId };
+}
+export async function submitAnswer(matchCode: string, playerId: string, playerName: string, choice: number, context: AnswerContext): Promise<"accepted" | "late" | "stale" | "error"> {
   try {
-    const result = await gameAction<{ status: "accepted" | "late" }>("submitAnswer", { matchCode, playerId, playerName, choice });
+    const result = await gameAction<{ status: "accepted" | "late" | "stale" }>("submitAnswer", { matchCode, playerId, playerName, choice, ...context });
     return result.status;
   } catch {
     return "error";
@@ -428,32 +437,47 @@ export async function usePowerCard(
   teamCode: string,
   card: PowerCardId,
   targetPlayerId?: string,
+  match?: Match,
 ): Promise<{ accepted: boolean; reason?: string }> {
+  if (!match) return { accepted: false, reason: "stale" };
+  const payload = { matchCode, teamCode, card, targetPlayerId, transition: captureHostTransition(match.state) };
+  const send = () => gameAction<{ accepted: boolean; reason?: string }>("usePowerCard", payload);
   try {
-    return await gameAction<{ accepted: boolean; reason?: string }>("usePowerCard", { matchCode, teamCode, card, targetPlayerId });
+    return await send().catch(() => send());
   } catch {
     return { accepted: false, reason: "error" };
   }
 }
 
-export async function judgeVerbal(matchCode: string, _match: Match, correct: boolean) {
-  void _match;
-  await gameAction("judgeVerbal", { matchCode, correct });
+export function captureHostTransition(state: Match["state"], requestId: string = crypto.randomUUID()) {
+  return { questionId: state.question?.id ?? null, phase: state.phase, round: state.round || 0,
+    attemptId: `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`,
+    revision: state.revision || 0, requestId };
+}
+async function sendHostTransition(action: "judgeVerbal" | "revealAnswer" | "passToNextTeam" | "advanceTurn" | "recheckSelectionCapacity", matchCode: string, match: Match, extra = {}) {
+  const payload = { matchCode, ...extra, transition: captureHostTransition(match.state) };
+  // Freeze the displayed attempt and request ID across the one transport retry.
+  const send = () => gameAction(action, payload);
+  return send().catch(() => send());
+}
+export async function judgeVerbal(matchCode: string, match: Match, correct: boolean) {
+  await sendHostTransition("judgeVerbal", matchCode, match, { correct });
 }
 
-export async function revealAnswer(matchCode: string, _match: Match) {
-  void _match;
-  await gameAction("revealAnswer", { matchCode });
+export async function revealAnswer(matchCode: string, match: Match) {
+  await sendHostTransition("revealAnswer", matchCode, match);
 }
 
-export async function passToNextTeam(matchCode: string, _match: Match) {
-  void _match;
-  await gameAction("passToNextTeam", { matchCode });
+export async function passToNextTeam(matchCode: string, match: Match) {
+  await sendHostTransition("passToNextTeam", matchCode, match);
 }
 
-export async function advanceTurn(matchCode: string, _match: Match) {
-  void _match;
-  await gameAction("advanceTurn", { matchCode });
+export async function advanceTurn(matchCode: string, match: Match, skipUnanswered = false) {
+  await sendHostTransition("advanceTurn", matchCode, match, { skipUnanswered });
+}
+
+export async function recheckSelectionCapacity(matchCode: string, match: Match) {
+  await sendHostTransition("recheckSelectionCapacity", matchCode, match);
 }
 
 export async function endMatch(matchCode: string) {
@@ -472,8 +496,10 @@ export async function setAnswerMode(matchCode: string, answerMode: AnswerMode) {
   await gameAction("setAnswerMode", { matchCode, answerMode });
 }
 
-export async function submitHostAnswer(matchCode: string, choice: number): Promise<"accepted" | "late"> {
-  const result = await gameAction<{ status: "accepted" | "late" }>("submitHostAnswer", { matchCode, choice });
+export async function submitHostAnswer(matchCode: string, choice: number, state: Match["state"]): Promise<"accepted" | "late" | "stale"> {
+  const payload = { matchCode, choice, ...captureAnswerContext(state) };
+  const send = () => gameAction<{ status: "accepted" | "late" | "stale" }>("submitHostAnswer", payload);
+  const result = await send().catch(() => send());
   return result.status;
 }
 

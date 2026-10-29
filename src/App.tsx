@@ -1,8 +1,9 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route, Navigate } from "react-router";
+import { Routes, Route } from "react-router";
 import SoundToggle from "./components/SoundToggle";
 import SiteAnalytics from "./components/SiteAnalytics";
 import AppErrorBoundary from "./components/AppErrorBoundary";
+import RouteMetadata from "./components/RouteMetadata";
 
 const Home = lazy(() => import("./pages/Home"));
 const HostSetup = lazy(() => import("./pages/HostSetup"));
@@ -12,10 +13,14 @@ const Play = lazy(() => import("./pages/Play"));
 const ActView = lazy(() => import("./pages/ActView"));
 const Challenge = lazy(() => import("./pages/Challenge"));
 const Admin = lazy(() => import("./pages/admin/Admin"));
+const Help = lazy(() => import("./pages/Information").then((m) => ({ default: m.HelpPage })));
+const Privacy = lazy(() => import("./pages/Information").then((m) => ({ default: m.PrivacyPage })));
+const Missing = lazy(() => import("./pages/Information").then((m) => ({ default: m.MissingPage })));
 
 export default function App() {
   return (
     <AppErrorBoundary>
+    <RouteMetadata />
     <SoundToggle />
     <SiteAnalytics />
     <Suspense fallback={<div className="grid min-h-dvh place-items-center"><div className="brand-loader" aria-label="جاري فتح الميدان" /></div>}>
@@ -28,7 +33,9 @@ export default function App() {
       <Route path="/act/:code" element={<ActView />} />
       <Route path="/challenge" element={<Challenge />} />
       <Route path="/admin" element={<Admin />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/help" element={<Help />} />
+      <Route path="/privacy" element={<Privacy />} />
+      <Route path="*" element={<Missing />} />
       </Routes>
     </Suspense>
     </AppErrorBoundary>

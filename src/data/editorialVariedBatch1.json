@@ -1,0 +1,65 @@
+{
+  "batch": "varied-refresh-1",
+  "reviewer": "Hermes source/editorial review; not independent human calibration",
+  "difficultyMeaning": "Editorial estimates only; no measured player performance or automatic progression. Family-accessible legacy items remain enabled.",
+  "scope": "Two original Arabic ordering additions in science/Qatar culture; two source-backed corrections and one existing poetry answer checked unchanged. No images copied. Does not complete all-bank manual review or the remaining broader content/preset gate.",
+  "entries": [
+    {
+      "id": 410101,
+      "action": "added",
+      "correctAnswer": "نانومتر ثم ميكرومتر ثم مليمتر ثم سنتيمتر",
+      "difficulty": "medium",
+      "sourceId": 1,
+      "sourceUrl": "https://www.bipm.org/en/measurement-units/si-prefixes",
+      "evidenceFile": "evidence/checkpoint9-source-si.md",
+      "evidenceQuote": "| centi | #### c | 10–2 |\n| milli | #### m | 10–3 |\n| micro | #### µ | 10–6 |\n| nano | #### n | 10–9 |",
+      "rationale": "BIPM defines the factors. Ordering is for the same base unit metre, not mixing time or mass; exponents verified numerically in test. Not a paraphrase of the bank's memory-size ordering."
+    },
+    {
+      "id": 410102,
+      "action": "added",
+      "correctAnswer": "متحف الفن الإسلامي ثم متحف: المتحف العربي للفن الحديث ثم متحف قطر الوطني",
+      "difficulty": "hard",
+      "sourceId": 2,
+      "sourceUrl": "https://qm.org.qa/en/press/press-releases/her-excellency-sheikha-al-mayassa-bint-hamad-bin-khalifa-al-thani-speaks-at-the-international-art-for-tomorrow-conference-in-florence-and-solomeo-italy-commending-qatars-renowned-program-in-heritage-preservation/",
+      "evidenceFile": "evidence/checkpoint9-source-museums.md",
+      "evidenceQuote": "Museum of Islamic Art, architect: I. M. Pei (2008); Mathaf: Arab Museum of Modern Art, architect: François Bodin (2010);",
+      "additionalEvidenceQuote": "National Museum of Qatar, architect: Jean Nouvel (2019);",
+      "rationale": "Official Qatar Museums release lists the three modern venues as 2008/2010/2019. Stem explicitly distinguishes the new National Museum building from the older national museum and initial opening from reopening. All four alternatives contain exactly the same three museums."
+    },
+    {
+      "id": 941,
+      "action": "corrected_stem_answer_unchanged",
+      "correctAnswer": "عطارد - الزهرة - الأرض - المريخ",
+      "sourceId": 3,
+      "sourceUrl": "https://science.nasa.gov/solar-system/planets/",
+      "evidenceFile": "evidence/checkpoint9-source-solar.md",
+      "evidenceQuote": "The first four planets from the Sun are Mercury, Venus, Earth, and Mars.",
+      "rationale": "NASA verifies existing answer; old stem literally printed the correct sequence. New stem lists the candidate planets in unsorted order. Original prompt alias retained to prevent an editorial edit bypassing recent history."
+    },
+    {
+      "id": 920,
+      "action": "corrected_missing_words",
+      "correctAnswer": "دون النجوم",
+      "sourceId": 4,
+      "sourceUrl": "https://www.aldiwan.net/poem10566.html",
+      "evidenceFile": "evidence/checkpoint9-source-poem920.md",
+      "evidenceQuote": "إِذا غامَرتَ في شَرَفٍ مَرومٍفَلا تَقنَع بِما دونَ النُجومِ",
+      "rationale": "Read the poem's text, not the site's AI-generated explanation. The old key دونه did not complete the quoted verse. Ask for exact wording rather than a semantically acceptable paraphrase. Original ID and pre-edit prompt alias preserved. This is a literary corpus transcription check, not critical-edition attribution verification."
+    },
+    {
+      "id": 924,
+      "action": "verified_unchanged",
+      "correctAnswer": "طول حياته",
+      "sourceId": 5,
+      "sourceUrl": "https://www.aldiwan.net/poem24719.html",
+      "evidenceFile": "evidence/checkpoint9-source-poem924.md",
+      "evidenceQuote": "وَمَنْ لَمْ يَذُقْ مُرَّ التَّعَلُّمِ سَاعَةًتَجَرَّعَ ذُلَّ الْجَهْلِ طُولَ حَيَاتِهِ",
+      "rationale": "Existing key agrees with actual poem text; no factual edit needed. Did not use generated explanation or claim independent manuscript/authorship validation."
+    }
+  ],
+  "deferred": [
+    { "id": 936, "status": "unverified; unchanged and flagged", "reason": "Narrow and broad searches did not identify a trustworthy matching verse with its existing ending. Search failure is not proof of invalidity; no invented correction or new attribution and no bulk quarantine." }
+  ],
+  "rotationCompatibility": "Source-maintained rotationLegacyPrompts hashed as aliases in existing concept families. Applies to 920/941 and retrofits prior 909 wording correction. No live history clearing/migration required; existing ten-window and per-section exhaustion remain unchanged."
+}

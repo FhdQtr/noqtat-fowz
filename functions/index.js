@@ -1,12 +1,19 @@
 const { readFileSync } = require("node:fs");
-const { createHash, randomInt, timingSafeEqual } = require("node:crypto");
+const { createHash, randomInt, randomUUID, timingSafeEqual } = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getDatabase, ServerValue } = require("firebase-admin/database");
 
-initializeApp({ databaseURL: "https://noqtat-fowz-d13aa-default-rtdb.asia-southeast1.firebasedatabase.app" });
+const FUNCTIONS_EMULATOR = process.env.FUNCTIONS_EMULATOR === "true";
+if (FUNCTIONS_EMULATOR && (process.env.GCLOUD_PROJECT !== "demo-al-midan"
+  || process.env.FIREBASE_DATABASE_EMULATOR_HOST !== "127.0.0.1:9000")) {
+  throw new Error("Functions emulator requires the isolated demo project and loopback database");
+}
+initializeApp(FUNCTIONS_EMULATOR
+  ? { projectId: "demo-al-midan", databaseURL: "https://demo-al-midan-default-rtdb.firebaseio.com" }
+  : { databaseURL: "https://noqtat-fowz-d13aa-default-rtdb.asia-southeast1.firebasedatabase.app" });
 const db = getDatabase();
 const QUESTIONS = JSON.parse(readFileSync(require.resolve("./questions.json"), "utf8"));
 const PICTURE_GUESS_ITEMS = JSON.parse(readFileSync(require.resolve("./pictureGuessItems.json"), "utf8"));
@@ -40,6 +47,13 @@ const RATE_LIMIT_SCOPES = [...Object.keys(REQUEST_LIMITS), "game"].flatMap((acti
 function fail(code, message) { throw new HttpsError(code, message); }
 function text(value, max = 30) { return String(value ?? "").trim().slice(0, max); }
 function code(value) { return text(value, 12).toUpperCase(); }
+function requireRoomCode(value) {
+  // Validate the original length before normalization: never truncate into a valid path.
+  if (typeof value !== "string" || !/^[A-Z][0-9]{3}$/i.test(value.trim())) {
+    fail("invalid-argument", "كود الميدان حرف وثلاثة أرقام كما يظهر عند المقدم");
+  }
+  return value.trim().toUpperCase();
+}
 function dbKey(value) { return text(value, 50).replace(/[.#$\[\]\/]/g, "_"); }
 function now() { return Date.now(); }
 function qatarBucket(timestamp = now()) {
@@ -164,65 +178,187 @@ function randomOrder(values) {
   }
   return result;
 }
-// Asset-based rotation across the last fifteen competitions, persisted on the server.
-async function rotateFlagQuestion(pool, owner, allFlags) {
-  const activeAssets = new Set(allFlags.map(rotationAssetKey));
-  const draw = randomInt(1000000);
-  let selected;
-  let reused = false;
-  const result = await db.ref(`flagRotation/v1/${dbKey(owner)}`).transaction((current) => {
-    let used = new Set(Object.values(current?.used || {}).filter((asset) => activeAssets.has(asset)));
-    let cycle = Number(current?.cycle) || 1;
-    reused = activeAssets.size > 0 && [...activeAssets].every((asset) => used.has(asset));
-    if (reused) { used = new Set(); cycle += 1; }
-    const available = pool.filter((q) => activeAssets.has(rotationAssetKey(q)) && !used.has(rotationAssetKey(q)));
-    if (!available.length) return;
-    selected = available[draw % available.length];
-    used.add(rotationAssetKey(selected));
-    return { cycle, used: [...used] };
-  }, undefined, false);
-  if (!result.committed || !selected) fail("resource-exhausted", "الأعلام المتبقية في الدورة ظهرت في هذه المسابقة؛ أكملها في ميدان جديد");
-  return { question: shuffled(selected), reused };
-}
-async function rotateQuestion(pool, matchId, owner, allFlags = null) {
-  if (pool.length && pool.every((q) => q.type === "flag")) {
-    const flags = allFlags || (await questionBank()).filter((q) => q.type === "flag" && !q.disabled);
-    return rotateFlagQuestion(pool, owner, flags);
-  }
+// Reconcile durable publication receipts before releasing inventory. A room-side
+// cancellation fence makes a delayed executor unable to publish after release.
+async function settleRotationReservations(owner) {
   const ref = db.ref(`questionRotation/${dbKey(owner)}`);
+  const pending = (await ref.get()).val()?.pending || {};
+  for (const [key, reservation] of Object.entries(pending)) {
+    const room = await db.ref(`matches/${reservation.room}`).transaction((current) => {
+      if (!current) return current;
+      const marker = current.rotationPublications?.[reservation.publicationKey];
+      if (marker === "published" || marker === "cancelled") return current;
+      if (reservation.expiresAt > now() && current.status === "playing") return;
+      current.rotationPublications ||= {};
+      current.rotationPublications[reservation.publicationKey] = "cancelled";
+      return current;
+    }, undefined, false);
+    const marker = room.snapshot.val()?.rotationPublications?.[reservation.publicationKey];
+    // Missing rooms cannot be republished: all publishers require playing state.
+    if (!room.committed || (!marker && room.snapshot.val())) continue;
+    await ref.transaction((current) => {
+      if (!current) return current;
+      const entry = current.pending?.[key];
+      if (!entry || entry.publicationKey !== reservation.publicationKey) return current;
+      if (marker === "published") {
+        const games = Object.values(current.games || {});
+        let game = games.find((item) => item.id === entry.gameId);
+        if (!game) { game = { id: entry.gameId, assets: [] }; games.push(game); }
+        game.assets = [...new Set([...Object.values(game.assets || {}), ...entry.assets])];
+        game.reservations = { ...game.reservations, [entry.receiptKey]: { ...entry.outcome,
+          reservation: { key: entry.publicationKey, expiresAt: entry.expiresAt } } };
+        current.games = games.slice(-11);
+        current.cycles ||= {};
+        const cycle = current.cycles[entry.type];
+        current.cycles[entry.type] = { number: entry.cycleNumber, used: [...new Set([
+          ...Object.values(entry.baseUsed || {}),
+          ...(cycle?.number === entry.cycleNumber ? Object.values(cycle.used || {}) : []), ...entry.assets,
+        ])] };
+      }
+      delete current.pending[key];
+      return current;
+    }, undefined, false);
+  }
+}
+function rotationPublicationAllowed(current, reservation) {
+  return !reservation || (reservation.expiresAt > now()
+    && current.rotationPublications?.[reservation.key] !== "cancelled");
+}
+function recordRotationPublication(current, reservation) {
+  if (!reservation) return;
+  current.rotationPublications ||= {};
+  current.rotationPublications[reservation.key] = "published";
+}
+// Selection holds inventory; only an atomically published room receipt consumes it.
+// Legacy helper calls without a publication target retain immediate consumption.
+async function rotateQuestion(pool, matchId, owner, allBank = null, requestId = null, inspectOnly = false, publicationRoom = null) {
+  if (!pool.length) fail("resource-exhausted", "لا توجد أسئلة متاحة في هذا القسم");
+  const ref = db.ref(`questionRotation/${dbKey(owner)}`);
+  const universe = (allBank || pool).filter((q) => !q.disabled);
+  if (!inspectOnly) await settleRotationReservations(owner);
+  // Read-only import. Old binaries must be drained before publishing this policy.
+  const legacyFlags = (await db.ref(`flagRotation/v1/${dbKey(owner)}`).get()).val();
+  // Editorial families supplement lexical hashes; include every built-in sibling
+  // so histories written before concept metadata still block its paraphrases.
+  const families = new Map();
+  for (const question of [...QUESTIONS, ...universe, ...pool]) {
+    if (!question.conceptId) continue;
+    const aliases = families.get(question.conceptId) || new Set();
+    aliases.add(legacyRotationAssetKey(question));
+    // Source-maintained wording history keeps editorial corrections from resetting rotation.
+    for (const prompt of question.rotationLegacyPrompts || []) {
+      if (typeof prompt === "string") aliases.add(legacyRotationAssetKey({ ...question, question: prompt }));
+    }
+    aliases.add(rotationAssetKey(question));
+    aliases.add(createHash("sha256").update(`concept:${question.conceptId}`).digest("hex"));
+    families.set(question.conceptId, aliases);
+  }
+  const aliasesFor = (question) => families.get(question.conceptId) || new Set([rotationAssetKey(question)]);
   const draw = randomInt(1000000);
+  const receiptKey = requestId ? createHash("sha256").update(requestId).digest("hex") : null;
+  const pendingKey = publicationRoom ? createHash("sha256").update(JSON.stringify([matchId, requestId])).digest("hex") : null;
+  const publicationKey = publicationRoom ? randomUUID() : null;
   let selected;
   let reused = false;
-  const result = await ref.transaction((current) => {
-    const games = Array.isArray(current?.games) ? current.games : Object.values(current?.games || {});
+  let outcome;
+  let temporarilyHeld;
+  const reserve = (current) => {
+    outcome = null;
+    temporarilyHeld = false;
+    if (pendingKey && current?.pending?.[pendingKey]) {
+      const entry = current.pending[pendingKey];
+      outcome = { ...entry.outcome, reservation: { key: entry.publicationKey, expiresAt: entry.expiresAt } };
+      return current;
+    }
+    // Pending preparations hold inventory but never age consumed-game history.
+    const games = (Array.isArray(current?.games) ? current.games : Object.values(current?.games || {})).filter((entry) => Object.values(entry.assets || {}).length);
+    const legacyGames = current?.legacyGames || (current?.policyVersion === 2 ? [] : games.map((entry) => ({ ...entry, assets: [...Object.values(entry.assets || {})] })));
+    const legacyAssets = current?.legacyAssets || (current?.policyVersion === 2 ? [] : [...new Set(games.flatMap((entry) => Object.values(entry.assets || {})))]);
+    const importFlags = legacyFlags && !current?.flagMigration;
+    if (importFlags && Object.values(legacyFlags.used || {}).length) games.push({ id: "legacy-flag-cycle", assets: Object.values(legacyFlags.used) });
     let game = games.find((entry) => entry.id === matchId);
     if (!game) { game = { id: matchId, assets: [] }; games.push(game); }
-    const recent = games.slice(-15);
+    if (receiptKey && game.reservations?.[receiptKey]) {
+      outcome = game.reservations[receiptKey];
+      return current;
+    }
+    const recent = games.filter((entry) => entry.id !== matchId).slice(-10);
     const currentAssets = new Set(Object.values(game.assets || {}));
-    const eligible = pool.filter((q) => !currentAssets.has(rotationAssetKey(q)));
-    if (!eligible.length) return;
+    const pendingAssets = new Set(Object.values(current?.pending || {}).flatMap((entry) => Object.values(entry.assets || {})));
+    const cycles = current?.cycles || {};
+    const sections = new Map();
+    for (const type of new Set(pool.map((q) => q.type))) {
+      const flagHistory = current?.flagMigration || legacyFlags;
+      const cycleState = cycles[dbKey(type)] || { number: type === "flag" ? Number(flagHistory?.cycle) || 1 : 1, used: [...legacyAssets, ...(type === "flag" ? Object.values(flagHistory?.used || {}) : [])] };
+      const cycleUsed = new Set(Object.values(cycleState.used || {}));
+      const section = universe.filter((q) => q.type === type);
+      const exhausted = section.length > 0 && section.every((q) => [...aliasesFor(q)].some((key) => cycleUsed.has(key)));
+      sections.set(type, { cycleState, cycleUsed, exhausted, section });
+    }
+    const eligible = pool.filter((q) => {
+      const { cycleUsed, exhausted, section } = sections.get(q.type);
+      return !q.disabled && section.some((item) => item.id === q.id)
+        && ![...aliasesFor(q)].some((key) => currentAssets.has(key))
+        && (exhausted || ![...aliasesFor(q)].some((key) => cycleUsed.has(key)));
+    });
     const lastSeen = new Map();
     recent.forEach((entry, index) => Object.values(entry.assets || {}).forEach((asset) => lastSeen.set(asset, index)));
-    const fresh = eligible.filter((q) => !lastSeen.has(rotationAssetKey(q)));
-    reused = false;
+    const withoutRecent = eligible.filter((q) => ![...aliasesFor(q)].some((key) => lastSeen.has(key)));
+    const fresh = withoutRecent.filter((q) => ![...aliasesFor(q)].some((key) => pendingAssets.has(key)));
+    temporarilyHeld = withoutRecent.length > 0 && !fresh.length;
+    if (inspectOnly) {
+      // Conservative capacity: no promise of mid-game cycle rollover and no
+      // counting paraphrases/image aliases as independent questions. No writes.
+      const seen = new Set();
+      const questions = fresh.filter((question) => {
+        const keys = [...aliasesFor(question)];
+        const distinct = !keys.some((key) => seen.has(key));
+        keys.forEach((key) => seen.add(key));
+        return distinct;
+      });
+      return inspectOnly === "capacity" ? { questions,
+        heldTypes: [...new Set(withoutRecent.filter((q) => [...aliasesFor(q)].some((key) => pendingAssets.has(key))).map((q) => q.type))] } : questions;
+    }
     const available = fresh;
-    if (!available.length) return;
+    if (!available.length) return current;
     selected = available[draw % available.length];
-    game.assets = [...new Set([...Object.values(game.assets || {}), rotationAssetKey(selected)])];
-    return { games: recent };
-  }, undefined, false);
-  if (!result.committed || !selected) fail("resource-exhausted", "نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة؛ اختر قسمًا آخر أو أضف أسئلة جديدة");
-  return { question: shuffled(selected), reused };
+    const { cycleState, cycleUsed, exhausted } = sections.get(selected.type);
+    reused = exhausted;
+    outcome = { question: shuffled(selected), reused };
+    if (publicationRoom) {
+      const expiresAt = now() + 30000;
+      const pending = { ...current?.pending, [pendingKey]: { room: publicationRoom, gameId: matchId, receiptKey, publicationKey,
+        outcome, assets: [...aliasesFor(selected)], type: dbKey(selected.type),
+        cycleNumber: Number(cycleState.number || 1) + (exhausted ? 1 : 0), baseUsed: exhausted ? [] : [...cycleUsed], expiresAt } };
+      outcome = { ...outcome, reservation: { key: publicationKey, expiresAt } };
+      return { ...current, policyVersion: 2, legacyGames, legacyAssets,
+        games: games.filter((entry) => Object.values(entry.assets || {}).length).slice(-11),
+        ...(importFlags ? { flagMigration: legacyFlags } : {}), pending };
+    }
+    if (receiptKey) game.reservations = { ...game.reservations, [receiptKey]: outcome };
+    game.assets = [...new Set([...Object.values(game.assets || {}), ...aliasesFor(selected)])];
+    cycles[dbKey(selected.type)] = { number: Number(cycleState.number || 1) + (exhausted ? 1 : 0), used: [...new Set([...(exhausted ? [] : cycleUsed), ...aliasesFor(selected)])] };
+    return { ...current, policyVersion: 2, legacyGames, legacyAssets, ...(importFlags ? { flagMigration: legacyFlags } : {}), games: games.slice(-11), cycles };
+  };
+  if (inspectOnly) return reserve((await ref.get()).val());
+  const result = await ref.transaction(reserve, undefined, false);
+  if (!outcome && temporarilyHeld) fail("unavailable", "الأسئلة المتاحة قيد الحجز لمسابقة أخرى؛ انتظر قليلاً ثم أعد المحاولة أو اختر قسمًا آخر");
+  if (!result.committed || !outcome) fail("resource-exhausted", "لا يوجد سؤال يحقق دورة القسم واستبعاد آخر 10 مسابقات؛ اختر قسمًا آخر أو أضف محتوى جديدًا");
+  const committed = pendingKey ? outcome : receiptKey ? result.snapshot.val().games.find((entry) => entry.id === matchId).reservations[receiptKey] : outcome;
+  // RTDB removes empty arrays; replay must restore the bank's empty-choice contract.
+  return { ...committed, question: { ...committed.question, options: committed.question.options || [] } };
 }
 function rotationGameId(id, match) { return `${id}_${match.createdAt || 0}`; }
 async function registerRotationMatch(owner, gameId) {
-  await db.ref(`questionRotation/${dbKey(owner)}`).transaction((current) => {
-    const games = Array.isArray(current?.games) ? current.games : Object.values(current?.games || {});
-    if (!games.some((game) => game.id === gameId)) games.push({ id: gameId, assets: [] });
-    return { games: games.slice(-15) };
-  }, undefined, false);
+  // Lobby creation is not consumption. The first reservation registers a game.
+  // Retained as a compatibility hook for startMatch; intentionally no DB write.
+  void owner; void gameId;
 }
 function rotationAssetKey(question) {
+  if (question.conceptId && !question.image && !question.video) return createHash("sha256").update(`concept:${question.conceptId}`).digest("hex");
+  return legacyRotationAssetKey(question);
+}
+function legacyRotationAssetKey(question) {
   const normalized = (value) => String(value || "").normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
   const asset = question.image ? `image:${question.image}` : question.video
     ? `video:${question.video.youtubeId}:${question.video.start}:${question.video.end}:${normalized(question.question)}`
@@ -317,7 +453,7 @@ async function adminQuestions(action, data) {
   return { count: ids.length };
 }
 
-async function beginPunishment(uid, data, id, match, teamCode, usedCount, requestId) {
+async function beginPunishment(uid, data, id, match, teamCode, usedCount, requestId, selectionKey) {
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (!current) return current;
     if (current.state.phase !== "choose" || current.state.question || current.state.targetTeam !== teamCode) return;
@@ -326,7 +462,7 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
       question: { id: now(), type: "punishment", category: "general", question: "سؤال وعقاب", options: [], answer: -1 },
       originalTeam: teamCode, targetTeam: teamCode, passCount: 0, attemptedTeams: [],
       questionValue: 0, pointMultiplier: 1, answer: null, isCorrect: null,
-      questionStartedAt: null, questionDuration: 0, viewUntil: null, selectionRequestId: requestId,
+      questionStartedAt: null, questionDuration: 0, viewUntil: null, selectionRequestId: requestId, selectionKey, secretVersion: null,
       punishment: { stage: "prepare", byTeam: teamCode, prepareUntil: now() + 60000 },
     };
     current.typeCounts ||= {};
@@ -409,14 +545,17 @@ async function punishmentAction(uid, data, id, match) {
 function sectionCycle(match, teamCode) {
   const saved = match.sectionCycleByTeam?.[teamCode];
   const previous = !saved && match.lastChosenTypeByTeam?.[teamCode];
-  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => match.enabledTypes.includes(type));
-  return { used, number: Number(saved?.number) || 1 };
+  const activeTypes = match.enabledTypes.filter((type) => !match.rotationBlocked?.[teamCode]?.[type]?.bank
+    && (match.typeCounts?.[teamCode]?.[type] || 0) < typeCap(match, type));
+  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => activeTypes.includes(type));
+  const completed = activeTypes.length > 0 && activeTypes.every((type) => used.includes(type));
+  return { used: completed ? [] : used, number: (Number(saved?.number) || 1) + (completed ? 1 : 0) };
 }
 function nextSectionCycle(match, teamCode, type) {
   const cycle = sectionCycle(match, teamCode);
   const used = [...new Set([...cycle.used, type])];
   // Keep the number so an empty used list pruned by RTDB still marks a new cycle.
-  return match.enabledTypes.every((enabled) => used.includes(enabled))
+  return match.enabledTypes.filter((enabled) => !match.rotationBlocked?.[teamCode]?.[enabled]?.bank).every((enabled) => used.includes(enabled))
     ? { number: cycle.number + 1 }
     : { used, number: cycle.number };
 }
@@ -438,7 +577,8 @@ function fairTypeCaps(enabledTypes, teamCount, questionsPerTeam, bank = QUESTION
   const base = enabledTypes.length <= 1 ? questionsPerTeam : Math.max(3, Math.ceil(questionsPerTeam / 2));
   return Object.fromEntries(enabledTypes.map((type) => {
     const typeQuestions = bank.filter((question) => question.type === type && !question.disabled);
-    if (!typeQuestions.length) return [type, base];
+    if (type === "punishment") return [type, base];
+    if (!typeQuestions.length) return [type, 0];
     const count = new Set(typeQuestions.map(questionAssetKey)).size;
     const fair = Math.floor(count / Math.max(1, teamCount));
     return [type, Math.max(0, Math.min(base, fair))];
@@ -470,7 +610,7 @@ async function shortTeamCodes(id, access) {
 
 function usesVerbalChoices(type) { return type === "flag" || type === "brand"; }
 function publicQuestion(question) {
-  const { brandInfo: _privateBrandInfo, ...visible } = question;
+  const { brandInfo: _privateBrandInfo, rotationLegacyPrompts: _privateEditorialPrompts, ...visible } = question;
   return { ...visible, answer: -1 };
 }
 function protectedQuestion(question) {
@@ -564,7 +704,7 @@ async function releaseClaim(claimRef, claimId) {
   await claimRef.transaction((currentClaim) => currentClaim === claimId ? null : currentClaim, undefined, false);
 }
 async function loadMatch(rawCode) {
-  const id = code(rawCode);
+  const id = requireRoomCode(rawCode);
   const [snapshot, accessSnapshot] = await Promise.all([
     db.ref(`matches/${id}`).get(),
     db.ref(`matchAccess/${id}`).get(),
@@ -580,6 +720,9 @@ function requireHost(match, uid) {
 async function createMatch(uid, options) {
   const names = Array.isArray(options?.teamNames) ? options.teamNames.slice(0, 4) : [];
   if (names.length < 2) fail("invalid-argument", "اختر فريقين على الأقل");
+  if (options.timerMode !== undefined && options.timerMode !== "advisory") {
+    fail("invalid-argument", "المؤقت العادي إرشادي فقط؛ القفل عند الصفر غير مدعوم");
+  }
   const challengeMode = options.challengeMode === "picture_guess" ? "picture_guess" : "classic";
   if (challengeMode === "picture_guess" && names.length !== 2) fail("invalid-argument", "تحدي الصور يحتاج فريقين");
   const enabledTypes = Array.isArray(options.enabledTypes) ? [...new Set(options.enabledTypes.map((x) => text(x, 50)).filter(Boolean))] : [];
@@ -595,7 +738,11 @@ async function createMatch(uid, options) {
     ? questionsPerTeam * names.length
     : Math.min(40, Math.max(4, Number(options.totalRounds) || 12));
   const timer = Math.min(120, Math.max(0, Number(options.timer) || 0));
-  const typeCaps = fairTypeCaps(enabledTypes, names.length, questionsPerTeam, await questionBank());
+  await settleRotationReservations(uid);
+  const bank = await questionBank();
+  const active = bank.filter((question) => !question.disabled && enabledTypes.includes(question.type));
+  const available = active.length ? await rotateQuestion(active, "preflight", uid, bank, null, true) : [];
+  const typeCaps = fairTypeCaps(enabledTypes, names.length, questionsPerTeam, available);
   const fullCycles = Math.floor(questionsPerTeam / enabledTypes.length);
   if (enabledTypes.some((type) => typeCaps[type] < fullCycles)) fail("failed-precondition", "بعض الأقسام لا تحتوي أسئلة كافية ليكمل كل فريق جميع الأقسام؛ قلّل عدد الأسئلة أو اختر أقسامًا إضافية");
   if (Object.values(typeCaps).reduce((total, cap) => total + cap, 0) < questionsPerTeam) {
@@ -625,7 +772,7 @@ async function createMatch(uid, options) {
     const createdAt = now();
     const match = {
       hostName: text(options.hostName, 20) || "المقدم",
-      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, answerMode, challengeMode, enabledTypes, typeCaps, teams,
+      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, timerMode: "advisory", answerMode, challengeMode, enabledTypes, typeCaps, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], usedAssets: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     // A cold transaction cache retries against the remote record. Never overwrite
@@ -672,16 +819,36 @@ async function joinTeam(uid, data) {
       if (duplicate.teamCode !== teamCode) fail("failed-precondition", "هذا الجهاز مسجل في فريق آخر");
       return { player: publicPlayer(duplicate) };
     }
-    const teamPlayers = Object.values(latestMatch.players || {}).filter((player) => player.teamCode === teamCode);
-    if (teamPlayers.length >= MAX_PLAYERS_PER_TEAM) fail("resource-exhausted", "اكتمل عدد لاعبي هذا الفريق");
-
-    const player = { id: `p_${now()}_${randomInt(100000, 999999)}`, name: text(data.name, 20) || "لاعب", teamCode, joinedAt: now() };
-    await db.ref().update({
-      [`matches/${id}/players/${player.id}`]: player,
-      [`matchAccess/${id}/playerUids/${player.id}`]: uid,
-    });
+    // Room-scoped deterministic identity makes a retry recover the same reservation
+    // if the process dies before its private UID mapping is persisted. Never publish UID.
+    const playerId = `p_${createHash("sha256").update(JSON.stringify([id, match.createdAt || 0, uid])).digest("hex").slice(0, 32)}`;
+    const proposedPlayer = { id: playerId, name: text(data.name, 20) || "لاعب", teamCode, joinedAt: now() };
+    let rejection;
+    const reserved = await db.ref(`matches/${id}`).transaction((current) => {
+      rejection = null;
+      if (!current) return current;
+      const existingPlayer = current.players?.[playerId];
+      if (existingPlayer) {
+        if (existingPlayer.teamCode !== teamCode) { rejection = "team"; return; }
+        return current;
+      }
+      if (current.status !== "lobby") { rejection = "closed"; return; }
+      if (!current.teams?.[teamCode]) { rejection = "team"; return; }
+      if (Object.values(current.players || {}).filter((p) => p.teamCode === teamCode).length >= MAX_PLAYERS_PER_TEAM) {
+        rejection = "full"; return;
+      }
+      current.players ||= {};
+      current.players[playerId] = proposedPlayer;
+      return current;
+    }, undefined, false);
+    if (!reserved.committed || !reserved.snapshot.val()?.players?.[playerId]) {
+      if (rejection === "full") fail("resource-exhausted", "اكتمل عدد لاعبي هذا الفريق");
+      fail("failed-precondition", rejection === "team" ? "هذا الجهاز مسجل في فريق آخر" : "أُغلق دخول الفرق بعد بدء المسابقة");
+    }
+    const player = reserved.snapshot.val().players[playerId];
+    await db.ref(`matchAccess/${id}/playerUids/${player.id}`).set(uid);
     await safelyRecordUsage(() => recordPlayerUsage(uid));
-    return { player };
+    return { player: publicPlayer(player) };
   } finally {
     await claimRef.remove();
   }
@@ -689,7 +856,7 @@ async function joinTeam(uid, data) {
 
 async function startChallenge(uid) {
   const bank = await questionBank(false);
-  const selected = randomOrder(bank.filter((q) => !q.disabled && !["flag", "brand", "acting"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0)).slice(0, 100).map(shuffled);
+  const selected = randomOrder(bank.filter((q) => !q.disabled && !["flag", "brand", "acting", "memory"].includes(q.type) && Array.isArray(q.options) && q.options.length > 0)).slice(0, 100).map(shuffled);
   if (selected.length < 100) fail("resource-exhausted", "بنك التحدي لا يحتوي أسئلة كافية");
   const sessionId = `${now()}_${randomInt(100000, 999999)}`;
   await db.ref(`challengeSecrets/${uid}`).set({ [sessionId]: { createdAt: now(), answers: selected.map((q) => q.answer), ids: selected.map((q) => q.id) } });
@@ -709,14 +876,82 @@ async function answerChallenge(uid, data) {
   return { correct: choice === answer, answer };
 }
 
+function secretForState(root, state) {
+  // Versioned secrets are private and staged before the guarded public commit.
+  // A late executor cannot overwrite the secret referenced by a newer question.
+  return state?.secretVersion ? root?.versions?.[state.secretVersion] : root;
+}
+async function readQuestionSecret(id, state) {
+  return secretForState((await db.ref(`matchSecrets/${id}`).get()).val(), state);
+}
+
+async function markSectionUnavailable(id, match, teamCode, type) {
+  // An obsolete empty result must never disable a section in a newer turn.
+  return db.ref(`matches/${id}`).transaction((current) => {
+    if (!current) return current;
+    if (current.status !== "playing" || !sameTurnContext(current, match)
+      || current.state.phase !== "choose" || current.state.question) return;
+    current.rotationBlocked ||= {};
+    current.rotationBlocked[teamCode] ||= {};
+    current.rotationBlocked[teamCode][type] = { bank: true };
+    return current;
+  }, undefined, false);
+}
+
+async function recheckSelectionCapacity(id, match, transitionKey) {
+  if (match.status !== "playing" || match.state.phase !== "choose" || match.state.question) {
+    fail("failed-precondition", "إعادة فحص السعة متاحة عند اختيار القسم فقط");
+  }
+  const owner = match.hostUid;
+  await settleRotationReservations(owner);
+  const bank = await questionBank();
+  const usedIds = new Set(match.state.usedIds || []), usedAssets = new Set(match.state.usedAssets || []);
+  const pool = bank.filter((q) => !q.disabled && match.enabledTypes.includes(q.type)
+    && !usedIds.has(q.id) && !usedAssets.has(questionAssetKey(q)));
+  const inspection = pool.length ? await rotateQuestion(pool, rotationGameId(id, match), owner, bank, null, "capacity")
+    : { questions: [], heldTypes: [] };
+  const fresh = new Set(inspection.questions.map((q) => q.type)), held = new Set(inspection.heldTypes);
+  let response;
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    response = undefined;
+    if (!current) return current;
+    if (current.state?.hostTransition?.key === transitionKey) { response = current.state.hostTransition.result; return current; }
+    if (!sameTurnContext(current, match) || current.status !== "playing"
+      || (current.state.selectionLease?.expiresAt > now()) || current.state.cardClaimId) return;
+    const team = current.state.targetTeam;
+    current.rotationBlocked ||= {};
+    current.rotationBlocked[team] ||= {};
+    for (const type of current.enabledTypes) {
+      // A live pending hold is retryable contention, not an exhausted section.
+      if (type === "punishment" || fresh.has(type) || held.has(type)) delete current.rotationBlocked[team][dbKey(type)];
+      else current.rotationBlocked[team][dbKey(type)] = { bank: true };
+    }
+    const usable = current.enabledTypes.filter((type) => !current.rotationBlocked[team][dbKey(type)]?.bank
+      && (current.typeCounts?.[team]?.[type] || 0) < typeCap(current, type));
+    const available = usable.some((type) => type === "punishment" || fresh.has(type));
+    const busy = !available && usable.some((type) => held.has(type));
+    if (available) delete current.state.selectionPause;
+    else current.state.selectionPause = { reason: busy ? "busy" : "capacity", at: now() };
+    response = { available, busy };
+    current.state.revision = (current.state.revision || 0) + 1;
+    current.state.hostTransition = { key: transitionKey, result: response };
+    return current;
+  }, undefined, false);
+  if (!result.committed || !response) fail("failed-precondition", "تغيّر الدور أو يوجد اختيار قيد التنفيذ؛ حدّث الشاشة وأعد المحاولة");
+  return response;
+}
+
 async function chooseType(uid, data) {
-  const { id, match } = await loadMatch(data.matchCode);
+  const { id, match, access } = await loadMatch(data.matchCode);
   const type = text(data.type, 50);
   const typeKey = dbKey(type);
   const requestId = text(data.requestId, 80) || `${uid}_${now()}_${randomInt(100000, 999999)}`;
   const teamCode = match.state.targetTeam || match.teamOrder[match.turnIndex % match.teamOrder.length];
   if (!canChoose(match, uid, teamCode)) fail("permission-denied", "الاختيار للفريق صاحب الدور");
-  if (match.state.phase === "question" && match.state.selectionRequestId === requestId) return { status: "accepted" };
+  const contextKey = hostTransitionKey(data);
+  const selectionKey = contextKey && createHash("sha256").update(JSON.stringify([uid, type, requestId, contextKey])).digest("hex");
+  if (selectionKey && match.state.phase === "question" && match.state.selectionKey === selectionKey) return { status: "accepted" };
+  if (!selectionKey || !hostTransitionMatches(match.state, data.transition)) return { status: "late", reason: "stale" };
   if (match.state.phase !== "choose" || match.state.question) {
     return { status: "late", reason: "initial-state", phase: match.state.phase, hasQuestion: Boolean(match.state.question) };
   }
@@ -726,35 +961,57 @@ async function chooseType(uid, data) {
   if (usedCount >= typeCap(match, type)) return { status: "cap" };
   let candidates;
   candidates = await questionBank();
-  if (type === "punishment") return beginPunishment(uid, data, id, match, teamCode, usedCount, requestId);
+  if (type === "punishment") return beginPunishment(uid, data, id, match, teamCode, usedCount, requestId, selectionKey);
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
   const teamPool = candidates.filter((q) => q.type === type && !q.disabled && !teamUsedIds.has(q.id));
-  if (!teamPool.length) return { status: "empty" };
+  if (!teamPool.length) {
+    await markSectionUnavailable(id, match, teamCode, typeKey);
+    return { status: "empty" };
+  }
   // ممنوع تكرار السؤال أو الصورة نفسها بين الفرق داخل المسابقة.
   const pool = teamPool.filter((q) => !usedIds.has(q.id) && !usedAssets.has(questionAssetKey(q)));
-  if (!pool.length) return { status: "empty" };
+  if (!pool.length) {
+    await markSectionUnavailable(id, match, teamCode, typeKey);
+    return { status: "empty" };
+  }
 
   // سجل دائم للمقدم: لا نكرر السؤال بين المسابقات حتى ينتهي مخزون القسم.
   const historyOwner = match.hostUid || uid;
 
   let question;
   const started = now();
-  const stateRef = db.ref(`matches/${id}/state`);
-  const claimRef = stateRef.child("selectionRequestId");
-  if (!await acquireClaim(claimRef, requestId)) return { status: "late", reason: "claimed" };
+  const matchRef = db.ref(`matches/${id}`);
+  const stateRef = matchRef.child("state");
+  const executor = randomUUID();
+  const acquired = await matchRef.transaction((current) => {
+    if (!current) return current;
+    const state = current.state;
+    if (current.status !== "playing" || !sameTurnContext(current, match)
+      || state.phase !== "choose" || state.question
+      || (state.selectionLease && state.selectionLease.expiresAt > now())
+      || !canChoose(attachAccess(current, access), uid, teamCode)) return;
+    state.selectionLease = { owner: executor, expiresAt: now() + 30000 };
+    return current;
+  }, undefined, false);
+  if (!acquired.committed || acquired.snapshot.val()?.state?.selectionLease?.owner !== executor) return { status: "late", reason: "claimed" };
+  const release = () => matchRef.transaction((current) => {
+    if (!current) return current;
+    if (current.state?.selectionLease?.owner !== executor) return;
+    delete current.state.selectionLease;
+    return current;
+  }, undefined, false);
 
   try {
     const latestState = (await stateRef.get()).val();
-    if (latestState?.phase === "question" && latestState.selectionRequestId === requestId) {
+    if (latestState?.phase === "question" && latestState.selectionKey === selectionKey) {
       return { status: "accepted" };
     }
     if (!latestState || latestState.phase !== "choose" || latestState.question || latestState.targetTeam !== teamCode) {
-      await releaseClaim(claimRef, requestId);
       return { status: "late", reason: "state-changed" };
     }
-    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner, candidates.filter((q) => q.type === "flag" && !q.disabled));
+    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner, candidates, `selection:${selectionKey}`, false, id);
     question = rotated.question;
     const seconds = viewSeconds(question);
     const viewUntil = seconds ? started + seconds * 1000 : null;
@@ -763,6 +1020,7 @@ async function chooseType(uid, data) {
     const nextState = {
       ...latestState,
       phase: "question",
+      selectionPause: null,
       round: latestState.round + 1,
       targetTeam: teamCode,
       originalTeam: teamCode,
@@ -774,6 +1032,7 @@ async function chooseType(uid, data) {
       questionStartedAt: isActing ? null : (viewUntil || started),
       questionDuration: isActing ? 120 : match.timer,
       selectionRequestId: requestId || null,
+      selectionKey,
       viewUntil,
       assistUsed: false,
       pointMultiplier: latestState.pointMultiplier || 1,
@@ -790,36 +1049,81 @@ async function chooseType(uid, data) {
       usedAssets: [...new Set([...(latestState.usedAssets || []), questionAssetKey(question)])],
     };
 
-    // السؤال وإجابته السرية والعدادات تُثبّت معاً، فلا تصل الواجهة إلى سؤال بلا سر.
+    // Stage a private immutable secret before a conditional public commit.
+    const secretVersion = rotated.reservation.key;
+    await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(questionSecret(question));
+    const expected = match;
+    const published = await db.ref(`matches/${id}`).transaction((current) => {
+      if (!current) return current;
+      const state = current.state;
+      if (current.status !== "playing" || !sameTurnContext(current, expected)
+        || !rotationPublicationAllowed(current, rotated.reservation)
+        || state.phase !== "choose" || state.question
+        || state.selectionLease?.owner !== executor || state.selectionLease.expiresAt <= now()
+        || !canChoose(attachAccess(current, access), uid, teamCode)
+        || !current.enabledTypes.includes(type) || sectionCycle(current, teamCode).used.includes(type)
+        || (current.typeCounts?.[teamCode]?.[type] || 0) !== usedCount) return;
+      current.state = { ...nextState, secretVersion, selectionLease: null, revision: (state.revision || 0) + 1 };
+      current.typeCounts ||= {};
+      current.typeCounts[teamCode] ||= {};
+      current.typeCounts[teamCode][typeKey] = usedCount + 1;
+      current.lastChosenTypeByTeam ||= {};
+      current.lastChosenTypeByTeam[teamCode] = type;
+      current.sectionCycleByTeam ||= {};
+      current.sectionCycleByTeam[teamCode] = nextSectionCycle(match, teamCode, type);
+      current.usedIdsByTeam ||= {};
+      current.usedIdsByTeam[teamCode] = [...teamUsedIds, question.id];
+      recordRotationPublication(current, rotated.reservation);
+      return current;
+    }, undefined, false);
+    if (!published.committed || published.snapshot.val()?.state?.secretVersion !== secretVersion) return { status: "late", reason: "state-changed" };
     await db.ref().update({
-      [`matches/${id}/state`]: nextState,
-      [`matchSecrets/${id}`]: questionSecret(question),
-      [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
-      [`matches/${id}/lastChosenTypeByTeam/${teamCode}`]: type,
-      [`matches/${id}/sectionCycleByTeam/${teamCode}`]: nextSectionCycle(match, teamCode, type),
-      [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
       [`hostQuestionHistory/${historyOwner}/${typeKey}/bank/${question.id}`]: started,
       [`globalQuestionHistory/${typeKey}/bank/${question.id}`]: started,
     });
     return { status: "accepted" };
   } catch (error) {
-    await releaseClaim(claimRef, requestId);
+    if (error.code === "unavailable") return { status: "busy" };
     if (error.code === "resource-exhausted") {
-      await db.ref(`matches/${id}/rotationBlocked/${teamCode}/${typeKey}/bank`).set(true);
+      await markSectionUnavailable(id, match, teamCode, typeKey);
       return { status: "rotation" };
     }
     throw error;
+  } finally {
+    await release();
+    await settleRotationReservations(historyOwner);
   }
 }
 
-async function startShowdown(id, match) {
-  if (match.challengeMode === "picture_guess") return startPictureGuess(id, match);
+async function publishShowdown(id, match, nextState, secret, number, transitionKey, reservation = null) {
+  const secretVersion = reservation?.key || randomUUID();
+  await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(secret);
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (!current) return current;
+    if (transitionKey && current.state?.hostTransition?.key === transitionKey) return current;
+    if (current.status !== "playing" || !sameTurnContext(current, match)
+      || !rotationPublicationAllowed(current, reservation)
+      || (current.showdownCount || 0) !== (match.showdownCount || 0)) return;
+    current.showdownCount = number;
+    current.state = { ...nextState, secretVersion, revision: (current.state.revision || 0) + 1,
+      ...(transitionKey ? { hostTransition: { key: transitionKey, result: { showdown: true } } } : {}) };
+    recordRotationPublication(current, reservation);
+    return current;
+  }, undefined, false);
+  const state = result.snapshot.val()?.state;
+  return { showdown: Boolean(result.committed && (state?.secretVersion === secretVersion
+    || (transitionKey && state?.hostTransition?.key === transitionKey))) };
+}
+
+async function startShowdown(id, match, transitionKey = null, skipUnanswered = false) {
+  if (match.challengeMode === "picture_guess") return startPictureGuess(id, match, transitionKey);
   const showdownNumber = (match.showdownCount || 0) + 1;
   const wantsImage = showdownNumber % 2 === 0;
   const allowedTextTypes = new Set(["multiple_choice", "riddle", "completion"]);
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
-  const eligible = (await questionBank()).filter((question) =>
+  const bank = await questionBank();
+  const eligible = bank.filter((question) =>
     !question.disabled
     && !usesVerbalChoices(question.type)
     && Array.isArray(question.options)
@@ -827,75 +1131,47 @@ async function startShowdown(id, match) {
     && (wantsImage ? Boolean(question.image) : allowedTextTypes.has(question.type))
   );
   const basePool = eligible.filter((question) => !usedIds.has(question.id) && !usedAssets.has(questionAssetKey(question)));
-  if (!basePool.length) return advance(id, match, true);
+  if (!basePool.length) return advance(id, match, true, transitionKey, skipUnanswered);
 
-  const kind = wantsImage ? "visual" : "text";
   const historyOwner = match.hostUid || "shared";
   let rotated;
-  try { rotated = await rotateQuestion(basePool, rotationGameId(id, match), historyOwner); }
+  try { rotated = await rotateQuestion(basePool, rotationGameId(id, match), historyOwner, bank, `showdown:${showdownNumber}`, false, id); }
   catch (error) {
+    if (error.code === "unavailable") return { showdown: false, reason: "busy" };
     if (error.code !== "resource-exhausted") throw error;
-    return advance(id, match, true);
+    return advance(id, match, true, transitionKey, skipUnanswered);
   }
   const question = rotated.question;
   const createdAt = now();
   const opensAt = createdAt + SHOWDOWN_OPEN_DELAY_MS;
   const closesAt = opensAt + SHOWDOWN_DURATION_MS;
 
-  await db.ref().update({
-    [`matches/${id}/showdownCount`]: showdownNumber,
-    [`matches/${id}/state/phase`]: "showdown",
-    [`matches/${id}/state/punishment`]: null,
-    [`matches/${id}/state/rotationReused`]: rotated.reused,
-    [`matches/${id}/state/question`]: publicQuestion(question),
-    [`matches/${id}/state/answer`]: null,
-    [`matches/${id}/state/isCorrect`]: null,
-    [`matches/${id}/state/targetTeam`]: null,
-    [`matches/${id}/state/originalTeam`]: null,
-    [`matches/${id}/state/viewUntil`]: null,
-    [`matches/${id}/state/questionStartedAt`]: opensAt,
-    [`matches/${id}/state/questionDuration`]: SHOWDOWN_DURATION_MS / 1000,
-    [`matches/${id}/state/showdown`]: { number: showdownNumber, points: SHOWDOWN_POINTS, opensAt, closesAt, answers: {}, winnerTeam: null },
-    [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
-    [`matches/${id}/state/usedAssets`]: [...usedAssets, questionAssetKey(question)],
-    [`matchSecrets/${id}`]: questionSecret(question),
-    [`hostQuestionHistory/${historyOwner}/showdown_${kind}/bank/${question.id}`]: createdAt,
-    [`globalQuestionHistory/showdown_${kind}/bank/${question.id}`]: createdAt,
-  });
-  return { showdown: true };
+  try { return await publishShowdown(id, match, {
+    ...match.state, phase: "showdown", punishment: null, rotationReused: rotated.reused,
+    question: publicQuestion(question), answer: null, isCorrect: null,
+    targetTeam: null, originalTeam: null, viewUntil: null,
+    questionStartedAt: opensAt, questionDuration: SHOWDOWN_DURATION_MS / 1000,
+    showdown: { number: showdownNumber, points: SHOWDOWN_POINTS, opensAt, closesAt, answers: {}, winnerTeam: null },
+    usedIds: [...usedIds, question.id], usedAssets: [...usedAssets, questionAssetKey(question)],
+  }, questionSecret(question), showdownNumber, transitionKey, rotated.reservation);
+  } finally { await settleRotationReservations(historyOwner); }
 }
 
-async function startPictureGuess(id, match) {
+async function startPictureGuess(id, match, transitionKey = null) {
   if (match.teamOrder.length !== 2) fail("failed-precondition", "تحدي الصور يحتاج فريقين");
-  const stateRef = db.ref(`matches/${id}/state`);
-  const claim = `${now()}_${randomInt(100000, 999999)}`;
-  if (!await acquireClaim(stateRef.child("pictureStartClaim"), claim)) return { showdown: true };
-  try {
-    const latest = (await stateRef.get()).val();
-    if (!latest || latest.round !== match.state.round || latest.phase !== match.state.phase || latest.pictureStartClaim !== claim) {
-      await releaseClaim(stateRef.child("pictureStartClaim"), claim);
-      return { showdown: false };
-    }
-    const number = (match.showdownCount || 0) + 1;
-    const chosen = randomOrder(PICTURE_GUESS_ITEMS).slice(0, 2);
-    const pictures = Object.fromEntries(match.teamOrder.map((team, i) => [team, { ...chosen[i], targetTeam: match.teamOrder[1 - i] }]));
-    const opensAt = 0;
-    const questionId = 800000 + number;
-    // الصور وتوزيعها تبقى في السر فقط؛ سجل المسابقة المشترك لا يحتوي أي مسار صورة.
-    await db.ref().update({
-      [`matchSecrets/${id}`]: { questionId, mode: "picture_guess", pictures },
-      [`matches/${id}/showdownCount`]: number,
-      [`matches/${id}/state`]: { ...latest, phase: "showdown", pictureStartClaim: null,
-        question: { id: questionId, type: "picture_guess", category: "challenge", question: "اسألوا بصيغة هل هو… وخمّنوا صورة الفريق المنافس", options: [], answer: -1 },
-        showdown: { kind: "picture_guess", number, points: SHOWDOWN_POINTS, opensAt, closesAt: 0, winnerTeam: null, answers: {} },
-        answer: null, isCorrect: null, targetTeam: null, originalTeam: null, viewUntil: null,
-        questionStartedAt: opensAt, questionDuration: 120, punishment: null, assistUsed: false },
-    });
-    return { showdown: true };
-  } catch (error) {
-    await releaseClaim(stateRef.child("pictureStartClaim"), claim);
-    throw error;
-  }
+  const latest = (await db.ref(`matches/${id}/state`).get()).val();
+  if (!latest || latest.round !== match.state.round || latest.phase !== match.state.phase) return { showdown: false };
+  const number = (match.showdownCount || 0) + 1;
+  const chosen = randomOrder(PICTURE_GUESS_ITEMS).slice(0, 2);
+  const pictures = Object.fromEntries(match.teamOrder.map((team, i) => [team, { ...chosen[i], targetTeam: match.teamOrder[1 - i] }]));
+  const questionId = 800000 + number;
+  return publishShowdown(id, match, {
+    ...latest, phase: "showdown", pictureStartClaim: null,
+    question: { id: questionId, type: "picture_guess", category: "challenge", question: "اسألوا بصيغة هل هو… وخمّنوا صورة الفريق المنافس", options: [], answer: -1 },
+    showdown: { kind: "picture_guess", number, points: SHOWDOWN_POINTS, opensAt: 0, closesAt: 0, winnerTeam: null, answers: {} },
+    answer: null, isCorrect: null, targetTeam: null, originalTeam: null, viewUntil: null,
+    questionStartedAt: 0, questionDuration: 120, punishment: null, assistUsed: false,
+  }, { questionId, mode: "picture_guess", pictures }, number, transitionKey);
 }
 
 async function pictureGuessView(uid, data, id, match) {
@@ -903,7 +1179,7 @@ async function pictureGuessView(uid, data, id, match) {
   const player = Object.values(match.players || {}).find((p) => p.authUid === uid);
   if (!host && !player) fail("permission-denied", "صور التحدي للمشاركين فقط");
   if (match.state.showdown?.kind !== "picture_guess" || !["showdown", "showdown_revealed"].includes(match.state.phase) || data.questionId !== match.state.question?.id) return { questionId: null, pictures: {} };
-  const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+  const secret = await readQuestionSecret(id, match.state);
   if (secret?.questionId !== data.questionId || secret.mode !== "picture_guess") return { questionId: null, pictures: {} };
   const pictures = host ? secret.pictures : { [player.teamCode]: secret.pictures[player.teamCode] };
   return { questionId: secret.questionId, pictures };
@@ -984,7 +1260,7 @@ async function submitShowdownAnswer(uid, data, receivedAt = now()) {
   if (!Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
   if (receivedAt < showdown.opensAt) return { status: "early" };
   if (receivedAt > showdown.closesAt) return { status: "late" };
-  const secret = secretSnapshot.val();
+  const secret = secretForState(secretSnapshot.val(), match.state);
   if (!secret || secret.questionId !== match.state.question?.id) fail("failed-precondition", "تعذّر التحقق من سؤال المواجهة، أعد المحاولة");
 
   const submissionId = `${uid}_${receivedAt}_${randomInt(100000, 999999)}`;
@@ -1044,7 +1320,7 @@ async function finishShowdown(uid, data) {
   // لا تعتمد نهاية تحدي الصور أي نتيجة؛ الحكم يختار أحد الخيارات الثلاثة.
   if (match.state.showdown?.kind === "picture_guess") return { finished: false };
   if (match.state.phase !== "showdown" || !match.state.showdown || now() < match.state.showdown.closesAt) return { finished: false };
-  const secret = secretSnapshot.val();
+  const secret = secretForState(secretSnapshot.val(), match.state);
   if (!secret || secret.questionId !== match.state.question?.id) fail("failed-precondition", "تعذّر التحقق من سؤال المواجهة، أعد المحاولة");
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (current === null) return null;
@@ -1066,74 +1342,63 @@ async function finishShowdown(uid, data) {
   return { finished: result.snapshot.val()?.state?.phase === "showdown_revealed" };
 }
 
-async function submitAnswer(uid, data) {
-  const { id, match } = await loadMatch(data.matchCode);
-  const player = playerForUid(match, uid, text(data.playerId, 80));
-  if (!player || player.teamCode !== match.state.targetTeam) fail("permission-denied", "الإجابة للفريق صاحب السؤال");
-  const answerMode = match.answerMode || "anyone";
-  if (match.state.forcedPlayerId) {
-    if (match.state.forcedPlayerId !== player.id) fail("permission-denied", "الإجابة للاعب الذي اختاره الفريق المنافس");
-  } else {
-    if (answerMode === "host") fail("permission-denied", "المقدم هو من يثبت الإجابة");
-    const representativeId = match.teams[player.teamCode]?.captainId;
-    if (answerMode === "representative" && representativeId !== player.id) fail("permission-denied", "الإجابة لممثل الفريق");
-  }
-  const choice = Number(data.choice);
-  if (match.state.phase !== "question" || match.state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
-  const stateRef = db.ref(`matches/${id}/state`);
-  const claimId = `${uid}_${now()}_${randomInt(100000, 999999)}`;
-  const claimRef = stateRef.child("answerClaimId");
-  if (!await acquireClaim(claimRef, claimId)) return { status: "late" };
-  try {
-    const latestState = (await stateRef.get()).val();
-    if (!latestState || latestState.phase !== "question" || latestState.answer || latestState.answerClaimId !== claimId) {
-      await releaseClaim(claimRef, claimId);
-      return { status: "late" };
+function answerAttemptId(state) {
+  return `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`;
+}
+function answerContextMatches(state, data) {
+  return data.questionId === state.question?.id && data.attemptId === answerAttemptId(state)
+    && Number.isSafeInteger(data.revision) && data.revision === (state.revision || 0)
+    && typeof data.requestId === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(data.requestId);
+}
+function acceptedAnswerRetry(state, data, playerId) {
+  const receipt = state.answer?.receipt;
+  return Boolean(receipt && playerId && state.answer.playerId === playerId
+    && state.question?.id === data.questionId && answerAttemptId(state) === data.attemptId
+    && receipt.requestId === data.requestId && receipt.revision === data.revision
+    && state.answer.choice === data.choice);
+}
+async function submitAnswer(uid, data, asHost = false) {
+  const { id, match, access } = await loadMatch(data.matchCode);
+  if (asHost) requireHost(match, uid);
+  const existingPlayer = asHost ? { id: "host" } : playerForUid(match, uid, text(data.playerId, 80));
+  if (acceptedAnswerRetry(match.state, data, existingPlayer?.id)) return { status: "accepted" };
+  if (!answerContextMatches(match.state, data)) return { status: "stale" };
+  const choice = data.choice;
+  let status = "late";
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (current === null) return null; // RTDB cold-cache retry, not an abort.
+    const state = current.state;
+    if (!state) { status = "stale"; return; }
+    const latest = attachAccess(current, access);
+    if (asHost) requireHost(latest, uid);
+    const player = asHost ? { id: "host", name: current.hostName || "المقدم", teamCode: state.targetTeam } : playerForUid(latest, uid, text(data.playerId, 80));
+    if (acceptedAnswerRetry(state, data, player?.id)) { status = "accepted"; return; }
+    if (!answerContextMatches(state, data)) { status = "stale"; return; }
+    if (!player || player.teamCode !== state.targetTeam) fail("permission-denied", "الإجابة للفريق صاحب السؤال");
+    const mode = current.answerMode || "anyone";
+    if (asHost && mode !== "host") fail("failed-precondition", "وضع الإجابة ليس للمقدم");
+    if (!asHost && (state.forcedPlayerId ? state.forcedPlayerId !== player.id
+      : mode === "host" || (mode === "representative" && current.teams[player.teamCode]?.captainId !== player.id))) {
+      fail("permission-denied", "الإجابة للاعب المخول فقط");
     }
-    await stateRef.update({
-      phase: "locked",
-      answer: { playerId: player.id, playerName: player.name, choice, at: now() },
-      answerClaimId: null,
-    });
-    return { status: "accepted" };
-  } catch (error) {
-    await releaseClaim(claimRef, claimId);
-    throw error;
-  }
+    if (state.phase !== "question" || state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (state.question?.options?.length || 0)) { status = "late"; return; }
+    state.phase = "locked";
+    state.answer = { playerId: player.id, playerName: player.name, choice, at: now(), receipt: { requestId: data.requestId, revision: data.revision } };
+    state.revision = (state.revision || 0) + 1;
+    status = "accepted";
+    return current;
+  }, undefined, false);
+  return { status: result.snapshot.val() ? status : "late" };
 }
 
 async function submitHostAnswer(uid, data) {
-  const { id, match } = await loadMatch(data.matchCode);
-  requireHost(match, uid);
-  if (match.answerMode !== "host") fail("failed-precondition", "وضع الإجابة ليس للمقدم");
-  const choice = Number(data.choice);
-  if (match.state.phase !== "question" || match.state.answer || !Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
-  const stateRef = db.ref(`matches/${id}/state`);
-  const claimId = `${uid}_${now()}_${randomInt(100000, 999999)}`;
-  const claimRef = stateRef.child("answerClaimId");
-  if (!await acquireClaim(claimRef, claimId)) return { status: "late" };
-  try {
-    const latestState = (await stateRef.get()).val();
-    if (!latestState || latestState.phase !== "question" || latestState.answer || latestState.answerClaimId !== claimId) {
-      await releaseClaim(claimRef, claimId);
-      return { status: "late" };
-    }
-    await stateRef.update({
-      phase: "locked",
-      answer: { playerId: "host", playerName: match.hostName || "المقدم", choice, at: now() },
-      answerClaimId: null,
-    });
-    return { status: "accepted" };
-  } catch (error) {
-    await releaseClaim(claimRef, claimId);
-    throw error;
-  }
+  return submitAnswer(uid, data, true);
 }
 
-async function reveal(id, match, correctOverride) {
+async function reveal(id, match, correctOverride, transitionKey = null) {
   const state = match.state;
   if (!["question", "locked"].includes(state.phase)) fail("failed-precondition", "تم كشف هذا السؤال مسبقاً");
-  const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+  const secret = await readQuestionSecret(id, match.state);
   if (!state.question || !secret || secret.questionId !== state.question.id) fail("failed-precondition", "تعذّر التحقق من السؤال");
   const correct = typeof correctOverride === "boolean" ? correctOverride : state.answer?.choice === secret.answer;
   const teamCode = state.targetTeam;
@@ -1158,7 +1423,8 @@ async function reveal(id, match, correctOverride) {
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (current === null) return null;
     const s = current.state;
-    if (!s || !["question", "locked"].includes(s.phase) || s.question?.id !== state.question.id || s.targetTeam !== teamCode || s.passCount !== state.passCount) return;
+    if (transitionKey && s?.hostTransition?.key === transitionKey) return current;
+    if (current.status !== "playing" || !sameTurnContext(current, match) || !["question", "locked"].includes(s?.phase)) return;
     for (const [path, value] of Object.entries(updates)) {
       const keys = path.split("/").slice(2);
       const last = keys.pop();
@@ -1172,15 +1438,72 @@ async function reveal(id, match, correctOverride) {
       team.score = (team.score || 0) + points(state);
       team.cardBalance = (team.cardBalance || 0) + cardReward(state);
     }
+    s.revision = (s.revision || 0) + 1;
+    if (transitionKey) s.hostTransition = { key: transitionKey, result: { correct } };
     return current;
   }, undefined, false);
   if (!result.committed) fail("failed-precondition", "تم كشف هذا السؤال مسبقاً أو تغيّر السؤال");
   return { correct };
 }
 
-async function advance(id, match, skipShowdown = false) {
-  const state = match.state;
-  if (!skipShowdown && state.phase !== "showdown_revealed" && showdownDue(match)) return startShowdown(id, match);
+function hostTransitionKey(data) {
+  const t = data.transition;
+  if (!t || typeof t.requestId !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(t.requestId)
+    || !Number.isInteger(t.revision) || t.revision < 0 || !Number.isInteger(t.round)
+    || typeof t.phase !== "string" || typeof t.attemptId !== "string"
+    || !(t.questionId === null || Number.isInteger(t.questionId))) return null;
+  return createHash("sha256").update(JSON.stringify([data.action, t.requestId, t.phase, t.round, t.questionId, t.attemptId, t.revision, data.action === "judgeVerbal" ? Boolean(data.correct) : null, data.action === "advanceTurn" ? data.skipUnanswered === true : null])).digest("hex");
+}
+function hostTransitionMatches(state, transition) {
+  return transition && transition.phase === state.phase && transition.round === (state.round || 0)
+    && transition.questionId === (state.question?.id ?? null)
+    && transition.revision === (state.revision || 0)
+    && transition.attemptId === `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`;
+}
+
+// Compare the committed public turn, not an old object copied over newer state.
+function sameTurnContext(current, expected) {
+  const a = current?.state, b = expected?.state;
+  return Boolean(a && b && current.status === expected.status
+    && current.turnIndex === expected.turnIndex
+    && a.phase === b.phase && a.round === b.round
+    && (a.question?.id ?? null) === (b.question?.id ?? null)
+    && (a.targetTeam ?? null) === (b.targetTeam ?? null)
+    && (a.passCount || 0) === (b.passCount || 0)
+    && (a.revision || 0) === (b.revision || 0)
+    && (a.selectionRequestId ?? null) === (b.selectionRequestId ?? null));
+}
+
+async function advance(id, expected, skipShowdown = false, transitionKey = null, skipUnanswered = false) {
+  const explicitSkip = skipUnanswered && expected.state.phase === "question" && !expected.state.answer;
+  if (expected.status !== "playing" || (!explicitSkip && !["revealed", "showdown_revealed"].includes(expected.state.phase))) {
+    fail("failed-precondition", "ثبّت نتيجة السؤال قبل الانتقال");
+  }
+  // Showdown publication has its own reservation path; ordinary progression below
+  // commits from current scores, never from a stale pre-transaction scoreboard.
+  if (!skipShowdown && expected.state.phase !== "showdown_revealed" && showdownDue(expected)) return startShowdown(id, expected, transitionKey, skipUnanswered);
+  let response;
+  const result = await db.ref(`matches/${id}`).transaction((match) => {
+    response = undefined;
+    if (!match) return match;
+    if (transitionKey && match.state?.hostTransition?.key === transitionKey) {
+      response = match.state.hostTransition.result;
+      return match;
+    }
+    if (!sameTurnContext(match, expected) || match.status !== "playing") return;
+    const apply = (updates, reply) => {
+      for (const [path, value] of Object.entries(updates)) {
+        const keys = path.split("/");
+        const last = keys.pop();
+        const parent = keys.reduce((node, key) => node[key] ||= {}, match);
+        if (value === null) delete parent[last]; else parent[last] = value;
+      }
+      if (transitionKey) match.state.hostTransition = { key: transitionKey, result: reply };
+      match.state.revision = (match.state.revision || 0) + 1;
+      response = reply;
+      return match;
+    };
+    const state = match.state;
   if (state.round < match.totalRounds) {
     let nextTeam;
     const updates = { turnIndex: match.turnIndex + 1, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/showdown": null, "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false };
@@ -1192,20 +1515,25 @@ async function advance(id, match, skipShowdown = false) {
     updates["state/targetTeam"] = nextTeam;
     updates["state/punishment"] = null;
     updates["state/rotationReused"] = null;
-    await db.ref(`matches/${id}`).update(updates);
-    return { ended: false };
+    return apply(updates, { ended: false });
   }
   const candidates = match.tieBreaker?.active ? match.tieBreaker.teams : match.teamOrder;
   const high = Math.max(...candidates.map((team) => match.teams[team].score));
   const tied = candidates.filter((team) => match.teams[team].score === high);
   if (tied.length > 1) {
     const cycle = (match.tieBreaker?.cycle || 0) + 1;
-    await db.ref(`matches/${id}`).update({ totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false });
-    return { ended: false, tieBreaker: true };
+    // A deciding cycle grants one extra pick per tied team, not a normal-game
+    // section cap. Preserve scoring counts and never reuse consumed questions.
+    const typeCaps = Object.fromEntries(match.enabledTypes.map((type) => [type, Math.max(typeCap(match, type), ...tied.map((team) => Number(match.typeCounts?.[team]?.[type]) || 0)) + 1]));
+    const sectionCycleByTeam = { ...(match.sectionCycleByTeam || {}) };
+    for (const team of tied) sectionCycleByTeam[team] = { used: [], number: (sectionCycle(match, team).number || 1) + 1 };
+    return apply({ typeCaps, sectionCycleByTeam, totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false }, { ended: false, tieBreaker: true });
   }
   const endedAt = now();
-  await db.ref(`matches/${id}`).update({ status: "ended", endedAt, expiresAt: endedAt + ENDED_TTL_MS, "state/phase": "ended", turnIndex: match.turnIndex + 1 });
-  return { ended: true };
+  return apply({ status: "ended", endedAt, expiresAt: endedAt + ENDED_TTL_MS, "state/phase": "ended", turnIndex: match.turnIndex + 1 }, { ended: true });
+  }, undefined, false);
+  if (!result.committed || !response) fail("failed-precondition", "تغيّر الدور؛ حدّث الشاشة قبل الانتقال");
+  return response;
 }
 
 async function playPowerCard(uid, data, id, initialMatch, access) {
@@ -1214,17 +1542,36 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
   const card = text(data.card, 30);
   if (!POWER_CARD_BASE_COST[card]) return { accepted: false, reason: "unknown" };
   if (!canPlayFor(initialMatch, uid, teamCode)) fail("permission-denied", "هذا الكرت ليس لفريقك");
+  const contextKey = hostTransitionKey(data);
+  const cardKey = contextKey && createHash("sha256").update(JSON.stringify([contextKey, uid, teamCode, card, data.targetPlayerId || null])).digest("hex");
+  if (cardKey && initialMatch.state.cardReceipt?.key === cardKey) return { accepted: true };
+  if (!cardKey || !hostTransitionMatches(initialMatch.state, data.transition)) return { accepted: false, reason: "stale" };
 
-  const claimId = `${uid}_${now()}_${randomInt(100000, 999999)}`;
+  const claimId = randomUUID();
   const matchRef = db.ref(`matches/${id}`);
-  const claimRef = matchRef.child("state/cardClaimId");
-  if (!await acquireClaim(claimRef, claimId)) return { accepted: false, reason: "busy" };
+  const acquired = await matchRef.transaction((current) => {
+    if (!current) return current;
+    const state = current.state;
+    if (state.cardReceipt?.key === cardKey) return current;
+    if (current.status !== "playing" || !hostTransitionMatches(state, data.transition)
+      || !canPlayFor(attachAccess(current, access), uid, teamCode)
+      || (state.cardLease && state.cardLease.expiresAt > now())
+      || (state.cardClaimId && !state.cardLease)) return;
+    state.cardClaimId = claimId;
+    state.cardLease = { owner: claimId, expiresAt: now() + 30000 };
+    return current;
+  }, undefined, false);
+  if (acquired.snapshot.val()?.state?.cardReceipt?.key === cardKey) return { accepted: true };
+  if (!acquired.committed || acquired.snapshot.val()?.state?.cardLease?.owner !== claimId) return { accepted: false, reason: "busy" };
+  let reservation = null;
 
   try {
     const match = attachAccess((await matchRef.get()).val(), access);
     const state = match?.state;
     const team = match?.teams?.[teamCode];
     if (!state || !team || !canPlayFor(match, uid, teamCode)) return { accepted: false, reason: "team" };
+    if (state.cardReceipt?.key === cardKey) return { accepted: true };
+    if (!hostTransitionMatches(state, data.transition)) return { accepted: false, reason: "stale" };
     if (state.cardClaimId !== claimId || state.cardUsedThisTurn) return { accepted: false, reason: "turn-used" };
     if (state.cardsFrozenTeam === teamCode) return { accepted: false, reason: "frozen" };
     if (team.powerCards?.[card] === false) return { accepted: false, reason: "used" };
@@ -1248,6 +1595,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       [`teams/${teamCode}/powerCards/${card}`]: false,
       "state/cardUsedThisTurn": true,
       "state/cardClaimId": null,
+      "state/cardLease": null,
     };
 
     if (card === "doublePoints") {
@@ -1287,8 +1635,13 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       const pool = teamPool.filter((question) => !usedIds.has(question.id) && !usedAssets.has(questionAssetKey(question)));
       if (!pool.length) return { accepted: false, reason: "empty" };
       let rotated;
-      try { rotated = await rotateQuestion(pool, rotationGameId(id, match), match.hostUid || uid, candidates.filter((q) => q.type === "flag" && !q.disabled)); }
-      catch (error) { if (error.code === "resource-exhausted") return { accepted: false, reason: "empty" }; throw error; }
+      try { rotated = await rotateQuestion(pool, rotationGameId(id, match), match.hostUid || uid, candidates, `swap:${teamCode}:${state.question.id}:${state.round}`, false, id); }
+      catch (error) {
+        if (error.code === "unavailable") return { accepted: false, reason: "busy" };
+        if (error.code === "resource-exhausted") return { accepted: false, reason: "empty" };
+        throw error;
+      }
+      reservation = rotated.reservation;
       const question = rotated.question;
       const started = now();
       const seconds = viewSeconds(question);
@@ -1303,28 +1656,13 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       updates["state/assistUsed"] = false;
       updates["state/forcedPlayerId"] = null;
       updates["state/forcedPlayerName"] = null;
-      await db.ref().update({
-        [`matches/${id}/teams/${teamCode}/cardBalance`]: balance - cost,
-        [`matches/${id}/teams/${teamCode}/powerCards/${card}`]: false,
-        [`matches/${id}/state/question`]: protectedQuestion(question),
-        [`matches/${id}/state/rotationReused`]: rotated.reused,
-        [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
-        [`matches/${id}/state/usedAssets`]: [...usedAssets, questionAssetKey(question)],
-        [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
-        [`matches/${id}/state/viewUntil`]: viewUntil,
-        [`matches/${id}/state/questionStartedAt`]: isActing ? null : (viewUntil || started),
-        [`matches/${id}/state/questionDuration`]: isActing ? 120 : match.timer,
-        [`matches/${id}/state/assistUsed`]: false,
-        [`matches/${id}/state/forcedPlayerId`]: null,
-        [`matches/${id}/state/forcedPlayerName`]: null,
-        [`matches/${id}/state/cardUsedThisTurn`]: true,
-        [`matches/${id}/state/cardClaimId`]: null,
-        [`matches/${id}/state/cardEvent`]: event,
-        [`matchSecrets/${id}`]: questionSecret(question),
-        [`hostQuestionHistory/${match.hostUid || uid}/${dbKey(question.type)}/bank/${question.id}`]: started,
-        [`globalQuestionHistory/${dbKey(question.type)}/bank/${question.id}`]: started,
-      });
-      return { accepted: true };
+      const secretVersion = reservation.key;
+      await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(questionSecret(question));
+      updates["state/secretVersion"] = secretVersion;
+      updates["state/rotationReused"] = rotated.reused;
+      updates[`usedIdsByTeam/${teamCode}`] = [...teamUsedIds, question.id];
+      // Apply through the same context/balance/claim transaction as other cards.
+      // Durable room receipt and effect publish together; ledger finalizes below.
     } else if (card === "steal") {
       const attemptedTeams = [...new Set([...(state.attemptedTeams || []), targetTeam].filter(Boolean))];
       if (state.phase !== "revealed" || state.isCorrect !== false || !state.question || targetTeam === teamCode) return { accepted: false, reason: "timing" };
@@ -1353,10 +1691,42 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
     }
 
     updates["state/cardEvent"] = event;
-    await matchRef.update(updates);
-    return { accepted: true };
+    const result = await matchRef.transaction((current) => {
+      if (!current) return current;
+      const latest = attachAccess(current, access), s = current.state, currentTeam = current.teams?.[teamCode];
+      if (s.cardReceipt?.key === cardKey && canPlayFor(latest, uid, teamCode)) return current;
+      if (current.status !== "playing" || !sameTurnContext(current, match)
+        || !rotationPublicationAllowed(current, reservation)
+        || s.cardLease?.owner !== claimId || s.cardLease.expiresAt <= now()
+        || !canPlayFor(latest, uid, teamCode) || s.cardClaimId !== claimId || s.cardUsedThisTurn
+        || s.cardsFrozenTeam === teamCode || !currentTeam || currentTeam.powerCards?.[card] === false
+        || (Number(currentTeam.cardBalance) || 0) !== balance) return;
+      if (card === "swapQuestion" && (s.phase !== "question" || s.answer || s.targetTeam !== teamCode || !s.question)) return;
+      if (card === "extraTime" && (s.answer || now() >= Number(s.questionStartedAt) + Number(s.questionDuration || current.timer) * 1000)) return;
+      if (card === "pickPlayer" && (current.answerMode === "host" || current.players?.[event.targetPlayerId]?.teamCode !== s.targetTeam
+        || Object.values(current.players || {}).filter((player) => player.teamCode === s.targetTeam).length < 2)) return;
+      for (const [path, value] of Object.entries(updates)) {
+        const keys = path.split("/");
+        const last = keys.pop();
+        const parent = keys.reduce((node, key) => node[key] ||= {}, current);
+        if (value === null) delete parent[last]; else parent[last] = value;
+      }
+      s.revision = (s.revision || 0) + 1;
+      s.cardReceipt = { key: cardKey };
+      recordRotationPublication(current, reservation);
+      return current;
+    }, undefined, false);
+    return result.committed && result.snapshot.val()?.state?.cardReceipt?.key === cardKey
+      ? { accepted: true } : { accepted: false, reason: "stale" };
   } finally {
-    await releaseClaim(claimRef, claimId);
+    await matchRef.transaction((current) => {
+      if (!current) return current;
+      if (current.state?.cardLease?.owner !== claimId) return;
+      delete current.state.cardLease;
+      if (current.state.cardClaimId === claimId) delete current.state.cardClaimId;
+      return current;
+    }, undefined, false);
+    if (reservation) await settleRotationReservations(initialMatch.hostUid || uid);
   }
 }
 
@@ -1403,7 +1773,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { admin: true };
   }
   if (action === "getMatch") {
-    const snapshot = await db.ref(`matches/${code(data.matchCode)}`).get();
+    const snapshot = await db.ref(`matches/${requireRoomCode(data.matchCode)}`).get();
     if (!snapshot.exists()) fail("not-found", "الميدان غير موجود");
     return { match: publicMatch(snapshot.val()) };
   }
@@ -1428,8 +1798,9 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "getTeamInvites") {
     const isHost = match.hostUid === uid;
     const isViewer = access.viewerKey && safeEqual(data.viewerKey, access.viewerKey);
-    // The simple audience code permits joining during the waiting room only.
-    if (!isHost && !isViewer && match.status !== "lobby") fail("permission-denied", "روابط الفرق للمقدم وشاشة العرض المصرح بها فقط");
+    // Knowing the public audience code grants viewing, not team membership.
+    // The host's keyed TV link can still display issued invitations in the lobby.
+    if (!isHost && !isViewer) fail("permission-denied", "روابط الفرق للمقدم وشاشة العرض المصرح بها فقط");
     return {
       teamKeys: access.teamKeys || {},
       shortTeamCodes: await shortTeamCodes(id, access),
@@ -1438,7 +1809,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   }
   if (action === "getHostAnswer") {
     requireHost(match, uid);
-    const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+    const secret = await readQuestionSecret(id, match.state);
     const valid = secret?.questionId === match.state.question?.id;
     return {
       questionId: valid ? secret.questionId : null,
@@ -1452,14 +1823,21 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     if (state.phase !== "question" || !state.question?.promptHidden || !state.viewUntil || now() < state.viewUntil) {
       return { accepted: false };
     }
-    const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+    const secret = await readQuestionSecret(id, match.state);
     if (!secret || secret.questionId !== state.question.id || !Array.isArray(secret.options)) return { accepted: false };
-    await db.ref(`matches/${id}/state/question`).update({
-      question: text(secret.question, 500),
-      options: secret.options.map((option) => text(option, 300)),
-      promptHidden: null,
-    });
-    return { accepted: true };
+    // A public TV may trigger this deterministic reveal, but never before its
+    // server time or for a replaced/answered question. No membership is granted.
+    const result = await db.ref(`matches/${id}`).transaction((current) => {
+      if (!current) return current;
+      const latest = current.state;
+      if (current.status !== "playing" || latest?.phase !== "question" || latest.answer || latest.question?.id !== secret.questionId || !latest.question.promptHidden || !latest.viewUntil || now() < latest.viewUntil || (latest.revision || 0) !== (state.revision || 0)) return;
+      latest.question.question = text(secret.question, 500);
+      latest.question.options = secret.options.map((option) => text(option, 300));
+      delete latest.question.promptHidden;
+      latest.revision = (latest.revision || 0) + 1;
+      return current;
+    }, undefined, false);
+    return { accepted: result.committed && Boolean(result.snapshot.val()?.state?.question && !result.snapshot.val().state.question.promptHidden) };
   }
   if (action === "leaveMatch") {
     const playerId = text(data.playerId, 80);
@@ -1475,14 +1853,20 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     if (!canPlayFor(match, uid, teamCode) || match.state.targetTeam !== teamCode) fail("permission-denied", "المساعدة للفريق صاحب السؤال");
     const latestState = (await db.ref(`matches/${id}/state`).get()).val();
     if (!latestState || latestState.phase !== "question" || !usesVerbalChoices(latestState.question?.type) || latestState.assistUsed || latestState.targetTeam !== teamCode) return { accepted: false };
-    const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+    const secret = await readQuestionSecret(id, match.state);
     if (!secret || secret.questionId !== latestState.question.id || !Array.isArray(secret.options)) return { accepted: false };
-    await db.ref(`matches/${id}/state`).update({
-      assistUsed: true,
-      "question/options": secret.options.map((option) => text(option, 300)),
-      "question/optionsHidden": null,
-    });
-    return { accepted: true };
+    const result = await db.ref(`matches/${id}`).transaction((current) => {
+      if (!current) return current;
+      const latest = attachAccess(current, access);
+      const state = current.state;
+      if (!canPlayFor(latest, uid, teamCode) || current.status !== "playing" || state?.phase !== "question" || state.answer || state.targetTeam !== teamCode || state.question?.id !== secret.questionId || !usesVerbalChoices(state.question?.type) || state.assistUsed || (state.revision || 0) !== (latestState.revision || 0)) return;
+      state.assistUsed = true;
+      state.question.options = secret.options.map((option) => text(option, 300));
+      delete state.question.optionsHidden;
+      state.revision = (state.revision || 0) + 1;
+      return current;
+    }, undefined, false);
+    return { accepted: result.committed && Boolean(result.snapshot.val()?.state?.assistUsed) };
   }
   if (action === "usePowerCard") {
     return playPowerCard(uid, data, id, match, access);
@@ -1493,6 +1877,13 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   }
 
   requireHost(match, uid);
+  let transitionKey = null;
+  if (["passToNextTeam", "advanceTurn", "judgeVerbal", "revealAnswer", "recheckSelectionCapacity"].includes(action)) {
+    transitionKey = hostTransitionKey(data);
+    if (transitionKey && match.state.hostTransition?.key === transitionKey) return match.state.hostTransition.result;
+    if (!transitionKey || !hostTransitionMatches(match.state, data.transition)) fail("failed-precondition", "تغيّر السؤال أو الدور؛ حدّث الشاشة وأعد المحاولة");
+  }
+  if (action === "recheckSelectionCapacity") return recheckSelectionCapacity(id, match, transitionKey);
   if (action === "startMatch") {
     const first = code(data.firstTeamCode);
     if (!match.teams[first] || match.status !== "lobby") fail("failed-precondition", "لا يمكن بدء الميدان");
@@ -1503,9 +1894,36 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
       });
       if (missing) fail("failed-precondition", "عيّن ممثلاً لكل فريق قبل بدء المسابقة");
     }
+    const bank = await questionBank();
+    const active = bank.filter((question) => !question.disabled && match.enabledTypes.includes(question.type));
+    await settleRotationReservations(uid);
+    const available = active.length ? await rotateQuestion(active, rotationGameId(id, match), uid, bank, null, true) : [];
+    const perTeam = match.questionsPerTeam || Math.ceil(match.totalRounds / match.teamOrder.length);
+    const caps = fairTypeCaps(match.enabledTypes, match.teamOrder.length, perTeam, available);
+    const fullCycles = Math.floor(perTeam / match.enabledTypes.length);
+    if (match.enabledTypes.some((type) => caps[type] < fullCycles) || Object.values(caps).reduce((sum, cap) => sum + cap, 0) < perTeam) {
+      fail("failed-precondition", "تغيّر مخزون الأقسام منذ إنشاء الغرفة؛ قلّل عدد الأسئلة في مسابقة جديدة أو أضف أقسامًا أخرى، ولن نكرّر أسئلة حديثة");
+    }
     const startedAt = now();
-    await registerRotationMatch(uid, rotationGameId(id, match));
-    await db.ref(`matches/${id}`).update({ status: "playing", startedAt, expiresAt: startedAt + ACTIVE_TTL_MS, "state/phase": "choose", "state/targetTeam": first });
+    const result = await db.ref(`matches/${id}`).transaction((current) => {
+      if (!current) return current;
+      if (current.status !== "lobby" || !current.teams?.[first]
+        || JSON.stringify(current.enabledTypes) !== JSON.stringify(match.enabledTypes)
+        || current.questionsPerTeam !== match.questionsPerTeam || current.totalRounds !== match.totalRounds) return;
+      if (current.answerMode === "representative" && current.teamOrder.some((teamCode) => {
+        const captain = current.teams[teamCode]?.captainId;
+        return !captain || current.players?.[captain]?.teamCode !== teamCode;
+      })) return;
+      current.status = "playing";
+      current.startedAt = startedAt;
+      current.expiresAt = startedAt + ACTIVE_TTL_MS;
+      current.typeCaps = caps;
+      current.state.phase = "choose";
+      current.state.targetTeam = first;
+      current.state.revision = (current.state.revision || 0) + 1;
+      return current;
+    }, undefined, false);
+    if (!result.committed || result.snapshot.val()?.status !== "playing") fail("failed-precondition", "تغيّرت الغرفة أو ممثلو الفرق؛ حدّث الشاشة قبل البدء");
     await safelyRecordUsage(() => recordMatchUsage("matchesStarted", id));
   } else if (action === "startQuestionTimer") {
     if (match.state.phase !== "question" || match.state.question?.type !== "acting" || match.state.questionStartedAt) {
@@ -1514,9 +1932,9 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     await db.ref(`matches/${id}/state`).update({ questionStartedAt: now(), questionDuration: 120 });
   } else if (action === "revealAnswer") {
     if (!match.state.answer) fail("failed-precondition", "لا توجد إجابة");
-    return reveal(id, match);
+    return reveal(id, match, undefined, transitionKey);
   } else if (action === "judgeVerbal") {
-    return reveal(id, match, Boolean(data.correct));
+    return reveal(id, match, Boolean(data.correct), transitionKey);
   } else if (action === "passToNextTeam") {
     if (match.state.phase !== "revealed" || match.state.isCorrect !== false) {
       fail("failed-precondition", "لا يمكن نقل السؤال قبل ظهور إجابة خاطئة");
@@ -1538,11 +1956,37 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     const seconds = match.state.question ? viewSeconds(match.state.question) : null;
     const until = seconds ? now() + seconds * 1000 : null;
     const isActing = match.state.question?.type === "acting";
-    await db.ref(`matches/${id}/state`).set({ ...match.state, phase: "question", targetTeam: next, passCount: match.state.passCount + 1, attemptedTeams, question: reprotectQuestionForAttempt(match.state.question), answer: null, isCorrect: null, questionStartedAt: isActing ? null : (until || now()), questionDuration: isActing ? 120 : match.timer, viewUntil: until, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardClaimId: null });
+    const result = await db.ref(`matches/${id}`).transaction((latest) => {
+      if (!latest) return latest; // Let an initial cold null cache reconcile.
+      const state = latest.state;
+      if (transitionKey && state?.hostTransition?.key === transitionKey) return latest;
+      if (latest.status !== "playing" || !sameTurnContext(latest, match) || state?.phase !== "revealed" || state.isCorrect !== false) return;
+      state.phase = "question";
+      state.targetTeam = next;
+      state.passCount = (state.passCount || 0) + 1;
+      state.attemptedTeams = attemptedTeams;
+      state.question = reprotectQuestionForAttempt(state.question);
+      state.answer = null;
+      state.isCorrect = null;
+      state.questionStartedAt = isActing ? null : (until || now());
+      state.questionDuration = isActing ? 120 : latest.timer;
+      state.viewUntil = until;
+      state.assistUsed = false;
+      state.pointMultiplier = 1;
+      state.extraTimeUsed = false;
+      state.stealFullValue = false;
+      state.forcedPlayerId = null;
+      state.forcedPlayerName = null;
+      state.cardClaimId = null;
+      state.hostTransition = { key: transitionKey, result: { ok: true } };
+      state.revision = (state.revision || 0) + 1;
+      return latest;
+    }, undefined, false);
+    if (!result.committed || result.snapshot.val()?.state?.targetTeam !== next) fail("failed-precondition", "تغيّر السؤال؛ حدّث الشاشة قبل نقله");
   } else if (action === "advanceTurn") {
     if (match.state.phase === "showdown" && match.state.showdown?.kind === "picture_guess") fail("failed-precondition", "انتظر انتهاء تحدي الصور أو ثبّت الفائز");
     if (match.state.punishment && match.state.punishment.stage !== "resolved") fail("failed-precondition", "ثبّت نتيجة سؤال وعقاب أولاً");
-    return advance(id, match);
+    return advance(id, match, false, transitionKey, data.skipUnanswered === true);
   } else if (action === "setCaptain") {
     const teamCode = code(data.teamCode);
     const playerId = data.playerId === null ? null : text(data.playerId, 80);

@@ -181,13 +181,13 @@ export default function Play() {
   };
 
   const pickType = async (t: QuestionType) => {
-    if (choosingType) return;
+    if (choosingType || !match) return;
     setChoosingType(t);
     setChooseMsg("جاري اختيار السؤال…");
     unlockAudio();
     let accepted = false;
     try {
-      const res = await chooseType(matchCode, t);
+      const res = await chooseType(matchCode, t, match);
       if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
       else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
       else if (res === "cooldown") setChooseMsg("اخترتم هذا القسم في الدورة الحالية؛ أكملوا جميع الأقسام أولًا حتى تنفتح من جديد");
@@ -342,9 +342,6 @@ export default function Play() {
   return (
     <div className="min-h-dvh flex flex-col">
       <PowerCardEvent match={match} />
-      {st!.phase !== "showdown" && st!.phase !== "showdown_revealed" && st!.question?.type !== "punishment" ? (
-        <PowerCardsWallet match={match} teamCode={teamCode} onUse={activateCard} />
-      ) : null}
       {/* شريط النتائج */}
       <header className="sticky top-0 z-30 bg-night/90 backdrop-blur-md border-b border-gold-faint/30 px-3 py-2.5">
         <ScoreBoard match={match} highlight={st!.targetTeam} />
@@ -713,14 +710,17 @@ export default function Play() {
       </main>
 
       {/* خروج */}
-      <footer className="pb-4 flex justify-center">
+      <footer className="team-play-footer pb-4 flex justify-center">
+        {st!.phase !== "showdown" && st!.phase !== "showdown_revealed" && st!.question?.type !== "punishment" ? (
+          <PowerCardsWallet match={match} teamCode={teamCode} onUse={activateCard} />
+        ) : null}
         <button
           onClick={async () => {
             await leaveMatch(matchCode, player.id);
             localStorage.removeItem(STORAGE_KEY);
             nav("/");
           }}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-maroon-light transition-colors"
+          className="min-h-11 px-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-maroon-light transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
         >
           <LogOut className="w-3.5 h-3.5" />
           مغادرة المسابقة

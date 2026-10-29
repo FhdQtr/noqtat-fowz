@@ -1,5 +1,5 @@
 const { readFileSync } = require("node:fs");
-const { createHash, randomInt, timingSafeEqual } = require("node:crypto");
+const { createHash, randomInt, randomUUID, timingSafeEqual } = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
@@ -371,7 +371,7 @@ async function adminQuestions(action, data) {
   return { count: ids.length };
 }
 
-async function beginPunishment(uid, data, id, match, teamCode, usedCount, requestId) {
+async function beginPunishment(uid, data, id, match, teamCode, usedCount, requestId, selectionKey) {
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (!current) return current;
     if (current.state.phase !== "choose" || current.state.question || current.state.targetTeam !== teamCode) return;
@@ -380,7 +380,7 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
       question: { id: now(), type: "punishment", category: "general", question: "سؤال وعقاب", options: [], answer: -1 },
       originalTeam: teamCode, targetTeam: teamCode, passCount: 0, attemptedTeams: [],
       questionValue: 0, pointMultiplier: 1, answer: null, isCorrect: null,
-      questionStartedAt: null, questionDuration: 0, viewUntil: null, selectionRequestId: requestId,
+      questionStartedAt: null, questionDuration: 0, viewUntil: null, selectionRequestId: requestId, selectionKey, secretVersion: null,
       punishment: { stage: "prepare", byTeam: teamCode, prepareUntil: now() + 60000 },
     };
     current.typeCounts ||= {};
@@ -792,14 +792,26 @@ async function answerChallenge(uid, data) {
   return { correct: choice === answer, answer };
 }
 
+function secretForState(root, state) {
+  // Versioned secrets are private and staged before the guarded public commit.
+  // A late executor cannot overwrite the secret referenced by a newer question.
+  return state?.secretVersion ? root?.versions?.[state.secretVersion] : root;
+}
+async function readQuestionSecret(id, state) {
+  return secretForState((await db.ref(`matchSecrets/${id}`).get()).val(), state);
+}
+
 async function chooseType(uid, data) {
-  const { id, match } = await loadMatch(data.matchCode);
+  const { id, match, access } = await loadMatch(data.matchCode);
   const type = text(data.type, 50);
   const typeKey = dbKey(type);
   const requestId = text(data.requestId, 80) || `${uid}_${now()}_${randomInt(100000, 999999)}`;
   const teamCode = match.state.targetTeam || match.teamOrder[match.turnIndex % match.teamOrder.length];
   if (!canChoose(match, uid, teamCode)) fail("permission-denied", "الاختيار للفريق صاحب الدور");
-  if (match.state.phase === "question" && match.state.selectionRequestId === requestId) return { status: "accepted" };
+  const contextKey = hostTransitionKey(data);
+  const selectionKey = contextKey && createHash("sha256").update(JSON.stringify([uid, type, requestId, contextKey])).digest("hex");
+  if (selectionKey && match.state.phase === "question" && match.state.selectionKey === selectionKey) return { status: "accepted" };
+  if (!selectionKey || !hostTransitionMatches(match.state, data.transition)) return { status: "late", reason: "stale" };
   if (match.state.phase !== "choose" || match.state.question) {
     return { status: "late", reason: "initial-state", phase: match.state.phase, hasQuestion: Boolean(match.state.question) };
   }
@@ -809,7 +821,7 @@ async function chooseType(uid, data) {
   if (usedCount >= typeCap(match, type)) return { status: "cap" };
   let candidates;
   candidates = await questionBank();
-  if (type === "punishment") return beginPunishment(uid, data, id, match, teamCode, usedCount, requestId);
+  if (type === "punishment") return beginPunishment(uid, data, id, match, teamCode, usedCount, requestId, selectionKey);
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
@@ -824,20 +836,36 @@ async function chooseType(uid, data) {
 
   let question;
   const started = now();
-  const stateRef = db.ref(`matches/${id}/state`);
-  const claimRef = stateRef.child("selectionRequestId");
-  if (!await acquireClaim(claimRef, requestId)) return { status: "late", reason: "claimed" };
+  const matchRef = db.ref(`matches/${id}`);
+  const stateRef = matchRef.child("state");
+  const executor = randomUUID();
+  const acquired = await matchRef.transaction((current) => {
+    if (!current) return current;
+    const state = current.state;
+    if (current.status !== "playing" || !sameTurnContext(current, match)
+      || state.phase !== "choose" || state.question
+      || (state.selectionLease && state.selectionLease.expiresAt > now())
+      || !canChoose(attachAccess(current, access), uid, teamCode)) return;
+    state.selectionLease = { owner: executor, expiresAt: now() + 30000 };
+    return current;
+  }, undefined, false);
+  if (!acquired.committed || acquired.snapshot.val()?.state?.selectionLease?.owner !== executor) return { status: "late", reason: "claimed" };
+  const release = () => matchRef.transaction((current) => {
+    if (!current) return current;
+    if (current.state?.selectionLease?.owner !== executor) return;
+    delete current.state.selectionLease;
+    return current;
+  }, undefined, false);
 
   try {
     const latestState = (await stateRef.get()).val();
-    if (latestState?.phase === "question" && latestState.selectionRequestId === requestId) {
+    if (latestState?.phase === "question" && latestState.selectionKey === selectionKey) {
       return { status: "accepted" };
     }
     if (!latestState || latestState.phase !== "choose" || latestState.question || latestState.targetTeam !== teamCode) {
-      await releaseClaim(claimRef, requestId);
       return { status: "late", reason: "state-changed" };
     }
-    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner, candidates, `selection:${requestId}`);
+    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner, candidates, `selection:${selectionKey}`);
     question = rotated.question;
     const seconds = viewSeconds(question);
     const viewUntil = seconds ? started + seconds * 1000 : null;
@@ -857,6 +885,7 @@ async function chooseType(uid, data) {
       questionStartedAt: isActing ? null : (viewUntil || started),
       questionDuration: isActing ? 120 : match.timer,
       selectionRequestId: requestId || null,
+      selectionKey,
       viewUntil,
       assistUsed: false,
       pointMultiplier: latestState.pointMultiplier || 1,
@@ -873,30 +902,68 @@ async function chooseType(uid, data) {
       usedAssets: [...new Set([...(latestState.usedAssets || []), questionAssetKey(question)])],
     };
 
-    // السؤال وإجابته السرية والعدادات تُثبّت معاً، فلا تصل الواجهة إلى سؤال بلا سر.
+    // Stage a private immutable secret before a conditional public commit.
+    const secretVersion = randomUUID();
+    await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(questionSecret(question));
+    const expected = match;
+    const published = await db.ref(`matches/${id}`).transaction((current) => {
+      if (!current) return current;
+      const state = current.state;
+      if (current.status !== "playing" || !sameTurnContext(current, expected)
+        || state.phase !== "choose" || state.question
+        || state.selectionLease?.owner !== executor || state.selectionLease.expiresAt <= now()
+        || !canChoose(attachAccess(current, access), uid, teamCode)
+        || !current.enabledTypes.includes(type) || sectionCycle(current, teamCode).used.includes(type)
+        || (current.typeCounts?.[teamCode]?.[type] || 0) !== usedCount) return;
+      current.state = { ...nextState, secretVersion, selectionLease: null, revision: (state.revision || 0) + 1 };
+      current.typeCounts ||= {};
+      current.typeCounts[teamCode] ||= {};
+      current.typeCounts[teamCode][typeKey] = usedCount + 1;
+      current.lastChosenTypeByTeam ||= {};
+      current.lastChosenTypeByTeam[teamCode] = type;
+      current.sectionCycleByTeam ||= {};
+      current.sectionCycleByTeam[teamCode] = nextSectionCycle(match, teamCode, type);
+      current.usedIdsByTeam ||= {};
+      current.usedIdsByTeam[teamCode] = [...teamUsedIds, question.id];
+      return current;
+    }, undefined, false);
+    if (!published.committed || published.snapshot.val()?.state?.secretVersion !== secretVersion) return { status: "late", reason: "state-changed" };
     await db.ref().update({
-      [`matches/${id}/state`]: nextState,
-      [`matchSecrets/${id}`]: questionSecret(question),
-      [`matches/${id}/typeCounts/${teamCode}/${typeKey}`]: usedCount + 1,
-      [`matches/${id}/lastChosenTypeByTeam/${teamCode}`]: type,
-      [`matches/${id}/sectionCycleByTeam/${teamCode}`]: nextSectionCycle(match, teamCode, type),
-      [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
       [`hostQuestionHistory/${historyOwner}/${typeKey}/bank/${question.id}`]: started,
       [`globalQuestionHistory/${typeKey}/bank/${question.id}`]: started,
     });
     return { status: "accepted" };
   } catch (error) {
-    await releaseClaim(claimRef, requestId);
     if (error.code === "resource-exhausted") {
       await db.ref(`matches/${id}/rotationBlocked/${teamCode}/${typeKey}/bank`).set(true);
       return { status: "rotation" };
     }
     throw error;
+  } finally {
+    await release();
   }
 }
 
+async function publishShowdown(id, match, nextState, secret, number, transitionKey) {
+  const secretVersion = randomUUID();
+  await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(secret);
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    if (!current) return current;
+    if (transitionKey && current.state?.hostTransition?.key === transitionKey) return current;
+    if (current.status !== "playing" || !sameTurnContext(current, match)
+      || (current.showdownCount || 0) !== (match.showdownCount || 0)) return;
+    current.showdownCount = number;
+    current.state = { ...nextState, secretVersion, revision: (current.state.revision || 0) + 1,
+      ...(transitionKey ? { hostTransition: { key: transitionKey, result: { showdown: true } } } : {}) };
+    return current;
+  }, undefined, false);
+  const state = result.snapshot.val()?.state;
+  return { showdown: Boolean(result.committed && (state?.secretVersion === secretVersion
+    || (transitionKey && state?.hostTransition?.key === transitionKey))) };
+}
+
 async function startShowdown(id, match, transitionKey = null, skipUnanswered = false) {
-  if (match.challengeMode === "picture_guess") return startPictureGuess(id, match);
+  if (match.challengeMode === "picture_guess") return startPictureGuess(id, match, transitionKey);
   const showdownNumber = (match.showdownCount || 0) + 1;
   const wantsImage = showdownNumber % 2 === 0;
   const allowedTextTypes = new Set(["multiple_choice", "riddle", "completion"]);
@@ -913,7 +980,6 @@ async function startShowdown(id, match, transitionKey = null, skipUnanswered = f
   const basePool = eligible.filter((question) => !usedIds.has(question.id) && !usedAssets.has(questionAssetKey(question)));
   if (!basePool.length) return advance(id, match, true, transitionKey, skipUnanswered);
 
-  const kind = wantsImage ? "visual" : "text";
   const historyOwner = match.hostUid || "shared";
   let rotated;
   try { rotated = await rotateQuestion(basePool, rotationGameId(id, match), historyOwner, bank, `showdown:${showdownNumber}`); }
@@ -926,60 +992,31 @@ async function startShowdown(id, match, transitionKey = null, skipUnanswered = f
   const opensAt = createdAt + SHOWDOWN_OPEN_DELAY_MS;
   const closesAt = opensAt + SHOWDOWN_DURATION_MS;
 
-  await db.ref().update({
-    [`matches/${id}/showdownCount`]: showdownNumber,
-    [`matches/${id}/state/phase`]: "showdown",
-    [`matches/${id}/state/punishment`]: null,
-    [`matches/${id}/state/rotationReused`]: rotated.reused,
-    [`matches/${id}/state/question`]: publicQuestion(question),
-    [`matches/${id}/state/answer`]: null,
-    [`matches/${id}/state/isCorrect`]: null,
-    [`matches/${id}/state/targetTeam`]: null,
-    [`matches/${id}/state/originalTeam`]: null,
-    [`matches/${id}/state/viewUntil`]: null,
-    [`matches/${id}/state/questionStartedAt`]: opensAt,
-    [`matches/${id}/state/questionDuration`]: SHOWDOWN_DURATION_MS / 1000,
-    [`matches/${id}/state/showdown`]: { number: showdownNumber, points: SHOWDOWN_POINTS, opensAt, closesAt, answers: {}, winnerTeam: null },
-    [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
-    [`matches/${id}/state/usedAssets`]: [...usedAssets, questionAssetKey(question)],
-    [`matchSecrets/${id}`]: questionSecret(question),
-    [`hostQuestionHistory/${historyOwner}/showdown_${kind}/bank/${question.id}`]: createdAt,
-    [`globalQuestionHistory/showdown_${kind}/bank/${question.id}`]: createdAt,
-  });
-  return { showdown: true };
+  return publishShowdown(id, match, {
+    ...match.state, phase: "showdown", punishment: null, rotationReused: rotated.reused,
+    question: publicQuestion(question), answer: null, isCorrect: null,
+    targetTeam: null, originalTeam: null, viewUntil: null,
+    questionStartedAt: opensAt, questionDuration: SHOWDOWN_DURATION_MS / 1000,
+    showdown: { number: showdownNumber, points: SHOWDOWN_POINTS, opensAt, closesAt, answers: {}, winnerTeam: null },
+    usedIds: [...usedIds, question.id], usedAssets: [...usedAssets, questionAssetKey(question)],
+  }, questionSecret(question), showdownNumber, transitionKey);
 }
 
-async function startPictureGuess(id, match) {
+async function startPictureGuess(id, match, transitionKey = null) {
   if (match.teamOrder.length !== 2) fail("failed-precondition", "تحدي الصور يحتاج فريقين");
-  const stateRef = db.ref(`matches/${id}/state`);
-  const claim = `${now()}_${randomInt(100000, 999999)}`;
-  if (!await acquireClaim(stateRef.child("pictureStartClaim"), claim)) return { showdown: true };
-  try {
-    const latest = (await stateRef.get()).val();
-    if (!latest || latest.round !== match.state.round || latest.phase !== match.state.phase || latest.pictureStartClaim !== claim) {
-      await releaseClaim(stateRef.child("pictureStartClaim"), claim);
-      return { showdown: false };
-    }
-    const number = (match.showdownCount || 0) + 1;
-    const chosen = randomOrder(PICTURE_GUESS_ITEMS).slice(0, 2);
-    const pictures = Object.fromEntries(match.teamOrder.map((team, i) => [team, { ...chosen[i], targetTeam: match.teamOrder[1 - i] }]));
-    const opensAt = 0;
-    const questionId = 800000 + number;
-    // الصور وتوزيعها تبقى في السر فقط؛ سجل المسابقة المشترك لا يحتوي أي مسار صورة.
-    await db.ref().update({
-      [`matchSecrets/${id}`]: { questionId, mode: "picture_guess", pictures },
-      [`matches/${id}/showdownCount`]: number,
-      [`matches/${id}/state`]: { ...latest, phase: "showdown", pictureStartClaim: null,
-        question: { id: questionId, type: "picture_guess", category: "challenge", question: "اسألوا بصيغة هل هو… وخمّنوا صورة الفريق المنافس", options: [], answer: -1 },
-        showdown: { kind: "picture_guess", number, points: SHOWDOWN_POINTS, opensAt, closesAt: 0, winnerTeam: null, answers: {} },
-        answer: null, isCorrect: null, targetTeam: null, originalTeam: null, viewUntil: null,
-        questionStartedAt: opensAt, questionDuration: 120, punishment: null, assistUsed: false },
-    });
-    return { showdown: true };
-  } catch (error) {
-    await releaseClaim(stateRef.child("pictureStartClaim"), claim);
-    throw error;
-  }
+  const latest = (await db.ref(`matches/${id}/state`).get()).val();
+  if (!latest || latest.round !== match.state.round || latest.phase !== match.state.phase) return { showdown: false };
+  const number = (match.showdownCount || 0) + 1;
+  const chosen = randomOrder(PICTURE_GUESS_ITEMS).slice(0, 2);
+  const pictures = Object.fromEntries(match.teamOrder.map((team, i) => [team, { ...chosen[i], targetTeam: match.teamOrder[1 - i] }]));
+  const questionId = 800000 + number;
+  return publishShowdown(id, match, {
+    ...latest, phase: "showdown", pictureStartClaim: null,
+    question: { id: questionId, type: "picture_guess", category: "challenge", question: "اسألوا بصيغة هل هو… وخمّنوا صورة الفريق المنافس", options: [], answer: -1 },
+    showdown: { kind: "picture_guess", number, points: SHOWDOWN_POINTS, opensAt: 0, closesAt: 0, winnerTeam: null, answers: {} },
+    answer: null, isCorrect: null, targetTeam: null, originalTeam: null, viewUntil: null,
+    questionStartedAt: 0, questionDuration: 120, punishment: null, assistUsed: false,
+  }, { questionId, mode: "picture_guess", pictures }, number, transitionKey);
 }
 
 async function pictureGuessView(uid, data, id, match) {
@@ -987,7 +1024,7 @@ async function pictureGuessView(uid, data, id, match) {
   const player = Object.values(match.players || {}).find((p) => p.authUid === uid);
   if (!host && !player) fail("permission-denied", "صور التحدي للمشاركين فقط");
   if (match.state.showdown?.kind !== "picture_guess" || !["showdown", "showdown_revealed"].includes(match.state.phase) || data.questionId !== match.state.question?.id) return { questionId: null, pictures: {} };
-  const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+  const secret = await readQuestionSecret(id, match.state);
   if (secret?.questionId !== data.questionId || secret.mode !== "picture_guess") return { questionId: null, pictures: {} };
   const pictures = host ? secret.pictures : { [player.teamCode]: secret.pictures[player.teamCode] };
   return { questionId: secret.questionId, pictures };
@@ -1068,7 +1105,7 @@ async function submitShowdownAnswer(uid, data, receivedAt = now()) {
   if (!Number.isInteger(choice) || choice < 0 || choice >= (match.state.question?.options?.length || 0)) return { status: "late" };
   if (receivedAt < showdown.opensAt) return { status: "early" };
   if (receivedAt > showdown.closesAt) return { status: "late" };
-  const secret = secretSnapshot.val();
+  const secret = secretForState(secretSnapshot.val(), match.state);
   if (!secret || secret.questionId !== match.state.question?.id) fail("failed-precondition", "تعذّر التحقق من سؤال المواجهة، أعد المحاولة");
 
   const submissionId = `${uid}_${receivedAt}_${randomInt(100000, 999999)}`;
@@ -1128,7 +1165,7 @@ async function finishShowdown(uid, data) {
   // لا تعتمد نهاية تحدي الصور أي نتيجة؛ الحكم يختار أحد الخيارات الثلاثة.
   if (match.state.showdown?.kind === "picture_guess") return { finished: false };
   if (match.state.phase !== "showdown" || !match.state.showdown || now() < match.state.showdown.closesAt) return { finished: false };
-  const secret = secretSnapshot.val();
+  const secret = secretForState(secretSnapshot.val(), match.state);
   if (!secret || secret.questionId !== match.state.question?.id) fail("failed-precondition", "تعذّر التحقق من سؤال المواجهة، أعد المحاولة");
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (current === null) return null;
@@ -1206,7 +1243,7 @@ async function submitHostAnswer(uid, data) {
 async function reveal(id, match, correctOverride, transitionKey = null) {
   const state = match.state;
   if (!["question", "locked"].includes(state.phase)) fail("failed-precondition", "تم كشف هذا السؤال مسبقاً");
-  const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+  const secret = await readQuestionSecret(id, match.state);
   if (!state.question || !secret || secret.questionId !== state.question.id) fail("failed-precondition", "تعذّر التحقق من السؤال");
   const correct = typeof correctOverride === "boolean" ? correctOverride : state.answer?.choice === secret.answer;
   const teamCode = state.targetTeam;
@@ -1439,28 +1476,13 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       updates["state/assistUsed"] = false;
       updates["state/forcedPlayerId"] = null;
       updates["state/forcedPlayerName"] = null;
-      await db.ref().update({
-        [`matches/${id}/teams/${teamCode}/cardBalance`]: balance - cost,
-        [`matches/${id}/teams/${teamCode}/powerCards/${card}`]: false,
-        [`matches/${id}/state/question`]: protectedQuestion(question),
-        [`matches/${id}/state/rotationReused`]: rotated.reused,
-        [`matches/${id}/state/usedIds`]: [...usedIds, question.id],
-        [`matches/${id}/state/usedAssets`]: [...usedAssets, questionAssetKey(question)],
-        [`matches/${id}/usedIdsByTeam/${teamCode}`]: [...teamUsedIds, question.id],
-        [`matches/${id}/state/viewUntil`]: viewUntil,
-        [`matches/${id}/state/questionStartedAt`]: isActing ? null : (viewUntil || started),
-        [`matches/${id}/state/questionDuration`]: isActing ? 120 : match.timer,
-        [`matches/${id}/state/assistUsed`]: false,
-        [`matches/${id}/state/forcedPlayerId`]: null,
-        [`matches/${id}/state/forcedPlayerName`]: null,
-        [`matches/${id}/state/cardUsedThisTurn`]: true,
-        [`matches/${id}/state/cardClaimId`]: null,
-        [`matches/${id}/state/cardEvent`]: event,
-        [`matchSecrets/${id}`]: questionSecret(question),
-        [`hostQuestionHistory/${match.hostUid || uid}/${dbKey(question.type)}/bank/${question.id}`]: started,
-        [`globalQuestionHistory/${dbKey(question.type)}/bank/${question.id}`]: started,
-      });
-      return { accepted: true };
+      const secretVersion = randomUUID();
+      await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(questionSecret(question));
+      updates["state/secretVersion"] = secretVersion;
+      updates["state/rotationReused"] = rotated.reused;
+      updates[`usedIdsByTeam/${teamCode}`] = [...teamUsedIds, question.id];
+      // Apply through the same context/balance/claim transaction as other cards.
+      // Rotation's host ledger reservation is still a separate durable operation.
     } else if (card === "steal") {
       const attemptedTeams = [...new Set([...(state.attemptedTeams || []), targetTeam].filter(Boolean))];
       if (state.phase !== "revealed" || state.isCorrect !== false || !state.question || targetTeam === teamCode) return { accepted: false, reason: "timing" };
@@ -1496,6 +1518,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
         || !canPlayFor(latest, uid, teamCode) || s.cardClaimId !== claimId || s.cardUsedThisTurn
         || s.cardsFrozenTeam === teamCode || !currentTeam || currentTeam.powerCards?.[card] === false
         || (Number(currentTeam.cardBalance) || 0) !== balance) return;
+      if (card === "swapQuestion" && (s.phase !== "question" || s.answer || s.targetTeam !== teamCode || !s.question)) return;
       if (card === "extraTime" && (s.answer || now() >= Number(s.questionStartedAt) + Number(s.questionDuration || current.timer) * 1000)) return;
       if (card === "pickPlayer" && (current.answerMode === "host" || current.players?.[event.targetPlayerId]?.teamCode !== s.targetTeam
         || Object.values(current.players || {}).filter((player) => player.teamCode === s.targetTeam).length < 2)) return;
@@ -1594,7 +1617,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   }
   if (action === "getHostAnswer") {
     requireHost(match, uid);
-    const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+    const secret = await readQuestionSecret(id, match.state);
     const valid = secret?.questionId === match.state.question?.id;
     return {
       questionId: valid ? secret.questionId : null,
@@ -1608,7 +1631,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     if (state.phase !== "question" || !state.question?.promptHidden || !state.viewUntil || now() < state.viewUntil) {
       return { accepted: false };
     }
-    const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+    const secret = await readQuestionSecret(id, match.state);
     if (!secret || secret.questionId !== state.question.id || !Array.isArray(secret.options)) return { accepted: false };
     // A public TV may trigger this deterministic reveal, but never before its
     // server time or for a replaced/answered question. No membership is granted.
@@ -1638,7 +1661,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     if (!canPlayFor(match, uid, teamCode) || match.state.targetTeam !== teamCode) fail("permission-denied", "المساعدة للفريق صاحب السؤال");
     const latestState = (await db.ref(`matches/${id}/state`).get()).val();
     if (!latestState || latestState.phase !== "question" || !usesVerbalChoices(latestState.question?.type) || latestState.assistUsed || latestState.targetTeam !== teamCode) return { accepted: false };
-    const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
+    const secret = await readQuestionSecret(id, match.state);
     if (!secret || secret.questionId !== latestState.question.id || !Array.isArray(secret.options)) return { accepted: false };
     const result = await db.ref(`matches/${id}`).transaction((current) => {
       if (!current) return current;

@@ -336,11 +336,12 @@ export function sectionCycleProgress(match: Match, teamCode: string) {
   return { used: completed ? [] : used, number: (saved?.number || 1) + (completed ? 1 : 0), remaining: completed ? activeTypes.length : activeTypes.length - used.length };
 }
 
-export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {
+export async function chooseType(matchCode: string, type: QuestionType, match: Match): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {
   const requestId = typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" }>("chooseType", { matchCode, type, requestId });
+  const payload = { matchCode, type, requestId, transition: captureHostTransition(match.state, requestId) };
+  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" }>("chooseType", payload);
   try {
     const result = await send();
     return result.status;
@@ -443,7 +444,7 @@ export async function usePowerCard(
   }
 }
 
-export function captureHostTransition(state: Match["state"], requestId = crypto.randomUUID()) {
+export function captureHostTransition(state: Match["state"], requestId: string = crypto.randomUUID()) {
   return { questionId: state.question?.id ?? null, phase: state.phase, round: state.round || 0,
     attemptId: `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`,
     revision: state.revision || 0, requestId };

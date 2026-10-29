@@ -162,11 +162,21 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   let presenterSequence = 0;
-  const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: {
-    action, matchCode: 'A234',
-    ...(['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer'].includes(action)
-      ? { transition: presenterContext(data.matches.A234.state, `presenter-${++presenterSequence}`) } : {}), ...extra,
-  } });
+  const selections = new Map();
+  const call = (action, uid = 'host', extra = {}) => {
+    let selection = {};
+    if (action === 'chooseType') {
+      const requestId = extra.requestId || `selection-${++presenterSequence}`;
+      const key = `${extra.matchCode || 'A234'}:${uid}:${requestId}`;
+      if (!selections.has(key)) selections.set(key, presenterContext(data.matches[extra.matchCode || 'A234'].state, requestId));
+      selection = { requestId, transition: selections.get(key) };
+    }
+    return exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: {
+      action, matchCode: 'A234', ...selection,
+      ...(['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer'].includes(action)
+        ? { transition: presenterContext(data.matches.A234.state, `presenter-${++presenterSequence}`) } : {}), ...extra,
+    } });
+  };
   return { data, call, helpers: exports.testHelpers,
     adminCall: (action, extra = {}, admin = true) => exports.gameAction({ auth: { uid: 'owner', token: { admin } }, rawRequest: { ip: '192.0.2.2' }, data: { action, ...extra } }),
     authCall: (token) => exports.gameAction({ auth: { uid: 'owner', token }, rawRequest: { ip: '192.0.2.2' }, data: { action: 'syncAdminAccess' } }),
@@ -551,7 +561,7 @@ test('picture challenge prepares private pictures after three questions per team
   assert.equal(s.question.options, undefined); // RTDB prunes deliberately empty arrays.
   assert.equal(JSON.stringify(h.match()).includes('/img/picture-guess/'), false);
   assert.equal('pictures' in s.showdown, false);
-  const pictures = h.data.matchSecrets.A234.pictures;
+  const pictures = h.data.matchSecrets.A234.versions[h.match().state.secretVersion].pictures;
   assert.notEqual(pictures['A234-1'].id, pictures['A234-2'].id);
   assert.equal(pictures['A234-1'].targetTeam, 'A234-2');
   assert.equal(pictures['A234-2'].targetTeam, 'A234-1');
@@ -650,6 +660,121 @@ test('host score corrections allow increases and deductions, record reason, reje
   assert.equal(h.match().teams['A234-1'].scoreAdjustment.delta, -400);
 });
 
+test('picture showdown preparation cannot replace an ended room after reading its phase', async () => {
+  const h = pictureGuessFixture();
+  h.afterRead((path) => {
+    if (path === 'matches/A234/state') {
+      h.match().status = 'ended';
+      h.match().state.phase = 'ended';
+    }
+  });
+  const r = await h.call('advanceTurn');
+  assert.equal(r.showdown, false);
+  assert.equal(h.match().state.phase, 'ended');
+  assert.equal(h.match().showdownCount, 0);
+});
+
+test('classic showdown preparation cannot replace a room ended while loading its bank', async () => {
+  const h = harness();
+  Object.assign(h.match(), { challengeMode: 'classic', showdownCount: 0, questionsPerTeam: 8, timer: 30 });
+  h.match().state.phase = 'revealed';
+  h.match().state.round = 6;
+  h.afterRead((path) => {
+    if (path === 'customQuestions') {
+      h.match().status = 'ended';
+      h.match().state.phase = 'ended';
+    }
+  });
+  const r = await h.call('advanceTurn');
+  assert.equal(r.showdown, false);
+  assert.equal(h.match().state.phase, 'ended');
+  assert.equal(h.match().showdownCount, 0);
+});
+
+test('selection execution ownership never changes the displayed choose attempt before publication', async () => {
+  const h = logoFixture();
+  let inspected = false;
+  h.afterRead((path) => {
+    if (path === 'matches/A234/state') {
+      inspected = true;
+      assert.equal(h.match().state.selectionRequestId ?? null, null);
+      assert.ok(h.match().state.selectionLease?.owner);
+    }
+  });
+  assert.equal((await h.call('chooseType', 'user1', { type: 'brand', requestId: 'stable-choose-attempt' })).status, 'accepted');
+  assert.equal(inspected, true);
+});
+
+test('ordinary selection rejects missing or stale displayed choose context before history consumption', async () => {
+  const h = logoFixture();
+  for (const transition of [null, presenterContext({ ...h.match().state, revision: 77 }, 'stale-selection')]) {
+    const before = clone(h.match());
+    const r = await h.call('chooseType', 'user1', { type: 'brand', requestId: 'context-selection', transition });
+    assert.equal(r.status, 'late');
+    assert.deepEqual(h.match(), before);
+    assert.equal(h.data.questionRotation ?? null, null);
+  }
+});
+
+test('swap cannot replace a question or spend a card after a concurrent answer', async () => {
+  const h = logoFixture();
+  await h.call('chooseType', 'user1', { type: 'brand', requestId: 'swap-fixture' });
+  const oldQuestion = h.match().state.question.id;
+  h.match().teams['A234-1'].cardBalance = 1000;
+  h.match().teams['A234-1'].powerCards = { swapQuestion: true };
+  let answered = false;
+  h.afterRead((path) => {
+    if (!answered && path === 'customQuestions') {
+      answered = true;
+      h.match().state.answer = { playerId: 'p1', choice: 0 };
+      h.match().state.phase = 'locked';
+      h.match().state.revision += 1;
+    }
+  });
+  const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'swapQuestion' });
+  assert.equal(answered, true);
+  assert.equal(result.accepted, false);
+  assert.equal(h.match().state.question.id, oldQuestion);
+  assert.equal(h.match().teams['A234-1'].cardBalance, 1000);
+  assert.equal(h.match().teams['A234-1'].powerCards.swapQuestion, true);
+  assert.equal((await h.call('getHostAnswer')).questionId, oldQuestion);
+});
+
+test('ordinary selection recovers an expired executor lease but never takes a live one', async () => {
+  for (const expired of [false, true]) {
+    const h = logoFixture();
+    h.match().state.selectionRequestId = 'crashed-request';
+    h.match().state.selectionLease = { owner: 'old-executor', expiresAt: expired ? 1999 : 9000 };
+    const r = await h.call('chooseType', 'user1', { type: 'brand', requestId: 'recovery-request' });
+    assert.equal(r.status, expired ? 'accepted' : 'late');
+    if (expired) {
+      assert.equal(h.match().state.selectionRequestId, 'recovery-request');
+      assert.ok(h.match().state.secretVersion);
+      assert.equal(h.match().state.selectionLease ?? null, null);
+      assert.equal((await h.call('getHostAnswer')).questionId, h.match().state.question.id);
+    }
+  }
+});
+
+test('ordinary selection cannot resurrect an ended room after its last choose-state read', async () => {
+  const h = logoFixture();
+  let ended = false;
+  h.afterRead((path) => {
+    if (!ended && path === 'matches/A234/state') {
+      ended = true;
+      h.match().status = 'ended';
+      h.match().state.phase = 'ended';
+      h.match().state.revision = 99;
+    }
+  });
+  const result = await h.call('chooseType', 'user1', { type: 'brand', requestId: 'late-selection' });
+  assert.equal(result.status, 'late');
+  assert.equal(h.match().status, 'ended');
+  assert.equal(h.match().state.phase, 'ended');
+  assert.equal(h.match().state.revision, 99);
+  assert.equal(h.match().state.question, null);
+});
+
 test('simultaneous host score correction and ordinary question judgment preserve both awards', async () => {
   const h = logoFixture();
   await h.call('chooseType', 'user1', { type: 'brand' });
@@ -688,7 +813,9 @@ test('logo name and industry are available only to the presenter, with hidden co
   assert.equal(details.questionId, q.id);
   assert.ok(details.brandInfo.acceptedNames.includes(details.answerText));
   assert.ok(details.brandInfo.industry);
-  h.data.matchSecrets.A234.questionId += 1;
+  const rootSecret = h.data.matchSecrets.A234;
+  const activeSecret = h.match().state.secretVersion ? rootSecret.versions[h.match().state.secretVersion] : rootSecret;
+  activeSecret.questionId += 1;
   const stale = await h.call('getHostAnswer');
   assert.equal(stale.brandInfo, null);
   assert.equal(stale.answerText, null);

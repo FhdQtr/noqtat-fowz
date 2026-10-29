@@ -45,6 +45,78 @@ async function fixture() {
   return { ref, match, read, context, call };
 }
 
+test('real concurrent classic and picture showdown publication commits one private assignment and replays it', async () => {
+  for (const challengeMode of ['classic', 'picture_guess']) {
+    const f = await fixture();
+    await f.ref.update({ challengeMode, showdownCount: 0 });
+    await f.ref.child('state/round').set(6);
+    const transition = f.context((await f.read()).state);
+    const results = await Promise.all([f.call('advanceTurn', transition), f.call('advanceTurn', transition)]);
+    for (const r of results) assert.equal(r.showdown, true);
+    const saved = await f.read();
+    assert.equal(saved.showdownCount, 1);
+    assert.equal(saved.state.phase, 'showdown');
+    assert.equal(saved.state.revision, 5);
+    assert.ok(saved.state.secretVersion);
+    assert.equal(JSON.stringify(saved).includes('/img/picture-guess/'), false);
+    const secret = (await db.ref(`matchSecrets/${f.ref.key}/versions/${saved.state.secretVersion}`).get()).val();
+    assert.equal(secret.questionId, saved.state.question.id);
+    assert.equal((await f.call('advanceTurn', transition)).showdown, true);
+    assert.deepEqual(await f.read(), saved);
+    if (challengeMode === 'picture_guess') {
+      const view = await f.call('getPictureGuessView', null, { questionId: secret.questionId });
+      assert.equal(Object.keys(view.pictures).length, 2);
+    } else {
+      assert.equal((await f.call('getHostAnswer')).questionId, secret.questionId);
+    }
+  }
+});
+
+test('real ordinary selection serializes concurrent retries, stages a private secret and replays the exact choice', async () => {
+  const f = await fixture(), playerUid = `Hermes-QA-player-${randomUUID()}`;
+  await f.ref.update({ enabledTypes: ['brand'], turnIndex: 0 });
+  await f.ref.child('state').set({ phase: 'choose', round: 0, targetTeam: 'A', revision: 0 });
+  const room = f.ref.key;
+  await db.ref(`matchAccess/${room}/playerUids/p1`).set(playerUid);
+  const transition = f.context((await f.read()).state), requestId = transition.requestId;
+  const payload = { action: 'chooseType', matchCode: room, type: 'brand', requestId, transition };
+  const send = (data = payload) => exports.gameAction({ auth: { uid: playerUid }, rawRequest: { ip: '192.0.2.100' }, data });
+  const results = await Promise.all([send(), send(), send()]);
+  assert.ok(results.some((r) => r.status === 'accepted'));
+  const selected = await f.read();
+  assert.equal(selected.state.phase, 'question');
+  assert.equal(selected.state.revision, 1);
+  assert.equal(selected.typeCounts.A.brand, 1);
+  assert.equal(selected.state.selectionLease ?? null, null);
+  assert.ok(selected.state.secretVersion);
+  assert.equal(selected.state.question.answer, -1);
+  const secret = (await db.ref(`matchSecrets/${room}/versions/${selected.state.secretVersion}`).get()).val();
+  assert.equal(secret.questionId, selected.state.question.id);
+  assert.equal((await f.call('getHostAnswer')).questionId, secret.questionId);
+  assert.equal((await send()).status, 'accepted');
+  assert.deepEqual(await f.read(), selected);
+  assert.equal((await send({ ...payload, type: 'multiple_choice' })).status, 'late');
+  await f.call('judgeVerbal', f.context(selected.state), { correct: true });
+  const scored = await f.read();
+  assert.equal(scored.state.phase, 'revealed');
+  assert.equal(scored.teams.A.score, 150);
+});
+
+test('real selection lease permits expired recovery and prevents stale executors from publishing', async () => {
+  const f = await fixture(), playerUid = `Hermes-QA-player-${randomUUID()}`;
+  await f.ref.update({ enabledTypes: ['brand'], turnIndex: 0 });
+  await f.ref.child('state').set({ phase: 'choose', round: 0, targetTeam: 'A', revision: 0, selectionRequestId: 'crashed', selectionLease: { owner: 'crashed-executor', expiresAt: Date.now() + 60000 } });
+  await db.ref(`matchAccess/${f.ref.key}/playerUids/p1`).set(playerUid);
+  const send = async () => {
+    const transition = f.context((await f.read()).state);
+    return exports.gameAction({ auth: { uid: playerUid }, rawRequest: { ip: '192.0.2.101' }, data: { action: 'chooseType', matchCode: f.ref.key, type: 'brand', requestId: transition.requestId, transition } });
+  };
+  assert.equal((await send()).status, 'late');
+  await f.ref.child('state/selectionLease/expiresAt').set(Date.now() - 1);
+  assert.equal((await send()).status, 'accepted');
+  assert.equal((await f.read()).typeCounts.A.brand, 1);
+});
+
 test('real concurrent pass requests commit one attempt and replay a lost response immutably', async () => {
   const f = await fixture(), t = f.context(f.match.state);
   const replies = await Promise.all(Array.from({ length: 3 }, () => f.call('passToNextTeam', t)));

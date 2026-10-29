@@ -18,6 +18,25 @@ test('client explicitly requests advisory ordinary timers, including a no-timer 
   assert.equal(calls[0].payload.options.timer, 0);
 });
 
+test('section selection freezes the displayed choose context across a lost-response retry', async () => {
+  const exports = {}, calls = [];
+  const fragment = raw.slice(raw.indexOf('export async function chooseType('), raw.indexOf('export interface AnswerContext'));
+  const state = { phase: 'choose', round: 2, targetTeam: 'A', revision: 7 };
+  runInNewContext(ts.transpileModule(fragment, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
+    exports, crypto: { randomUUID: () => 'selection-request' }, window: { setTimeout: (f) => f() },
+    captureHostTransition: (s, requestId) => ({ phase: s.phase, round: s.round, revision: s.revision, requestId }),
+    gameAction: async (action, payload) => {
+      calls.push(JSON.parse(JSON.stringify({ action, payload })));
+      if (calls.length === 1) { state.revision = 99; throw new Error('response lost'); }
+      return { status: 'accepted' };
+    },
+  });
+  assert.equal(await exports.chooseType('A234', 'brand', { state }), 'accepted');
+  assert.equal(calls[0].payload.transition?.revision, 7);
+  assert.equal(calls[0].payload.transition?.phase, 'choose');
+  assert.deepEqual(calls[0], calls[1]);
+});
+
 test('presenter APIs freeze turn context and reuse the same payload after a lost response', async () => {
   const exports = {}, calls = [];
   const start = raw.indexOf('export function captureHostTransition(');

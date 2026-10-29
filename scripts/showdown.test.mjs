@@ -153,7 +153,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, rotateFlagQuestion, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
   return { data, call, helpers: exports.testHelpers,
@@ -751,17 +751,17 @@ test('concurrent invite loading keeps a stable code for each team', async () => 
   assert.equal(Object.keys(h.data.teamJoinCodes).length, 1);
 });
 
-test('rotation prevents repeating question assets during fifteen competitions', async () => {
+test('rotation retains eleven consumed games and does not recycle an unfinished section', async () => {
   const h = harness(true);
   const pool = Array.from({ length: 45 }, (_, id) => ({ id, type: 'image', image: `/image-${id}.svg`, question: `flag ${id}`, options: ['a', 'b'], answer: 0 }));
   const recent = [];
   for (let game = 0; game < 35; game++) {
     const draw = await h.helpers.rotateQuestion(pool, `game${game}`, 'host');
     assert.equal(draw.reused, false);
-    assert.ok(!recent.slice(-14).includes(draw.question.id));
+    assert.ok(!recent.includes(draw.question.id));
     recent.push(draw.question.id);
   }
-  assert.equal(h.data.questionRotation.host.games.length, 15);
+  assert.equal(h.data.questionRotation.host.games.length, 11);
 });
 
 test('rotation identifies same image/text despite different question ids and reports bank shortage', async () => {
@@ -769,9 +769,11 @@ test('rotation identifies same image/text despite different question ids and rep
   const a = { id: 1, type: 'acting', question: 'المثل نفسه', options: [], answer: 0 };
   const b = { ...a, id: 2, question: '  المثل   نفسه  ' };
   await h.helpers.rotateQuestion([a], 'one', 'host');
-  await assert.rejects(h.helpers.rotateQuestion([b], 'two', 'host'), /15/);
+  await assert.rejects(h.helpers.rotateQuestion([b], 'two', 'host'), /10/);
   for (let game = 2; game <= 16; game++) await h.helpers.registerRotationMatch('host', `empty${game}`);
-  const next = await h.helpers.rotateQuestion([b], 'empty16', 'host');
+  await assert.rejects(h.helpers.rotateQuestion([b], 'empty16', 'host'), /10/);
+  for (let game = 1; game <= 10; game++) await h.helpers.rotateQuestion([{ ...a, id: 990000 + game, type: 'ct_age', question: `age ${game}` }], `consumed${game}`, 'host');
+  const next = await h.helpers.rotateQuestion([b], 'consumed11', 'host');
   assert.equal(next.question.id, 2);
   assert.equal(h.helpers.rotationAssetKey(a), h.helpers.rotationAssetKey(b));
   assert.equal(h.helpers.rotationAssetKey({ ...a, image: '/same.svg' }), h.helpers.rotationAssetKey({ ...b, image: '/same.svg' }));
@@ -935,7 +937,7 @@ test('extra time works just before deadline and during memory viewing, only once
 
 test('concurrent creation using the same audience code cannot overwrite the first match', async () => {
   const h = harness(false, true);
-  const options = { teamNames: ['ألف', 'باء'], enabledTypes: ['mcq'], difficulty: 'easy', questionsPerTeam: 1 };
+  const options = { teamNames: ['ألف', 'باء'], enabledTypes: ['multiple_choice'], difficulty: 'easy', questionsPerTeam: 1 };
   const results = await Promise.allSettled([
     h.helpers.createMatch('host-one', { ...options, hostName: 'الأول' }),
     h.helpers.createMatch('host-two', { ...options, hostName: 'الثاني' }),
@@ -1176,6 +1178,177 @@ test('permanent delete validates the whole batch before changing any question', 
   assert.equal(h.data.questionDeletions, undefined);
 });
 
+test('owner contract: every section traverses its entire pool before reuse across new games', async () => {
+  const h = harness(true, true);
+  const pool = Array.from({ length: 30 }, (_, id) => ({ id: 980000 + id, type: 'ct_cycle', question: `cycle question ${id}`, options: ['a', 'b'], answer: 0 }));
+  const seen = new Set();
+  for (let i = 0; i < pool.length; i++) {
+    const { question } = await h.helpers.rotateQuestion(pool, `cycle-game-${i}`, 'host', pool);
+    assert.equal(seen.has(question.id), false, `repeated before exhaustion at draw ${i}`);
+    seen.add(question.id);
+  }
+  assert.equal(seen.size, pool.length);
+});
+
+test('owner contract: recent protection includes g10 and ends at g11 only after exhaustion', async () => {
+  const h = harness(true, true);
+  const pool = Array.from({ length: 11 }, (_, id) => ({ id: 981000 + id, type: 'ct_boundary', question: `boundary ${id}`, options: ['a', 'b'], answer: 0 }));
+  const first = (await h.helpers.rotateQuestion(pool, 'g0', 'host', pool)).question;
+  for (let i = 1; i <= 10; i++) {
+    await assert.rejects(h.helpers.rotateQuestion([first], `g${i}`, 'host', pool), { code: 'resource-exhausted' });
+    await h.helpers.rotateQuestion(pool, `g${i}`, 'host', pool);
+  }
+  const reused = await h.helpers.rotateQuestion([first], 'g11', 'host', pool);
+  assert.equal(reused.question.id, first.id);
+  assert.equal(reused.reused, true);
+});
+
+test('owner contract: flags cannot recycle recent assets even after their cycle is exhausted', async () => {
+  const h = harness(true, true);
+  const flags = (await h.helpers.questionBank()).filter((q) => q.type === 'flag' && !q.disabled).slice(0, 3);
+  for (let i = 0; i < flags.length; i++) await h.helpers.rotateQuestion(flags, `flag-small-${i}`, 'host', flags);
+  await assert.rejects(h.helpers.rotateQuestion(flags, 'flag-small-3', 'host', flags), { code: 'resource-exhausted' });
+});
+
+test('owner contract: empty competitions cannot age protection or discard cycle metadata', async () => {
+  const h = harness(true, true);
+  const pool = Array.from({ length: 20 }, (_, id) => ({ id: 982000 + id, type: 'ct_empty', question: `empty ${id}`, options: ['a', 'b'], answer: 0 }));
+  const first = (await h.helpers.rotateQuestion(pool, 'consumed', 'host', pool)).question;
+  const before = JSON.stringify(h.data.questionRotation.host);
+  for (let i = 0; i < 20; i++) await h.helpers.registerRotationMatch('host', `lobby-${i}`);
+  assert.equal(JSON.stringify(h.data.questionRotation.host), before);
+  await assert.rejects(h.helpers.rotateQuestion([first], 'next-consumed', 'host', pool), { code: 'resource-exhausted' });
+});
+
+test('owner contract: migration keeps legacy text cycles and separate flag usage without deleting records', async () => {
+  const h = harness(true, true);
+  const pool = Array.from({ length: 20 }, (_, id) => ({ id: 983000 + id, type: 'ct_migrate', question: `legacy ${id}`, options: ['a', 'b'], answer: 0 }));
+  const first = pool[0];
+  const legacy = { games: [{ id: 'old-used', assets: [h.helpers.rotationAssetKey(first)] }], unrelated: 'keep' };
+  h.data.questionRotation = { host: structuredClone(legacy) };
+  // Age recent protection using other sections; the old section cycle must survive.
+  for (let i = 0; i < 11; i++) await h.helpers.rotateQuestion([{ id: 984000 + i, type: 'ct_other', question: `other ${i}`, options: ['a', 'b'], answer: 0 }], `age-${i}`, 'host');
+  await assert.rejects(h.helpers.rotateQuestion([first], 'new', 'host', pool), { code: 'resource-exhausted' });
+  assert.equal(h.data.questionRotation.host.unrelated, 'keep');
+  const flags = (await h.helpers.questionBank()).filter((q) => q.type === 'flag' && !q.disabled).slice(0, 3);
+  const oldFlags = { cycle: 7, used: flags.slice(0, 2).map(h.helpers.rotationAssetKey) };
+  h.data.flagRotation = { v1: { host: structuredClone(oldFlags) } };
+  const selected = await h.helpers.rotateQuestion(flags, 'new-flag', 'host', flags);
+  assert.equal(selected.question.id, flags[2].id);
+  assert.equal(JSON.stringify(h.data.flagRotation.v1.host), JSON.stringify(oldFlags), 'legacy flag node is preserved');
+});
+
+test('owner contract: mixed showdown draws share per-section cycles with ordinary draws', async () => {
+  const h = harness(true, true);
+  const a = { id: 985001, type: 'ct_mixed_a', question: 'mixed a1', options: ['a', 'b'], answer: 0 };
+  const b = { ...a, id: 985002, question: 'mixed a2' };
+  const c = { ...a, id: 985003, type: 'ct_mixed_b', question: 'mixed b' };
+  await h.helpers.rotateQuestion([a], 'start', 'host', [a, b, c]);
+  for (let i = 0; i < 11; i++) await h.helpers.rotateQuestion([{ ...c, id: 986000 + i, question: `age mixed ${i}` }], `mixed-age-${i}`, 'host');
+  await h.helpers.rotateQuestion([c], 'mixed-final', 'host', [a, b, c]);
+  await assert.rejects(h.helpers.rotateQuestion([c, a], 'mixed-final', 'host', [a, b, c]), { code: 'resource-exhausted' }, 'mixed pool cannot bypass unfinished a section');
+});
+
+test('owner contract: concurrent lost-response retries reserve once and replay identical shuffled content', async () => {
+  const h = harness(true);
+  const pool = Array.from({ length: 12 }, (_, id) => ({ id: 987000 + id, type: 'ct_retry', question: `retry ${id}`, options: ['a', 'b', 'c', 'd'], answer: 2 }));
+  const draws = await Promise.all(Array.from({ length: 5 }, () => h.helpers.rotateQuestion(pool, 'retry-game', 'host', pool, 'selection-1')));
+  assert.equal(new Set(draws.map((draw) => JSON.stringify(draw))).size, 1);
+  assert.equal(h.data.questionRotation.host.games[0].assets.length, 1);
+  const replay = await h.helpers.rotateQuestion(pool, 'retry-game', 'host', pool, 'selection-1');
+  assert.equal(JSON.stringify(replay), JSON.stringify(draws[0]));
+  const next = await h.helpers.rotateQuestion(pool, 'retry-game', 'host', pool, 'selection-2');
+  assert.notEqual(next.question.id, replay.question.id);
+});
+
+test('owner contract: editorial families also exclude image variants, not only identical URLs', async () => {
+  const h = harness(true);
+  const a = { id: 988001, type: 'image', question: 'photo one', image: '/qa-one.webp', conceptId: 'qa-same-landmark', options: ['a', 'b'], answer: 0 };
+  const b = { ...a, id: 988002, question: 'photo two', image: '/qa-two.webp' };
+  await h.helpers.rotateQuestion([a], 'photo-first', 'host', [a, b]);
+  await assert.rejects(h.helpers.rotateQuestion([b], 'photo-next', 'host', [a, b]), { code: 'resource-exhausted' });
+});
+
+test('owner contract: unknown legacy flag dates receive a conservative ten consumed-game quarantine', async () => {
+  const h = harness(true, true);
+  const flag = (await h.helpers.questionBank()).find((q) => q.type === 'flag' && !q.disabled);
+  h.data.flagRotation = { v1: { host: { cycle: 4, used: [h.helpers.rotationAssetKey(flag)] } } };
+  // Existing text history must not push the undated legacy flag import out of the window.
+  h.data.questionRotation = { host: { games: Array.from({ length: 15 }, (_, i) => ({ id: `legacy-${i}`, assets: [`old-${i}`] })) } };
+  await assert.rejects(h.helpers.rotateQuestion([flag], 'flag-too-early', 'host', [flag]), { code: 'resource-exhausted' });
+  for (let i = 1; i <= 10; i++) {
+    const q = { id: 989000 + i, type: 'ct_flag_age', question: `flag aging ${i}`, options: ['a', 'b'], answer: 0 };
+    await h.helpers.rotateQuestion([q], `flag-age-${i}`, 'host', [q]);
+    if (i < 10) await assert.rejects(h.helpers.rotateQuestion([flag], `flag-probe-${i}`, 'host', [flag]), { code: 'resource-exhausted' });
+  }
+  assert.equal((await h.helpers.rotateQuestion([flag], 'flag-safe', 'host', [flag])).question.id, flag.id);
+});
+
+test('owner contract: all ten active built-in types traverse their editorial assets before reuse', async () => {
+  const base = harness(true, true);
+  const bank = (await base.helpers.questionBank()).filter((q) => !q.disabled);
+  const types = [...new Set(bank.map((q) => q.type))];
+  assert.equal(types.length, 10);
+  for (const type of types) {
+    const h = harness(true, true);
+    const pool = bank.filter((q) => q.type === type);
+    const key = (q) => q.conceptId || q.image || h.helpers.rotationAssetKey(q);
+    const count = new Set(pool.map(key)).size;
+    const seen = new Set();
+    for (let i = 0; i < count; i++) {
+      const draw = await h.helpers.rotateQuestion(pool, `${type}-${i}`, `host-${type}`, bank);
+      assert.equal(seen.has(key(draw.question)), false, `${type}: duplicate at ${i}`);
+      seen.add(key(draw.question));
+    }
+    assert.equal(seen.size, count, type);
+  }
+});
+
+test('owner contract: disabled, restored and newly added bank items do not reset valid cycle usage', async () => {
+  const h = harness(true, true);
+  const q = (i) => ({ id: 991000 + i, type: 'ct_version', question: `version ${i}`, options: ['a', 'b'], answer: 0 });
+  const bank = [q(0), q(1), q(2)];
+  await h.helpers.rotateQuestion([bank[0]], 'version-g0', 'host', bank);
+  for (let i = 1; i <= 11; i++) await h.helpers.rotateQuestion([{ ...q(i + 10), type: 'ct_version_age' }], `version-age-${i}`, 'host');
+  const changed = [bank[0], { ...bank[1], disabled: true }, bank[2], q(3)];
+  assert.equal((await h.helpers.rotateQuestion(changed, 'version-g1', 'host', changed)).question.id, bank[2].id);
+  await assert.rejects(h.helpers.rotateQuestion([bank[0]], 'version-g2', 'host', changed), { code: 'resource-exhausted' });
+  const restored = [bank[0], bank[1], bank[2], q(3)];
+  assert.equal((await h.helpers.rotateQuestion(restored, 'version-g3', 'host', restored)).question.id, bank[1].id);
+});
+
+test('owner contract: creation preflight rejects a section whose effective history capacity is insufficient', async () => {
+  const h = harness(true, true);
+  const bank = (await h.helpers.questionBank()).filter((q) => q.type === 'brand' && !q.disabled);
+  h.data.questionRotation = { host: { games: [{ id: 'recent-brands', assets: bank.map(h.helpers.rotationAssetKey) }] } };
+  const before = JSON.stringify(h.data.questionRotation.host);
+  await assert.rejects(h.helpers.createMatch('host', { teamNames: ['Hermes QA One', 'Hermes QA Two'], enabledTypes: ['brand'], questionsPerTeam: 4 }), { code: 'failed-precondition' });
+  assert.equal(JSON.stringify(h.data.questionRotation.host), before, 'preflight does not consume or clear history');
+  assert.equal(Object.keys(h.data.matches).length, 1, 'no new lobby written');
+});
+
+test('owner contract: an exhausted section cannot trap a team behind the section cooldown', () => {
+  const h = harness(true);
+  const match = { enabledTypes: ['ct_a', 'ct_b'], questionsPerTeam: 8, totalRounds: 16, teamOrder: ['one', 'two'], sectionCycleByTeam: { one: { number: 1, used: ['ct_a'] } }, rotationBlocked: { one: { ct_b: { bank: true } } } };
+  assert.equal(h.helpers.sectionCycle(match, 'one').used.includes('ct_a'), false);
+  const file = readFileSync(new URL('../src/lib/matchApi.ts', import.meta.url), 'utf8');
+  const block = file.slice(file.indexOf('export function sectionCycleProgress'), file.indexOf('export async function chooseType'));
+  const client = {};
+  runInNewContext(ts.transpileModule(block, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: client });
+  assert.equal(client.sectionCycleProgress(match, 'one').used.includes('ct_a'), false);
+  assert.equal(client.sectionCycleProgress(match, 'one').remaining, 1);
+});
+
+test('owner contract: reservation retries preserve empty acting choices after RTDB array pruning', async () => {
+  const h = harness(true);
+  const q = { id: 992001, type: 'acting', question: 'act this', options: [], answer: 0 };
+  const first = await h.helpers.rotateQuestion([q], 'acting-retry', 'host', [q], 'acting-selection');
+  const replay = await h.helpers.rotateQuestion([q], 'acting-retry', 'host', [q], 'acting-selection');
+  assert.ok(Array.isArray(first.question.options));
+  assert.equal(first.question.options.length, 0);
+  assert.equal(JSON.stringify(first), JSON.stringify(replay));
+});
+
 test('the 160 flags form a full persistent cycle across competitions before any reuse', async () => {
   const h = harness(true);
   const bank = await h.helpers.questionBank();
@@ -1198,7 +1371,7 @@ test('the 160 flags form a full persistent cycle across competitions before any 
   const next = await h.helpers.rotateQuestion(flags, 'game-next', 'host', flags);
   assert.equal(next.reused, true);
   assert.ok(seen.has(next.question.image));
-  assert.equal(h.data.flagRotation.v1.host.cycle, 2);
+  assert.equal(h.data.questionRotation.host.cycles.flag.number, 2);
 });
 
 test('concurrent flag draws cannot give two teams the same flag and owners rotate independently', async () => {
@@ -1207,17 +1380,17 @@ test('concurrent flag draws cannot give two teams the same flag and owners rotat
   const draws = await Promise.all(Array.from({ length: 8 }, (_, i) => h.helpers.rotateQuestion(flags, `game-${i}`, 'host', flags)));
   assert.equal(new Set(draws.map((draw) => draw.question.image)).size, 8);
   await h.helpers.rotateQuestion(flags, 'other-game', 'other-host', flags);
-  assert.equal(h.data.flagRotation.v1['other-host'].used.length, 1);
-  assert.equal(h.data.flagRotation.v1.host.used.length, 8);
+  assert.equal(h.data.questionRotation['other-host'].cycles.flag.used.length, 1);
+  assert.equal(h.data.questionRotation.host.cycles.flag.used.length, 8);
 });
 
 test('flag rotation cannot reset early when the remaining flags are unavailable in this match', async () => {
   const h = harness(true);
   const flags = (await h.helpers.questionBank()).filter((q) => q.type === 'flag' && !q.disabled).slice(0, 3);
-  const first = await h.helpers.rotateFlagQuestion(flags, 'host', flags);
-  await assert.rejects(h.helpers.rotateFlagQuestion([first.question], 'host', flags), { code: 'resource-exhausted' });
-  assert.equal(h.data.flagRotation.v1.host.cycle, 1);
-  const second = await h.helpers.rotateFlagQuestion(flags, 'host', flags);
+  const first = await h.helpers.rotateQuestion(flags, 'first', 'host', flags);
+  await assert.rejects(h.helpers.rotateQuestion([first.question], 'first', 'host', flags), { code: 'resource-exhausted' });
+  assert.equal(h.data.questionRotation.host.cycles.flag.number, 1);
+  const second = await h.helpers.rotateQuestion(flags, 'first', 'host', flags);
   assert.notEqual(second.question.image, first.question.image);
 });
 

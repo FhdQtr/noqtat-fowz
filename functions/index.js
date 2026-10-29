@@ -171,74 +171,99 @@ function randomOrder(values) {
   }
   return result;
 }
-// Asset-based rotation across the last fifteen competitions, persisted on the server.
-async function rotateFlagQuestion(pool, owner, allFlags) {
-  const activeAssets = new Set(allFlags.map(rotationAssetKey));
-  const draw = randomInt(1000000);
-  let selected;
-  let reused = false;
-  const result = await db.ref(`flagRotation/v1/${dbKey(owner)}`).transaction((current) => {
-    let used = new Set(Object.values(current?.used || {}).filter((asset) => activeAssets.has(asset)));
-    let cycle = Number(current?.cycle) || 1;
-    reused = activeAssets.size > 0 && [...activeAssets].every((asset) => used.has(asset));
-    if (reused) { used = new Set(); cycle += 1; }
-    const available = pool.filter((q) => activeAssets.has(rotationAssetKey(q)) && !used.has(rotationAssetKey(q)));
-    if (!available.length) return;
-    selected = available[draw % available.length];
-    used.add(rotationAssetKey(selected));
-    return { cycle, used: [...used] };
-  }, undefined, false);
-  if (!result.committed || !selected) fail("resource-exhausted", "الأعلام المتبقية في الدورة ظهرت في هذه المسابقة؛ أكملها في ميدان جديد");
-  return { question: shuffled(selected), reused };
-}
-async function rotateQuestion(pool, matchId, owner, allFlags = null) {
-  if (pool.length && pool.every((q) => q.type === "flag")) {
-    const flags = allFlags || (await questionBank()).filter((q) => q.type === "flag" && !q.disabled);
-    return rotateFlagQuestion(pool, owner, flags);
-  }
+// One host-scoped transaction enforces section exhaustion AND ten consumed-game exclusion.
+async function rotateQuestion(pool, matchId, owner, allBank = null, requestId = null, inspectOnly = false) {
+  if (!pool.length) fail("resource-exhausted", "لا توجد أسئلة متاحة في هذا القسم");
   const ref = db.ref(`questionRotation/${dbKey(owner)}`);
+  const universe = (allBank || pool).filter((q) => !q.disabled);
+  // Read-only import. Old binaries must be drained before publishing this policy.
+  const legacyFlags = (await db.ref(`flagRotation/v1/${dbKey(owner)}`).get()).val();
   // Editorial families supplement lexical hashes; include every built-in sibling
   // so histories written before concept metadata still block its paraphrases.
   const families = new Map();
-  for (const question of [...QUESTIONS, ...pool]) {
-    if (!question.conceptId || question.image || question.video) continue;
+  for (const question of [...QUESTIONS, ...universe, ...pool]) {
+    if (!question.conceptId) continue;
     const aliases = families.get(question.conceptId) || new Set();
     aliases.add(legacyRotationAssetKey(question));
     aliases.add(rotationAssetKey(question));
+    aliases.add(createHash("sha256").update(`concept:${question.conceptId}`).digest("hex"));
     families.set(question.conceptId, aliases);
   }
   const aliasesFor = (question) => families.get(question.conceptId) || new Set([rotationAssetKey(question)]);
   const draw = randomInt(1000000);
+  const receiptKey = requestId ? createHash("sha256").update(requestId).digest("hex") : null;
   let selected;
   let reused = false;
-  const result = await ref.transaction((current) => {
-    const games = Array.isArray(current?.games) ? current.games : Object.values(current?.games || {});
+  let outcome;
+  const reserve = (current) => {
+    outcome = null;
+    // Only competitions with a consumed/reserved question age the window.
+    const games = (Array.isArray(current?.games) ? current.games : Object.values(current?.games || {})).filter((entry) => Object.values(entry.assets || {}).length);
+    const legacyGames = current?.legacyGames || (current?.policyVersion === 2 ? [] : games.map((entry) => ({ ...entry, assets: [...Object.values(entry.assets || {})] })));
+    const legacyAssets = current?.legacyAssets || (current?.policyVersion === 2 ? [] : [...new Set(games.flatMap((entry) => Object.values(entry.assets || {})))]);
+    const importFlags = legacyFlags && !current?.flagMigration;
+    if (importFlags && Object.values(legacyFlags.used || {}).length) games.push({ id: "legacy-flag-cycle", assets: Object.values(legacyFlags.used) });
     let game = games.find((entry) => entry.id === matchId);
     if (!game) { game = { id: matchId, assets: [] }; games.push(game); }
-    const recent = games.slice(-15);
+    if (receiptKey && game.reservations?.[receiptKey]) {
+      outcome = game.reservations[receiptKey];
+      return current;
+    }
+    const recent = games.filter((entry) => entry.id !== matchId).slice(-10);
     const currentAssets = new Set(Object.values(game.assets || {}));
-    const eligible = pool.filter((q) => ![...aliasesFor(q)].some((key) => currentAssets.has(key)));
-    if (!eligible.length) return;
+    const cycles = current?.cycles || {};
+    const sections = new Map();
+    for (const type of new Set(pool.map((q) => q.type))) {
+      const flagHistory = current?.flagMigration || legacyFlags;
+      const cycleState = cycles[dbKey(type)] || { number: type === "flag" ? Number(flagHistory?.cycle) || 1 : 1, used: [...legacyAssets, ...(type === "flag" ? Object.values(flagHistory?.used || {}) : [])] };
+      const cycleUsed = new Set(Object.values(cycleState.used || {}));
+      const section = universe.filter((q) => q.type === type);
+      const exhausted = section.length > 0 && section.every((q) => [...aliasesFor(q)].some((key) => cycleUsed.has(key)));
+      sections.set(type, { cycleState, cycleUsed, exhausted, section });
+    }
+    const eligible = pool.filter((q) => {
+      const { cycleUsed, exhausted, section } = sections.get(q.type);
+      return !q.disabled && section.some((item) => item.id === q.id)
+        && ![...aliasesFor(q)].some((key) => currentAssets.has(key))
+        && (exhausted || ![...aliasesFor(q)].some((key) => cycleUsed.has(key)));
+    });
     const lastSeen = new Map();
     recent.forEach((entry, index) => Object.values(entry.assets || {}).forEach((asset) => lastSeen.set(asset, index)));
     const fresh = eligible.filter((q) => ![...aliasesFor(q)].some((key) => lastSeen.has(key)));
-    reused = false;
+    if (inspectOnly) {
+      // Conservative capacity: no promise of mid-game cycle rollover and no
+      // counting paraphrases/image aliases as independent questions. No writes.
+      const seen = new Set();
+      return fresh.filter((question) => {
+        const keys = [...aliasesFor(question)];
+        const distinct = !keys.some((key) => seen.has(key));
+        keys.forEach((key) => seen.add(key));
+        return distinct;
+      });
+    }
     const available = fresh;
-    if (!available.length) return;
+    if (!available.length) return current;
     selected = available[draw % available.length];
+    const { cycleState, cycleUsed, exhausted } = sections.get(selected.type);
+    reused = exhausted;
+    outcome = { question: shuffled(selected), reused };
+    if (receiptKey) game.reservations = { ...game.reservations, [receiptKey]: outcome };
     game.assets = [...new Set([...Object.values(game.assets || {}), ...aliasesFor(selected)])];
-    return { games: recent };
-  }, undefined, false);
-  if (!result.committed || !selected) fail("resource-exhausted", "نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة؛ اختر قسمًا آخر أو أضف أسئلة جديدة");
-  return { question: shuffled(selected), reused };
+    cycles[dbKey(selected.type)] = { number: Number(cycleState.number || 1) + (exhausted ? 1 : 0), used: [...new Set([...(exhausted ? [] : cycleUsed), ...aliasesFor(selected)])] };
+    return { ...current, policyVersion: 2, legacyGames, legacyAssets, ...(importFlags ? { flagMigration: legacyFlags } : {}), games: games.slice(-11), cycles };
+  };
+  if (inspectOnly) return reserve((await ref.get()).val());
+  const result = await ref.transaction(reserve, undefined, false);
+  if (!result.committed || !outcome) fail("resource-exhausted", "لا يوجد سؤال يحقق دورة القسم واستبعاد آخر 10 مسابقات؛ اختر قسمًا آخر أو أضف محتوى جديدًا");
+  const committed = receiptKey ? result.snapshot.val().games.find((entry) => entry.id === matchId).reservations[receiptKey] : outcome;
+  // RTDB removes empty arrays; replay must restore the bank's empty-choice contract.
+  return { ...committed, question: { ...committed.question, options: committed.question.options || [] } };
 }
 function rotationGameId(id, match) { return `${id}_${match.createdAt || 0}`; }
 async function registerRotationMatch(owner, gameId) {
-  await db.ref(`questionRotation/${dbKey(owner)}`).transaction((current) => {
-    const games = Array.isArray(current?.games) ? current.games : Object.values(current?.games || {});
-    if (!games.some((game) => game.id === gameId)) games.push({ id: gameId, assets: [] });
-    return { games: games.slice(-15) };
-  }, undefined, false);
+  // Lobby creation is not consumption. The first reservation registers a game.
+  // Retained as a compatibility hook for startMatch; intentionally no DB write.
+  void owner; void gameId;
 }
 function rotationAssetKey(question) {
   if (question.conceptId && !question.image && !question.video) return createHash("sha256").update(`concept:${question.conceptId}`).digest("hex");
@@ -431,14 +456,16 @@ async function punishmentAction(uid, data, id, match) {
 function sectionCycle(match, teamCode) {
   const saved = match.sectionCycleByTeam?.[teamCode];
   const previous = !saved && match.lastChosenTypeByTeam?.[teamCode];
-  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => match.enabledTypes.includes(type));
-  return { used, number: Number(saved?.number) || 1 };
+  const activeTypes = match.enabledTypes.filter((type) => !match.rotationBlocked?.[teamCode]?.[type]?.bank);
+  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => activeTypes.includes(type));
+  const completed = activeTypes.length > 0 && activeTypes.every((type) => used.includes(type));
+  return { used: completed ? [] : used, number: (Number(saved?.number) || 1) + (completed ? 1 : 0) };
 }
 function nextSectionCycle(match, teamCode, type) {
   const cycle = sectionCycle(match, teamCode);
   const used = [...new Set([...cycle.used, type])];
   // Keep the number so an empty used list pruned by RTDB still marks a new cycle.
-  return match.enabledTypes.every((enabled) => used.includes(enabled))
+  return match.enabledTypes.filter((enabled) => !match.rotationBlocked?.[teamCode]?.[enabled]?.bank).every((enabled) => used.includes(enabled))
     ? { number: cycle.number + 1 }
     : { used, number: cycle.number };
 }
@@ -460,7 +487,8 @@ function fairTypeCaps(enabledTypes, teamCount, questionsPerTeam, bank = QUESTION
   const base = enabledTypes.length <= 1 ? questionsPerTeam : Math.max(3, Math.ceil(questionsPerTeam / 2));
   return Object.fromEntries(enabledTypes.map((type) => {
     const typeQuestions = bank.filter((question) => question.type === type && !question.disabled);
-    if (!typeQuestions.length) return [type, base];
+    if (type === "punishment") return [type, base];
+    if (!typeQuestions.length) return [type, 0];
     const count = new Set(typeQuestions.map(questionAssetKey)).size;
     const fair = Math.floor(count / Math.max(1, teamCount));
     return [type, Math.max(0, Math.min(base, fair))];
@@ -617,7 +645,10 @@ async function createMatch(uid, options) {
     ? questionsPerTeam * names.length
     : Math.min(40, Math.max(4, Number(options.totalRounds) || 12));
   const timer = Math.min(120, Math.max(0, Number(options.timer) || 0));
-  const typeCaps = fairTypeCaps(enabledTypes, names.length, questionsPerTeam, await questionBank());
+  const bank = await questionBank();
+  const active = bank.filter((question) => !question.disabled && enabledTypes.includes(question.type));
+  const available = active.length ? await rotateQuestion(active, "preflight", uid, bank, null, true) : [];
+  const typeCaps = fairTypeCaps(enabledTypes, names.length, questionsPerTeam, available);
   const fullCycles = Math.floor(questionsPerTeam / enabledTypes.length);
   if (enabledTypes.some((type) => typeCaps[type] < fullCycles)) fail("failed-precondition", "بعض الأقسام لا تحتوي أسئلة كافية ليكمل كل فريق جميع الأقسام؛ قلّل عدد الأسئلة أو اختر أقسامًا إضافية");
   if (Object.values(typeCaps).reduce((total, cap) => total + cap, 0) < questionsPerTeam) {
@@ -796,7 +827,7 @@ async function chooseType(uid, data) {
       await releaseClaim(claimRef, requestId);
       return { status: "late", reason: "state-changed" };
     }
-    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner, candidates.filter((q) => q.type === "flag" && !q.disabled));
+    const rotated = await rotateQuestion(pool, rotationGameId(id, match), historyOwner, candidates, `selection:${requestId}`);
     question = rotated.question;
     const seconds = viewSeconds(question);
     const viewUntil = seconds ? started + seconds * 1000 : null;
@@ -861,7 +892,8 @@ async function startShowdown(id, match) {
   const allowedTextTypes = new Set(["multiple_choice", "riddle", "completion"]);
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
-  const eligible = (await questionBank()).filter((question) =>
+  const bank = await questionBank();
+  const eligible = bank.filter((question) =>
     !question.disabled
     && !usesVerbalChoices(question.type)
     && Array.isArray(question.options)
@@ -874,7 +906,7 @@ async function startShowdown(id, match) {
   const kind = wantsImage ? "visual" : "text";
   const historyOwner = match.hostUid || "shared";
   let rotated;
-  try { rotated = await rotateQuestion(basePool, rotationGameId(id, match), historyOwner); }
+  try { rotated = await rotateQuestion(basePool, rotationGameId(id, match), historyOwner, bank, `showdown:${showdownNumber}`); }
   catch (error) {
     if (error.code !== "resource-exhausted") throw error;
     return advance(id, match, true);
@@ -1323,7 +1355,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       const pool = teamPool.filter((question) => !usedIds.has(question.id) && !usedAssets.has(questionAssetKey(question)));
       if (!pool.length) return { accepted: false, reason: "empty" };
       let rotated;
-      try { rotated = await rotateQuestion(pool, rotationGameId(id, match), match.hostUid || uid, candidates.filter((q) => q.type === "flag" && !q.disabled)); }
+      try { rotated = await rotateQuestion(pool, rotationGameId(id, match), match.hostUid || uid, candidates, `swap:${teamCode}:${state.question.id}:${state.round}`); }
       catch (error) { if (error.code === "resource-exhausted") return { accepted: false, reason: "empty" }; throw error; }
       const question = rotated.question;
       const started = now();

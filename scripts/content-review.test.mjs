@@ -35,6 +35,13 @@ test('specific internally invalid or non-unique questions remain reversibly quar
     assert.ok(q.question && q.options.length && Number.isInteger(q.answer), 'preserve original content and answer');
   }
 });
+test('rotation copy states both owner constraints and never promises an unavailable fifteen-game policy', () => {
+  const page = readFileSync(new URL('../src/pages/Play.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /آخر 15 مسابقة/);
+  assert.match(page, /دورة القسم/);
+  assert.match(page, /آخر 10 مسابقات/);
+});
+
 test('solo description does not promise non-existent difficulty progression', () => {
   const page = readFileSync(new URL('../src/pages/Challenge.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(page, /متصاعدة الصعوبة/);

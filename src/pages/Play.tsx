@@ -192,7 +192,7 @@ export default function Play() {
       else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
       else if (res === "cooldown") setChooseMsg("اخترتم هذا القسم في الدورة الحالية؛ أكملوا جميع الأقسام أولًا حتى تنفتح من جديد");
       else if (res === "empty") setChooseMsg("لا توجد أسئلة متاحة من هذا النوع والمستوى");
-      else if (res === "rotation") setChooseMsg("نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة — اختاروا قسمًا آخر");
+      else if (res === "rotation") setChooseMsg("لا يوجد سؤال يحقق دورة القسم واستبعاد آخر 10 مسابقات — اختاروا قسمًا آخر أو أوقفوا اللعب لدى المقدم لتعديل الإعداد في ميدان جديد؛ لن نكرر سؤالًا حديثًا");
       else if (res === "error") setChooseMsg("تعذّر تحميل السؤال — اضغط مرة أخرى");
       else if (res === "accepted") {
         accepted = true;

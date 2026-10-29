@@ -335,8 +335,10 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
 export function sectionCycleProgress(match: Match, teamCode: string) {
   const saved = match.sectionCycleByTeam?.[teamCode];
   const previous = !saved && match.lastChosenTypeByTeam?.[teamCode];
-  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => match.enabledTypes.includes(type));
-  return { used, number: saved?.number || 1, remaining: match.enabledTypes.length - used.length };
+  const activeTypes = match.enabledTypes.filter((type) => !match.rotationBlocked?.[teamCode]?.[type]?.bank);
+  const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => activeTypes.includes(type));
+  const completed = activeTypes.length > 0 && activeTypes.every((type) => used.includes(type));
+  return { used: completed ? [] : used, number: (saved?.number || 1) + (completed ? 1 : 0), remaining: completed ? activeTypes.length : activeTypes.length - used.length };
 }
 
 export async function chooseType(matchCode: string, type: QuestionType): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {

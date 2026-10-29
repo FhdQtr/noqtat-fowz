@@ -6,7 +6,7 @@ export const BUILTIN_QUESTION_STATS: Record<string, number> = {
   "image": 56,
   "memory": 30,
   "multiple_choice": 743,
-  "ordering": 40,
+  "ordering": 42,
   "riddle": 64,
   "true_false": 105
 };

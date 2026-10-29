@@ -245,6 +245,10 @@ async function rotateQuestion(pool, matchId, owner, allBank = null, requestId = 
     if (!question.conceptId) continue;
     const aliases = families.get(question.conceptId) || new Set();
     aliases.add(legacyRotationAssetKey(question));
+    // Source-maintained wording history keeps editorial corrections from resetting rotation.
+    for (const prompt of question.rotationLegacyPrompts || []) {
+      if (typeof prompt === "string") aliases.add(legacyRotationAssetKey({ ...question, question: prompt }));
+    }
     aliases.add(rotationAssetKey(question));
     aliases.add(createHash("sha256").update(`concept:${question.conceptId}`).digest("hex"));
     families.set(question.conceptId, aliases);
@@ -606,7 +610,7 @@ async function shortTeamCodes(id, access) {
 
 function usesVerbalChoices(type) { return type === "flag" || type === "brand"; }
 function publicQuestion(question) {
-  const { brandInfo: _privateBrandInfo, ...visible } = question;
+  const { brandInfo: _privateBrandInfo, rotationLegacyPrompts: _privateEditorialPrompts, ...visible } = question;
   return { ...visible, answer: -1 };
 }
 function protectedQuestion(question) {

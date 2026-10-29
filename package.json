@@ -17,7 +17,7 @@
     "test:admin": "node --test scripts/admin-auth.test.mjs",
     "test:rules": "node --test scripts/rules.test.mjs",
     "test:emulators": "npm run prepare:functions && node --test scripts/rules.test.mjs scripts/rotation-emulator.test.mjs scripts/transitions-emulator.test.mjs",
-    "test:connection": "node --test scripts/connection.test.mjs scripts/match-subscription.test.mjs scripts/ordinary-answer-ui.test.mjs scripts/content-review.test.mjs scripts/backend-policy.test.mjs scripts/selection-capacity-ui.test.mjs"
+    "test:connection": "node --test scripts/connection.test.mjs scripts/match-subscription.test.mjs scripts/ordinary-answer-ui.test.mjs scripts/content-review.test.mjs scripts/backend-policy.test.mjs scripts/selection-capacity-ui.test.mjs scripts/setup-ui.test.mjs scripts/public-pages.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

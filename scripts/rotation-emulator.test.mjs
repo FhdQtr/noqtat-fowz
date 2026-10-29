@@ -35,6 +35,21 @@ const publish = async (id, draw) => db.ref(`matches/${id}`).transaction((current
   return current;
 }, undefined, false);
 
+test('real RTDB keeps edited built-in prompts excluded using their pre-edit historical text', async () => {
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  for (const id of [909,920,941]) {
+    const q = bank.find(q => q.id === id);
+    const original = { ...q, conceptId: undefined, question: q.rotationLegacyPrompts[0] };
+    const legacyKey = rotationAssetKey(original);
+    const owner = host();
+    await db.ref(`questionRotation/${owner}`).set({ policyVersion: 2, games: [{ id: 'old-before-edit', assets: [legacyKey] }], cycles: {} });
+    await assert.rejects(rotateQuestion([q], 'new-after-edit', owner, bank), { code: 'resource-exhausted' });
+    const cycleOwner = host();
+    await db.ref(`questionRotation/${cycleOwner}`).set({ policyVersion: 2, games: [], cycles: { [q.type]: { number: 1, used: [legacyKey] } } });
+    await assert.rejects(rotateQuestion([q], 'after-edit-cycle', cycleOwner, bank), { code: 'resource-exhausted' });
+  }
+});
+
 test('pending RTDB reservations hold distinct inventory without aging games; crash-after-publication recovers exactly once', async () => {
   const owner = host(), id = await room(), pool = [51,52,53].map((n) => question(n));
   const same = await Promise.all([1,2,3].map(() => rotateQuestion(pool, 'g0', owner, pool, 'same-pending', false, id)));

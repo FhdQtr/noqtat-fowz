@@ -27,6 +27,34 @@ test('published built-in counters match every enabled bank type after editorial 
   assert.equal(BUILTIN_QUESTION_COUNT, bank.filter((q) => !q.disabled).length);
 });
 
+test('varied refresh adds two original source-reviewed ordering questions without claiming calibrated difficulty', () => {
+  const ids = [410101,410102];
+  const expected = ['نانومتر ثم ميكرومتر ثم مليمتر ثم سنتيمتر', 'متحف الفن الإسلامي ثم متحف: المتحف العربي للفن الحديث ثم متحف قطر الوطني'];
+  for (const [index, id] of ids.entries()) {
+    const q = bank.find(q => q.id === id);
+    assert.ok(q && !q.disabled, `new reviewed question ${id}`);
+    assert.equal(q.type, 'ordering');
+    assert.equal(q.options[q.answer], expected[index]);
+    assert.ok(q.conceptId && q.editorialBatch === 'varied-refresh-1');
+    assert.ok(['medium','hard'].includes(q.editorialDifficulty));
+    assert.equal(new Set(q.options.map(normalize)).size, 4);
+  }
+  const lengths = [1e-9, 1e-6, 1e-3, 1e-2];
+  assert.deepEqual([...lengths].sort((a,b) => a-b), lengths);
+  assert.deepEqual([2008,2010,2019].sort((a,b) => a-b), [2008,2010,2019]);
+});
+
+test('reviewed poetry 920 keeps the exact missing words and correction aliases; 941 no longer gives away the sequence', () => {
+  const poetry = bank.find(q => q.id === 920);
+  assert.equal(poetry.options[poetry.answer], 'دون النجوم');
+  assert.ok(poetry.conceptId && poetry.rotationLegacyPrompts.includes('أكمل: إذا غامرت في شرف مروم فلا تقنع بما ___'));
+  const planets = bank.find(q => q.id === 941);
+  assert.doesNotMatch(planets.question, /عطارد - الزهرة - الأرض - المريخ/);
+  assert.equal(planets.options[planets.answer], 'عطارد - الزهرة - الأرض - المريخ');
+  assert.ok(planets.conceptId && planets.rotationLegacyPrompts.includes('رتب الكواكب من الأقرب للشمس: عطارد - الزهرة - الأرض - المريخ'));
+  assert.equal(bank.find(q => q.id === 924).options[1], 'طول حياته');
+});
+
 const normalize = (s) => s.normalize('NFKC').replace(/[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed\u0640]/g,'').replace(/\s+/g,' ').trim();
 test('specific internally invalid or non-unique questions remain reversibly quarantined', () => {
   for (const id of [815,816,820,828,837,847,849,932,946]) {

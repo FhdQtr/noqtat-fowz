@@ -159,7 +159,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, publicQuestion, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   let presenterSequence = 0;
   const selections = new Map();
@@ -409,6 +409,43 @@ test('timed prompt reveal cannot overwrite a replacement memory question', async
   assert.equal(result.accepted, false);
   assert.equal(h.match().state.question.id, 43);
   assert.equal(h.match().state.question.question, undefined);
+});
+
+test('editorial historical prompts stay private because obsolete stems can reveal the correct answer', () => {
+  const h = harness();
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const original = bank.find(q => q.id === 941);
+  const visible = h.helpers.publicQuestion(original);
+  assert.equal(visible.answer, -1);
+  assert.equal(visible.rotationLegacyPrompts, undefined, 'old correct sequence must never be publicly rendered or published');
+  assert.equal(original.rotationLegacyPrompts.length, 1, 'private source alias is retained');
+  assert.equal(visible.question, original.question);
+});
+
+test('all source wording edits keep the exact pre-edit built-in prompt blocked in persistent rotation', async () => {
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  for (const [id, original] of [[909, 'أكمل: من جدّ ___ وجد'], [920, 'أكمل: إذا غامرت في شرف مروم فلا تقنع بما ___'], [941, 'رتب الكواكب من الأقرب للشمس: عطارد - الزهرة - الأرض - المريخ']]) {
+    const q = bank.find(q => q.id === id);
+    const oldKey = createHash('sha256').update(`text:${original.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()}`).digest('hex');
+    const h = harness();
+    h.data.questionRotation = { host: { policyVersion: 2, games: [{ id: 'before-edit', assets: [oldKey] }], cycles: {} } };
+    await assert.rejects(h.helpers.rotateQuestion([q], 'after-edit', 'host', bank), { code: 'resource-exhausted' }, `edited built-in ${id}`);
+  }
+});
+
+test('editorial wording corrections preserve historical text aliases in recent windows and unfinished section cycles', async () => {
+  const oldText = 'Old wording with a wrong ending';
+  const legacy = createHash('sha256').update(`text:${oldText.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()}`).digest('hex');
+  const revised = { id: 990001, type: 'completion', conceptId: 'qa-wording-revision', rotationLegacyPrompts: [oldText], question: 'Corrected exact quotation', options: ['a', 'b'], answer: 0 };
+  const other = { id: 990002, type: 'completion', question: 'Unseen other quotation', options: ['a', 'b'], answer: 0 };
+  const recent = harness();
+  recent.data.questionRotation = { host: { policyVersion: 2, games: [{ id: 'old', assets: [legacy] }], cycles: {} } };
+  await assert.rejects(recent.helpers.rotateQuestion([revised], 'new', 'host', [revised, other]), { code: 'resource-exhausted' });
+  const cycle = harness();
+  cycle.data.questionRotation = { host: { policyVersion: 2, games: [], cycles: { completion: { number: 1, used: [legacy] } } } };
+  await assert.rejects(cycle.helpers.rotateQuestion([revised], 'new', 'host', [revised, other]), { code: 'resource-exhausted' });
+  assert.equal((await cycle.helpers.rotateQuestion([other], 'new', 'host', [revised, other])).question.id, other.id);
+  assert.equal((await cycle.helpers.rotateQuestion([revised], 'another', 'host', [revised, other])).question.id, revised.id);
 });
 
 test('editorial concept families block paraphrases and migrate legacy text history', async () => {

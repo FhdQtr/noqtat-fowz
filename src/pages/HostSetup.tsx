@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import {
   ArrowRight, Minus, Plus, Crown, Timer, TimerOff, Layers, Loader2,
   HelpCircle,
@@ -50,6 +50,8 @@ export default function HostSetup() {
   const [types, setTypes] = useState<QuestionType[]>(TYPE_OPTIONS.map((t) => t.id));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const advancedRef = useRef<HTMLDetailsElement>(null);
+  const typesRef = useRef<HTMLFieldSetElement>(null);
 
   // الأنواع المعروضة = الأساسية + أنواع المقدم المخصصة (تُفعَّل تلقائياً أول ما تظهر)
   const allTypeOptions = [
@@ -81,6 +83,8 @@ export default function HostSetup() {
   const create = async () => {
     if (types.length === 0) {
       setErr("اختر نوع سؤال واحد على الأقل");
+      if (advancedRef.current) advancedRef.current.open = true;
+      typesRef.current?.querySelector('button')?.focus();
       return;
     }
     setBusy(true);
@@ -117,7 +121,7 @@ export default function HostSetup() {
 
       <div className="w-full max-w-xl">
         <div className="mb-5 flex items-center justify-between gap-3">
-        <button onClick={() => nav("/")} className="flex items-center gap-2 text-muted-foreground hover:text-gold-light transition-colors">
+        <button onClick={() => nav("/")} className="flex min-h-11 items-center gap-2 text-muted-foreground hover:text-gold-light transition-colors">
           <ArrowRight className="w-4 h-4" />
           <span className="text-sm">رجوع</span>
         </button>
@@ -129,6 +133,16 @@ export default function HostSetup() {
             <Crown className="w-7 h-7 text-gold-light" />
             <div><h1 className="text-2xl font-black font-cairo text-gold-gradient">جهّز الميدان</h1><p className="mt-1 text-xs text-muted-foreground">دقائق بسيطة وتبدأ المواجهة</p></div>
           </div>
+
+          <details className="setup-help mb-6 border-b border-gold-faint/40 pb-2">
+            <summary className="min-h-11 cursor-pointer text-sm font-bold text-gold-light">أول مرة؟ جهّز الأجهزة</summary>
+            <ul className="mt-2 space-y-2 text-sm leading-relaxed">
+              <li>المقدم يدير اللعب ويحتسب النقاط من جهازه؛ لا تشارك رابط تحكمه.</li>
+              <li>جوال واحد على الأقل لكل فريق: ادخلوا بدعوة الفريق قبل البداية، ثم اختاروا الأقسام من الجوال، حتى في وضع «المقدم فقط».</li>
+              <li>شاشة الجمهور للعرض: افتح رابط الشاشة على التلفزيون أو الكمبيوتر، ولا تعرض لوحة المقدم التي تكشف الأجوبة.</li>
+            </ul>
+            <Link to="/help" className="inline-flex min-h-11 items-center text-gold-light underline">طريقة اللعب واستعادة الاتصال</Link>
+          </details>
 
           {/* اسم المقدم */}
           <label htmlFor="presenter-name" className="block text-sm font-bold mb-2 text-gold-light/90">اسمك (الحكم)</label>
@@ -144,11 +158,11 @@ export default function HostSetup() {
           {/* عدد الفرق */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90">عدد الفرق</label>
           <div className="flex items-center gap-4 mb-5">
-            <button aria-label="تقليل عدد الفرق" onClick={() => setCount(teamCount - 1)} className="btn-ghost-gold !p-2.5" disabled={teamCount <= 2}>
+            <button aria-label="تقليل عدد الفرق" onClick={() => setCount(teamCount - 1)} className="btn-ghost-gold min-h-11 min-w-11 !p-2.5" disabled={teamCount <= 2}>
               <Minus className="w-5 h-5" />
             </button>
             <span className="text-4xl font-black font-cairo text-gold-gradient w-12 text-center">{teamCount}</span>
-            <button aria-label="زيادة عدد الفرق" onClick={() => setCount(teamCount + 1)} className="btn-ghost-gold !p-2.5" disabled={teamCount >= 4}>
+            <button aria-label="زيادة عدد الفرق" onClick={() => setCount(teamCount + 1)} className="btn-ghost-gold min-h-11 min-w-11 !p-2.5" disabled={teamCount >= 4}>
               <Plus className="w-5 h-5" />
             </button>
             <span className="text-xs text-muted-foreground">من ٢ إلى ٤ فرق</span>
@@ -186,6 +200,7 @@ export default function HostSetup() {
               <button
                 key={n}
                 onClick={() => setQuestionsPerTeam(n)}
+                aria-pressed={questionsPerTeam === n}
                 className={`flex-1 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
                   questionsPerTeam === n
                     ? "bg-gold/20 border-gold text-gold-light"
@@ -200,6 +215,17 @@ export default function HostSetup() {
             المجموع: {questionsPerTeam * teamCount} سؤال · كل فريق له {questionsPerTeam} أسئلة
           </p>
 
+          <section id="setup-summary" aria-label="ملخص إعداد الميدان" className="mb-4 rounded-xl border border-gold-faint/40 bg-gold/5 p-4 text-sm leading-relaxed">
+            <h2 className="font-bold text-gold-light mb-1">جاهز بالإعداد الحالي</h2>
+            <p>{teamCount} فرق · {questionsPerTeam} أسئلة لكل فريق · {types.length} قسمًا</p>
+            <p>{ANSWER_MODE_OPTIONS.find((option) => option.id === answerMode)?.label} · {timer === 0 ? "بدون وقت" : `مؤقت إرشادي: ${timer} ثانية`}</p>
+            <p>{challengeMode === "classic" ? "مواجهة الجميع: اختيارات" : "تحدي الصور: هل هو…؟"}</p>
+            {types.includes("punishment") && <p>سؤال وعقاب مفعّل؛ اتفقوا على تحديات آمنة واختيارية قبل البداية، أو أوقفوه من الخيارات المتقدمة.</p>}
+          </section>
+
+          <details ref={advancedRef} id="advanced-setup" className="mb-6 rounded-xl border border-gold-faint/40 p-4">
+            <summary className="min-h-11 cursor-pointer font-bold text-gold-light">خيارات متقدمة: الإجابة والوقت والأقسام</summary>
+            <div className="pt-4">
           {/* من يثبت الإجابة */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90">من يثبت الإجابة؟</label>
           <div className="grid gap-2 mb-6">
@@ -207,6 +233,7 @@ export default function HostSetup() {
               <button
                 key={id}
                 onClick={() => setAnswerMode(id)}
+                aria-pressed={answerMode === id}
                 className={`rounded-xl px-4 py-3 text-right font-cairo border transition-all ${
                   answerMode === id
                     ? "bg-gold/20 border-gold text-gold-light"
@@ -269,10 +296,11 @@ export default function HostSetup() {
           <p className="-mt-4 mb-6 text-xs text-muted-foreground">المؤقت تنبيه للمجلس، ولا يقفل الإجابة عند الصفر؛ القرار للمقدم. مؤقت مواجهة الجميع ملزم على الخادم.</p>
 
           {/* أنواع الأسئلة */}
-          <label className="block text-sm font-bold mb-2 text-gold-light/90 flex items-center gap-2">
+          <fieldset id="question-types" ref={typesRef}>
+          <legend className="text-sm font-bold mb-2 text-gold-light/90 flex items-center gap-2">
             <Layers className="w-4 h-4" />
             أنواع الأسئلة
-          </label>
+          </legend>
           <div className="flex flex-wrap gap-2 mb-2">
             {allTypeOptions.map(({ id, label }) => {
               const on = types.includes(id);
@@ -280,6 +308,7 @@ export default function HostSetup() {
                 <button
                   key={id}
                   onClick={() => toggleType(id)}
+                  aria-pressed={on}
                   className={`flex min-w-[132px] flex-1 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-cairo font-bold border transition-all ${
                     on
                       ? "bg-gold/20 border-gold text-gold-light"
@@ -297,13 +326,17 @@ export default function HostSetup() {
               أنواعك المخصصة من لوحة التحكم تظهر هنا تلقائياً.
             </p>
           )}
+          </fieldset>
           <p className="text-xs text-muted-foreground leading-relaxed mb-8">
             في كل دور يختار الفريق نوع سؤاله من الأنواع المفعّلة. لا يوجد تصاعد تلقائي للصعوبة،
             وتزيد قيمة النوع كلما كرره الفريق، مع حد أقصى يحافظ على تنوع المسابقة.
           </p>
 
+            </div>
+          </details>
+
           {err && (
-            <div className="text-maroon-light text-sm font-bold bg-maroon/15 border border-maroon/40 rounded-xl px-4 py-2.5 mb-4">
+            <div role="alert" className="text-foreground text-sm font-bold bg-maroon/15 border border-maroon/40 rounded-xl px-4 py-2.5 mb-4">
               {err}
             </div>
           )}

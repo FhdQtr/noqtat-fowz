@@ -75,6 +75,12 @@ test('reviewed October riddles have four unique choices, correct answer indexes 
   assert.equal(stats.BUILTIN_QUESTION_STATS.riddle, bank.filter((q) => q.type === 'riddle' && !q.disabled).length);
 });
 
+function presenterContext(state, requestId) {
+  return { questionId: state.question?.id ?? null, phase: state.phase, round: state.round || 0,
+    attemptId: `${state.round || 0}:${state.targetTeam || ''}:${state.passCount || 0}:${state.selectionRequestId || ''}`,
+    revision: state.revision || 0, requestId };
+}
+
 function fixture() {
   return {
     matches: { A234: {
@@ -155,7 +161,12 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   const exports = {};
   runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
-  const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
+  let presenterSequence = 0;
+  const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: {
+    action, matchCode: 'A234',
+    ...(['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer'].includes(action)
+      ? { transition: presenterContext(data.matches.A234.state, `presenter-${++presenterSequence}`) } : {}), ...extra,
+  } });
   return { data, call, helpers: exports.testHelpers,
     adminCall: (action, extra = {}, admin = true) => exports.gameAction({ auth: { uid: 'owner', token: { admin } }, rawRequest: { ip: '192.0.2.2' }, data: { action, ...extra } }),
     authCall: (token) => exports.gameAction({ auth: { uid: 'owner', token }, rawRequest: { ip: '192.0.2.2' }, data: { action: 'syncAdminAccess' } }),
@@ -300,6 +311,140 @@ function ordinaryAnswerFixture() {
   const context = { playerId: 'p1', choice: 3, questionId: 42, attemptId: '1:A234-1:0:selection-1', revision: 4, requestId: 'answer-1' };
   return { h, context };
 }
+
+test('passing a wrong answer cannot overwrite a replacement committed after the room read', async () => {
+  const { h } = ordinaryAnswerFixture();
+  Object.assign(h.match().state, { phase: 'revealed', isCorrect: false });
+  h.afterRead((path) => {
+    if (path !== 'matches/A234') return;
+    h.afterRead(null);
+    Object.assign(h.match().state, { phase: 'question', revision: 5, question: { id: 43, options: ['A', 'B'], answer: -1 } });
+  });
+  await assert.rejects(h.call('passToNextTeam'), { code: 'failed-precondition' });
+  assert.equal(h.match().state.question.id, 43);
+  assert.equal(h.match().state.targetTeam, 'A234-1');
+  assert.equal(h.match().state.phase, 'question');
+});
+
+test('concurrent pass requests commit exactly one new attempt', async () => {
+  const { h } = ordinaryAnswerFixture();
+  Object.assign(h.match().state, { phase: 'revealed', isCorrect: false });
+  const results = await Promise.allSettled([h.call('passToNextTeam'), h.call('passToNextTeam')]);
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(h.match().state.targetTeam, 'A234-2');
+  assert.equal(h.match().state.passCount, 1);
+  assert.equal(h.match().state.revision, 5);
+});
+
+test('ordinary advance cannot skip an unanswered question or overwrite a newer turn', async () => {
+  const active = ordinaryAnswerFixture();
+  await assert.rejects(active.h.call('advanceTurn'), { code: 'failed-precondition' });
+  assert.equal(active.h.match().state.phase, 'question');
+  const { h } = ordinaryAnswerFixture();
+  h.match().state.phase = 'revealed';
+  h.afterRead((path) => {
+    if (path !== 'matches/A234') return;
+    h.afterRead(null);
+    Object.assign(h.match().state, { phase: 'question', revision: 5, question: { id: 43, options: ['A', 'B'] } });
+  });
+  await assert.rejects(h.call('advanceTurn'), { code: 'failed-precondition' });
+  assert.equal(h.match().state.question.id, 43);
+});
+
+test('concurrent ordinary advance commits one turn and preserves a concurrent score correction for tie resolution', async () => {
+  const { h } = ordinaryAnswerFixture(); h.match().state.phase = 'revealed';
+  const replies = await Promise.allSettled([h.call('advanceTurn'), h.call('advanceTurn')]);
+  assert.equal(replies.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(h.match().turnIndex, 6);
+  assert.equal(h.match().state.revision, 5);
+  const ending = ordinaryAnswerFixture().h;
+  Object.assign(ending.match(), { totalRounds: 1, turnIndex: 0, enabledTypes: ['multiple_choice'] });
+  ending.match().state.phase = 'revealed';
+  ending.afterRead((path) => {
+    if (path !== 'matches/A234') return;
+    ending.afterRead(null);
+    ending.match().teams['A234-1'].score = 150;
+  });
+  assert.equal((await ending.call('advanceTurn')).tieBreaker, true);
+  assert.equal(ending.match().status, 'playing');
+});
+
+test('presenter transitions reject missing or delayed client context before touching a newer attempt', async () => {
+  for (const action of ['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer']) {
+    for (const bad of [{ transition: undefined }, { transition: { phase: 'revealed', round: 0, revision: 3, questionId: 41, attemptId: 'old', requestId: 'old-request' } }]) {
+      const { h } = ordinaryAnswerFixture();
+      Object.assign(h.match().state, { phase: 'revealed', isCorrect: false, answer: { choice: 3 } });
+      const before = clone(h.match());
+      await assert.rejects(h.call(action, 'host', { correct: true, ...bad }), { code: 'failed-precondition' });
+      assert.deepEqual(h.match(), before);
+    }
+  }
+});
+
+test('pass and ordinary advance replay a lost-response request without advancing again', async () => {
+  for (const action of ['passToNextTeam', 'advanceTurn']) {
+    const { h } = ordinaryAnswerFixture();
+    Object.assign(h.match().state, { phase: 'revealed', isCorrect: false });
+    const transition = presenterContext(h.match().state, 'fixed-lost-response');
+    const first = await h.call(action, 'host', { transition });
+    const committed = clone(h.match());
+    assert.deepEqual(clone(await h.call(action, 'host', { transition })), clone(first));
+    assert.deepEqual(h.match(), committed);
+    await assert.rejects(h.call(action, 'host', { transition: { ...transition, round: 999 } }), { code: 'failed-precondition' });
+  }
+});
+
+test('reveal cannot score a stale answer if an answer or assistance commits after its read', async () => {
+  for (const mutation of ['answer', 'assist']) {
+    const { h } = ordinaryAnswerFixture();
+    h.afterRead((path) => {
+      if (path !== 'matchSecrets/A234') return;
+      h.afterRead(null);
+      h.match().state.revision += 1;
+      if (mutation === 'answer') { h.match().state.phase = 'locked'; h.match().state.answer = { choice: 3 }; }
+      else h.match().state.assistUsed = true;
+    });
+    await assert.rejects(h.call('judgeVerbal', 'host', { correct: true }), { code: 'failed-precondition' });
+    assert.equal(h.match().teams['A234-1'].score, 100);
+    assert.notEqual(h.match().state.phase, 'revealed');
+  }
+});
+
+test('reveal lost-response retries do not double-score and reject a changed adjudication', async () => {
+  const { h } = ordinaryAnswerFixture();
+  const transition = presenterContext(h.match().state, 'reveal-lost-response');
+  const payload = { transition, correct: true };
+  assert.equal((await h.call('judgeVerbal', 'host', payload)).correct, true);
+  const after = clone(h.match());
+  assert.equal((await h.call('judgeVerbal', 'host', payload)).correct, true);
+  assert.deepEqual(h.match(), after);
+  await assert.rejects(h.call('judgeVerbal', 'host', { ...payload, correct: false }), { code: 'failed-precondition' });
+});
+
+test('presenter may explicitly skip the displayed unanswered question without inventing a wrong answer', async () => {
+  const { h } = ordinaryAnswerFixture();
+  const transition = presenterContext(h.match().state, 'explicit-host-skip');
+  const reply = await h.call('advanceTurn', 'host', { transition, skipUnanswered: true });
+  assert.equal(reply.ended, false);
+  assert.equal(h.match().state.phase, 'choose');
+  assert.equal(h.match().teams['A234-1'].score, 100);
+  assert.equal(h.match().teams['A234-1'].wrongCount, undefined);
+  assert.deepEqual(clone(await h.call('advanceTurn', 'host', { transition, skipUnanswered: true })), clone(reply));
+  await assert.rejects(h.call('advanceTurn', 'host', { transition, skipUnanswered: false }), { code: 'failed-precondition' });
+});
+
+test('unavailable optional showdown preserves an explicit skip and its retry receipt', async () => {
+  const { h } = ordinaryAnswerFixture();
+  Object.assign(h.match(), { showdownCount: 0, challengeMode: 'classic' });
+  h.match().state.round = 6;
+  h.data.customQuestions = { 993001: { id: 993001, type: 'true_false', question: 'Hermes fixture', options: ['Yes', 'No'], answer: 0 } };
+  const bank = await h.helpers.questionBank();
+  h.data.questionExclusions = Object.fromEntries(bank.filter((q) => q.id !== 993001).map((q) => [q.id, true]));
+  const transition = presenterContext(h.match().state, 'skip-with-empty-showdown');
+  assert.equal((await h.call('advanceTurn', 'host', { transition, skipUnanswered: true })).ended, false);
+  assert.equal(h.match().state.phase, 'choose');
+  assert.equal((await h.call('advanceTurn', 'host', { transition, skipUnanswered: true })).ended, false);
+});
 
 test('ordinary answers require exact question attempt and revision context', async () => {
   for (const change of [{ questionId: undefined }, { questionId: 41 }, { attemptId: undefined }, { attemptId: 'old' }, { revision: undefined }, { revision: 3 }, { requestId: undefined }]) {
@@ -920,6 +1065,26 @@ test('exhausted rotation leaves selection usable and marks only that section ban
   assert.equal(h.match().typeCounts?.['A234-1']?.ct_rotation || 0, 0);
 });
 
+test('a non-swap card cannot spend balance or modify a replaced question after validation', async () => {
+  const { h } = ordinaryAnswerFixture();
+  Object.assign(h.match(), { timer: 30, questionsPerTeam: 8 });
+  Object.assign(h.match().state, { questionStartedAt: 1000, questionDuration: 30 });
+  Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { extraTime: true } });
+  let reads = 0;
+  h.afterRead((path) => {
+    if (path !== 'matches/A234' || ++reads !== 2) return;
+    h.afterRead(null);
+    h.match().state.question.id = 43;
+    h.match().state.revision += 1;
+  });
+  const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'extraTime' });
+  assert.equal(result.accepted, false);
+  assert.equal(result.reason, 'stale');
+  assert.equal(h.match().teams['A234-1'].cardBalance, 1000);
+  assert.equal(h.match().teams['A234-1'].powerCards.extraTime, true);
+  assert.equal(h.match().state.extraTimeUsed, undefined);
+});
+
 test('extra time rejects the exact deadline and later without spending balance or card', async () => {
   for (const clock of [21000, 30000]) {
     const h = harness();
@@ -1341,6 +1506,31 @@ test('owner contract: creation preflight rejects a section whose effective histo
   await assert.rejects(h.helpers.createMatch('host', { teamNames: ['Hermes QA One', 'Hermes QA Two'], enabledTypes: ['brand'], questionsPerTeam: 4 }), { code: 'failed-precondition' });
   assert.equal(JSON.stringify(h.data.questionRotation.host), before, 'preflight does not consume or clear history');
   assert.equal(Object.keys(h.data.matches).length, 1, 'no new lobby written');
+});
+
+test('owner contract: start rechecks effective capacity after another competition consumed the section', async () => {
+  const h = harness(true);
+  Object.assign(h.match(), { status: 'lobby', answerMode: 'host', enabledTypes: ['brand'], questionsPerTeam: 4, totalRounds: 8 });
+  h.match().state.phase = 'lobby';
+  const bank = (await h.helpers.questionBank()).filter((q) => q.type === 'brand' && !q.disabled);
+  h.data.questionRotation = { host: { games: [{ id: 'consumed-after-lobby', assets: bank.map(h.helpers.rotationAssetKey) }] } };
+  const history = JSON.stringify(h.data.questionRotation.host);
+  await assert.rejects(h.call('startMatch', 'host', { firstTeamCode: 'A234-1' }), { code: 'failed-precondition' });
+  assert.equal(h.match().status, 'lobby');
+  assert.equal(JSON.stringify(h.data.questionRotation.host), history);
+});
+
+test('start cannot revive a lobby ended after the initial room read', async () => {
+  const h = harness(true);
+  Object.assign(h.match(), { status: 'lobby', answerMode: 'host', enabledTypes: ['multiple_choice'], questionsPerTeam: 4, totalRounds: 8 });
+  h.match().state.phase = 'lobby';
+  h.afterRead((path) => {
+    if (path !== 'matches/A234') return;
+    h.afterRead(null);
+    h.match().status = 'ended'; h.match().state.phase = 'ended';
+  });
+  await assert.rejects(h.call('startMatch', 'host', { firstTeamCode: 'A234-1' }), { code: 'failed-precondition' });
+  assert.equal(h.match().status, 'ended');
 });
 
 test('owner contract: an exhausted section cannot trap a team behind the section cooldown', () => {

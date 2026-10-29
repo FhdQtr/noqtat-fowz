@@ -722,7 +722,7 @@ export default function HostRoom() {
             )}
             {st.phase === "question" && (
               <div className="flex gap-2 opacity-80">
-                <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-ghost-gold !text-sm !px-4 !py-2 flex items-center gap-2">
+                <button onClick={() => act(() => advanceTurn(code, match, true))} disabled={busy} className="btn-ghost-gold !text-sm !px-4 !py-2 flex items-center gap-2">
                   <SkipForward className="w-4 h-4" />
                   تخطي السؤال
                 </button>

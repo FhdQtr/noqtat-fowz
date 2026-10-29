@@ -443,24 +443,31 @@ export async function usePowerCard(
   }
 }
 
-export async function judgeVerbal(matchCode: string, _match: Match, correct: boolean) {
-  void _match;
-  await gameAction("judgeVerbal", { matchCode, correct });
+export function captureHostTransition(state: Match["state"], requestId = crypto.randomUUID()) {
+  return { questionId: state.question?.id ?? null, phase: state.phase, round: state.round || 0,
+    attemptId: `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`,
+    revision: state.revision || 0, requestId };
+}
+async function sendHostTransition(action: "judgeVerbal" | "revealAnswer" | "passToNextTeam" | "advanceTurn", matchCode: string, match: Match, extra = {}) {
+  const payload = { matchCode, ...extra, transition: captureHostTransition(match.state) };
+  // Freeze the displayed attempt and request ID across the one transport retry.
+  const send = () => gameAction(action, payload);
+  return send().catch(() => send());
+}
+export async function judgeVerbal(matchCode: string, match: Match, correct: boolean) {
+  await sendHostTransition("judgeVerbal", matchCode, match, { correct });
 }
 
-export async function revealAnswer(matchCode: string, _match: Match) {
-  void _match;
-  await gameAction("revealAnswer", { matchCode });
+export async function revealAnswer(matchCode: string, match: Match) {
+  await sendHostTransition("revealAnswer", matchCode, match);
 }
 
-export async function passToNextTeam(matchCode: string, _match: Match) {
-  void _match;
-  await gameAction("passToNextTeam", { matchCode });
+export async function passToNextTeam(matchCode: string, match: Match) {
+  await sendHostTransition("passToNextTeam", matchCode, match);
 }
 
-export async function advanceTurn(matchCode: string, _match: Match) {
-  void _match;
-  await gameAction("advanceTurn", { matchCode });
+export async function advanceTurn(matchCode: string, match: Match, skipUnanswered = false) {
+  await sendHostTransition("advanceTurn", matchCode, match, { skipUnanswered });
 }
 
 export async function endMatch(matchCode: string) {

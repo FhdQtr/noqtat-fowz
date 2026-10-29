@@ -18,6 +18,27 @@ test('client explicitly requests advisory ordinary timers, including a no-timer 
   assert.equal(calls[0].payload.options.timer, 0);
 });
 
+test('presenter APIs freeze turn context and reuse the same payload after a lost response', async () => {
+  const exports = {}, calls = [];
+  const start = raw.indexOf('export function captureHostTransition(');
+  const fragment = start < 0 ? raw.slice(raw.indexOf('export async function judgeVerbal('), raw.indexOf('export async function endMatch(')) : raw.slice(start, raw.indexOf('export async function endMatch('));
+  runInNewContext(ts.transpileModule(fragment, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
+    exports, crypto: { randomUUID: () => 'immutable-request' },
+    gameAction: async (action, payload) => {
+      calls.push(JSON.parse(JSON.stringify({ action, payload })));
+      if (calls.length % 2) throw new Error('response lost');
+      return { ok: true };
+    },
+  });
+  const state = { question: { id: 42 }, phase: 'revealed', round: 2, targetTeam: 'A234-1', passCount: 1, selectionRequestId: 'pick', revision: 7 };
+  for (const action of ['judgeVerbal', 'revealAnswer', 'passToNextTeam', 'advanceTurn']) {
+    await exports[action]('A234', { state }, true);
+    const pair = calls.slice(-2);
+    assert.deepEqual(pair[0], pair[1]);
+    assert.deepEqual(pair[0].payload.transition, { questionId: 42, phase: 'revealed', round: 2, attemptId: '2:A234-1:1:pick', revision: 7, requestId: 'immutable-request' });
+  }
+});
+
 test('ordinary API preserves captured context and retry identity on every request', async () => {
   const calls = [];
   const helper = api(async (action, payload) => { calls.push({ action, payload }); return { status: 'accepted' }; });

@@ -20,7 +20,7 @@ type ActionName =
   | "getPictureGuessView" | "judgePictureGuess" | "startPictureGuessTimer" | "adjustTeamScore" | "getGameCapabilities"
   | "createMatch" | "joinTeam" | "leaveMatch" | "startMatch" | "chooseType"
   | "submitAnswer" | "useAssist" | "judgeVerbal" | "revealAnswer"
-  | "passToNextTeam" | "advanceTurn" | "endMatch" | "deleteMatch" | "setCaptain"
+  | "passToNextTeam" | "advanceTurn" | "recheckSelectionCapacity" | "endMatch" | "deleteMatch" | "setCaptain"
   | "startChallenge" | "answerChallenge" | "usePowerCard" | "getMatch"
   | "submitHostAnswer" | "startQuestionTimer" | "setAnswerMode" | "getHostAnswer"
   | "submitShowdownAnswer" | "finishShowdown" | "getUsageStats" | "getTeamInvites"
@@ -330,18 +330,19 @@ export function typeProgress(match: Match, teamCode: string, type: QuestionType)
 export function sectionCycleProgress(match: Match, teamCode: string) {
   const saved = match.sectionCycleByTeam?.[teamCode];
   const previous = !saved && match.lastChosenTypeByTeam?.[teamCode];
-  const activeTypes = match.enabledTypes.filter((type) => !match.rotationBlocked?.[teamCode]?.[type]?.bank);
+  const activeTypes = match.enabledTypes.filter((type) => !match.rotationBlocked?.[teamCode]?.[type]?.bank
+    && (match.typeCounts?.[teamCode]?.[type] || 0) < typeCap(match, type));
   const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => activeTypes.includes(type));
   const completed = activeTypes.length > 0 && activeTypes.every((type) => used.includes(type));
   return { used: completed ? [] : used, number: (saved?.number || 1) + (completed ? 1 : 0), remaining: completed ? activeTypes.length : activeTypes.length - used.length };
 }
 
-export async function chooseType(matchCode: string, type: QuestionType, match: Match): Promise<"accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {
+export async function chooseType(matchCode: string, type: QuestionType, match: Match): Promise<"accepted" | "late" | "busy" | "cap" | "empty" | "rotation" | "cooldown" | "error"> {
   const requestId = typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const payload = { matchCode, type, requestId, transition: captureHostTransition(match.state, requestId) };
-  const send = () => gameAction<{ status: "accepted" | "late" | "cap" | "empty" | "rotation" | "cooldown" }>("chooseType", payload);
+  const send = () => gameAction<{ status: "accepted" | "late" | "busy" | "cap" | "empty" | "rotation" | "cooldown" }>("chooseType", payload);
   try {
     const result = await send();
     return result.status;
@@ -453,7 +454,7 @@ export function captureHostTransition(state: Match["state"], requestId: string =
     attemptId: `${state.round || 0}:${state.targetTeam || ""}:${state.passCount || 0}:${state.selectionRequestId || ""}`,
     revision: state.revision || 0, requestId };
 }
-async function sendHostTransition(action: "judgeVerbal" | "revealAnswer" | "passToNextTeam" | "advanceTurn", matchCode: string, match: Match, extra = {}) {
+async function sendHostTransition(action: "judgeVerbal" | "revealAnswer" | "passToNextTeam" | "advanceTurn" | "recheckSelectionCapacity", matchCode: string, match: Match, extra = {}) {
   const payload = { matchCode, ...extra, transition: captureHostTransition(match.state) };
   // Freeze the displayed attempt and request ID across the one transport retry.
   const send = () => gameAction(action, payload);
@@ -473,6 +474,10 @@ export async function passToNextTeam(matchCode: string, match: Match) {
 
 export async function advanceTurn(matchCode: string, match: Match, skipUnanswered = false) {
   await sendHostTransition("advanceTurn", matchCode, match, { skipUnanswered });
+}
+
+export async function recheckSelectionCapacity(matchCode: string, match: Match) {
+  await sendHostTransition("recheckSelectionCapacity", matchCode, match);
 }
 
 export async function endMatch(matchCode: string) {

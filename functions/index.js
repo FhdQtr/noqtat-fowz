@@ -306,12 +306,14 @@ async function rotateQuestion(pool, matchId, owner, allBank = null, requestId = 
       // Conservative capacity: no promise of mid-game cycle rollover and no
       // counting paraphrases/image aliases as independent questions. No writes.
       const seen = new Set();
-      return fresh.filter((question) => {
+      const questions = fresh.filter((question) => {
         const keys = [...aliasesFor(question)];
         const distinct = !keys.some((key) => seen.has(key));
         keys.forEach((key) => seen.add(key));
         return distinct;
       });
+      return inspectOnly === "capacity" ? { questions,
+        heldTypes: [...new Set(withoutRecent.filter((q) => [...aliasesFor(q)].some((key) => pendingAssets.has(key))).map((q) => q.type))] } : questions;
     }
     const available = fresh;
     if (!available.length) return current;
@@ -539,7 +541,8 @@ async function punishmentAction(uid, data, id, match) {
 function sectionCycle(match, teamCode) {
   const saved = match.sectionCycleByTeam?.[teamCode];
   const previous = !saved && match.lastChosenTypeByTeam?.[teamCode];
-  const activeTypes = match.enabledTypes.filter((type) => !match.rotationBlocked?.[teamCode]?.[type]?.bank);
+  const activeTypes = match.enabledTypes.filter((type) => !match.rotationBlocked?.[teamCode]?.[type]?.bank
+    && (match.typeCounts?.[teamCode]?.[type] || 0) < typeCap(match, type));
   const used = [...new Set(Object.values(saved?.used || (previous ? [previous] : [])))].filter((type) => activeTypes.includes(type));
   const completed = activeTypes.length > 0 && activeTypes.every((type) => used.includes(type));
   return { used: completed ? [] : used, number: (Number(saved?.number) || 1) + (completed ? 1 : 0) };
@@ -878,6 +881,62 @@ async function readQuestionSecret(id, state) {
   return secretForState((await db.ref(`matchSecrets/${id}`).get()).val(), state);
 }
 
+async function markSectionUnavailable(id, match, teamCode, type) {
+  // An obsolete empty result must never disable a section in a newer turn.
+  return db.ref(`matches/${id}`).transaction((current) => {
+    if (!current) return current;
+    if (current.status !== "playing" || !sameTurnContext(current, match)
+      || current.state.phase !== "choose" || current.state.question) return;
+    current.rotationBlocked ||= {};
+    current.rotationBlocked[teamCode] ||= {};
+    current.rotationBlocked[teamCode][type] = { bank: true };
+    return current;
+  }, undefined, false);
+}
+
+async function recheckSelectionCapacity(id, match, transitionKey) {
+  if (match.status !== "playing" || match.state.phase !== "choose" || match.state.question) {
+    fail("failed-precondition", "إعادة فحص السعة متاحة عند اختيار القسم فقط");
+  }
+  const owner = match.hostUid;
+  await settleRotationReservations(owner);
+  const bank = await questionBank();
+  const usedIds = new Set(match.state.usedIds || []), usedAssets = new Set(match.state.usedAssets || []);
+  const pool = bank.filter((q) => !q.disabled && match.enabledTypes.includes(q.type)
+    && !usedIds.has(q.id) && !usedAssets.has(questionAssetKey(q)));
+  const inspection = pool.length ? await rotateQuestion(pool, rotationGameId(id, match), owner, bank, null, "capacity")
+    : { questions: [], heldTypes: [] };
+  const fresh = new Set(inspection.questions.map((q) => q.type)), held = new Set(inspection.heldTypes);
+  let response;
+  const result = await db.ref(`matches/${id}`).transaction((current) => {
+    response = undefined;
+    if (!current) return current;
+    if (current.state?.hostTransition?.key === transitionKey) { response = current.state.hostTransition.result; return current; }
+    if (!sameTurnContext(current, match) || current.status !== "playing"
+      || (current.state.selectionLease?.expiresAt > now()) || current.state.cardClaimId) return;
+    const team = current.state.targetTeam;
+    current.rotationBlocked ||= {};
+    current.rotationBlocked[team] ||= {};
+    for (const type of current.enabledTypes) {
+      // A live pending hold is retryable contention, not an exhausted section.
+      if (type === "punishment" || fresh.has(type) || held.has(type)) delete current.rotationBlocked[team][dbKey(type)];
+      else current.rotationBlocked[team][dbKey(type)] = { bank: true };
+    }
+    const usable = current.enabledTypes.filter((type) => !current.rotationBlocked[team][dbKey(type)]?.bank
+      && (current.typeCounts?.[team]?.[type] || 0) < typeCap(current, type));
+    const available = usable.some((type) => type === "punishment" || fresh.has(type));
+    const busy = !available && usable.some((type) => held.has(type));
+    if (available) delete current.state.selectionPause;
+    else current.state.selectionPause = { reason: busy ? "busy" : "capacity", at: now() };
+    response = { available, busy };
+    current.state.revision = (current.state.revision || 0) + 1;
+    current.state.hostTransition = { key: transitionKey, result: response };
+    return current;
+  }, undefined, false);
+  if (!result.committed || !response) fail("failed-precondition", "تغيّر الدور أو يوجد اختيار قيد التنفيذ؛ حدّث الشاشة وأعد المحاولة");
+  return response;
+}
+
 async function chooseType(uid, data) {
   const { id, match, access } = await loadMatch(data.matchCode);
   const type = text(data.type, 50);
@@ -903,10 +962,16 @@ async function chooseType(uid, data) {
   const usedAssets = new Set(match.state.usedAssets || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
   const teamPool = candidates.filter((q) => q.type === type && !q.disabled && !teamUsedIds.has(q.id));
-  if (!teamPool.length) return { status: "empty" };
+  if (!teamPool.length) {
+    await markSectionUnavailable(id, match, teamCode, typeKey);
+    return { status: "empty" };
+  }
   // ممنوع تكرار السؤال أو الصورة نفسها بين الفرق داخل المسابقة.
   const pool = teamPool.filter((q) => !usedIds.has(q.id) && !usedAssets.has(questionAssetKey(q)));
-  if (!pool.length) return { status: "empty" };
+  if (!pool.length) {
+    await markSectionUnavailable(id, match, teamCode, typeKey);
+    return { status: "empty" };
+  }
 
   // سجل دائم للمقدم: لا نكرر السؤال بين المسابقات حتى ينتهي مخزون القسم.
   const historyOwner = match.hostUid || uid;
@@ -951,6 +1016,7 @@ async function chooseType(uid, data) {
     const nextState = {
       ...latestState,
       phase: "question",
+      selectionPause: null,
       round: latestState.round + 1,
       targetTeam: teamCode,
       originalTeam: teamCode,
@@ -1013,9 +1079,9 @@ async function chooseType(uid, data) {
     });
     return { status: "accepted" };
   } catch (error) {
-    if (error.code === "unavailable") return { status: "late", reason: "busy" };
+    if (error.code === "unavailable") return { status: "busy" };
     if (error.code === "resource-exhausted") {
-      await db.ref(`matches/${id}/rotationBlocked/${teamCode}/${typeKey}/bank`).set(true);
+      await markSectionUnavailable(id, match, teamCode, typeKey);
       return { status: "rotation" };
     }
     throw error;
@@ -1808,11 +1874,12 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
 
   requireHost(match, uid);
   let transitionKey = null;
-  if (["passToNextTeam", "advanceTurn", "judgeVerbal", "revealAnswer"].includes(action)) {
+  if (["passToNextTeam", "advanceTurn", "judgeVerbal", "revealAnswer", "recheckSelectionCapacity"].includes(action)) {
     transitionKey = hostTransitionKey(data);
     if (transitionKey && match.state.hostTransition?.key === transitionKey) return match.state.hostTransition.result;
     if (!transitionKey || !hostTransitionMatches(match.state, data.transition)) fail("failed-precondition", "تغيّر السؤال أو الدور؛ حدّث الشاشة وأعد المحاولة");
   }
+  if (action === "recheckSelectionCapacity") return recheckSelectionCapacity(id, match, transitionKey);
   if (action === "startMatch") {
     const first = code(data.firstTeamCode);
     if (!match.teams[first] || match.status !== "lobby") fail("failed-precondition", "لا يمكن بدء الميدان");

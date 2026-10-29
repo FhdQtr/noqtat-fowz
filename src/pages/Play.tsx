@@ -20,6 +20,7 @@ import { ANSWER_LETTERS } from "../lib/answers";
 import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import PowerCardsWallet from "../components/PowerCardsWallet";
 import PowerCardEvent from "../components/PowerCardEvent";
+import SelectionRecovery from "../components/SelectionRecovery";
 import ShowdownPanel from "../components/ShowdownPanel";
 import { useShowdownFinish } from "../lib/useShowdownFinish";
 
@@ -91,6 +92,8 @@ export default function Play() {
   const answerMode = match?.answerMode ?? "anyone";
   const canChooseType = answerMode !== "representative" || captainId === player?.id;
   const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
+  const selectionPaused = st?.phase === "choose" && (Boolean(st.selectionPause)
+    || Boolean(match && st.targetTeam && !match.enabledTypes.some((type) => typeProgress(match, st.targetTeam!, type).available)));
   const modeAllowsAnswer = answerMode === "host"
     ? false
     : answerMode === "representative"
@@ -188,10 +191,11 @@ export default function Play() {
     let accepted = false;
     try {
       const res = await chooseType(matchCode, t, match);
-      if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
+      if (res === "late") setChooseMsg("تغيّر الدور أو يوجد اختيار قيد التنفيذ؛ انتظر تحديث الشاشة ثم أعد المحاولة");
+      else if (res === "busy") setChooseMsg("ميدان آخر للمقدم يحجز الأسئلة مؤقتًا؛ انتظر قليلًا ثم أعد المحاولة أو اطلب من المقدم إعادة فحص المخزون");
       else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
       else if (res === "cooldown") setChooseMsg("اخترتم هذا القسم في الدورة الحالية؛ أكملوا جميع الأقسام أولًا حتى تنفتح من جديد");
-      else if (res === "empty") setChooseMsg("لا توجد أسئلة متاحة من هذا النوع والمستوى");
+      else if (res === "empty") setChooseMsg("لا توجد أسئلة جديدة في هذا القسم؛ اختاروا قسمًا آخر أو راجعوا المقدم لإعادة فحص المخزون");
       else if (res === "rotation") setChooseMsg("لا يوجد سؤال يحقق دورة القسم واستبعاد آخر 10 مسابقات — اختاروا قسمًا آخر أو أوقفوا اللعب لدى المقدم لتعديل الإعداد في ميدان جديد؛ لن نكرر سؤالًا حديثًا");
       else if (res === "error") setChooseMsg("تعذّر تحميل السؤال — اضغط مرة أخرى");
       else if (res === "accepted") {
@@ -386,7 +390,11 @@ export default function Play() {
         )}
 
         {/* ═══ اختيار نوع السؤال ═══ */}
-        {match.status === "playing" && st!.phase === "choose" && (
+        {match.status === "playing" && st!.phase === "choose" && st!.targetTeam && (
+          <SelectionRecovery paused={selectionPaused}
+            busyInventory={st!.selectionPause?.reason === "busy"} />
+        )}
+        {match.status === "playing" && st!.phase === "choose" && !selectionPaused && (
           isMyChoose ? (
             <div className="w-full flex flex-col gap-4 animate-fade-up">
               <div className="text-center">

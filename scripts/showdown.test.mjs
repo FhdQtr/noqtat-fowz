@@ -1301,6 +1301,106 @@ test('two simultaneous punishment drafts cannot mismatch prompt and private answ
 });
 
 
+test('host capacity recovery pauses exhausted selections and restores newly eligible content without clearing history', async () => {
+  const h = harness(true);
+  const q = { id: 996003, type: 'ct_recover', category: 'custom', question: 'Used capacity fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  await h.helpers.rotateQuestion([q], 'previous', 'host');
+  Object.assign(h.match(), { enabledTypes: ['ct_recover'], turnIndex: 0, typeCaps: { ct_recover: 4 },
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] } });
+  const history = clone(h.data.questionRotation);
+  const send = () => h.call('recheckSelectionCapacity', 'host', { transition: presenterContext(h.match().state, 'capacity-recheck') });
+  assert.equal((await send()).available, false);
+  assert.equal(h.match().state.selectionPause.reason, 'capacity');
+  assert.equal(h.match().rotationBlocked['A234-1'].ct_recover.bank, true);
+  assert.deepEqual(h.data.questionRotation, history);
+  const q2 = { ...q, id: 996004, question: 'Fresh capacity fixture' };
+  h.data.customQuestions[q2.id] = q2;
+  assert.equal((await send()).available, true);
+  assert.equal(h.match().state.selectionPause ?? null, null);
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_recover?.bank, undefined);
+  assert.deepEqual(h.data.questionRotation, history);
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_recover' })).status, 'accepted');
+  assert.equal(h.match().state.question.id, q2.id);
+});
+
+test('capacity recovery is host-only, contextual, immutable on retry and fenced against a changed turn', async () => {
+  const h = logoFixture();
+  const transition = presenterContext(h.match().state, 'capacity-command');
+  await assert.rejects(h.call('recheckSelectionCapacity', 'user1', { transition }), { code: 'permission-denied' });
+  await assert.rejects(h.call('recheckSelectionCapacity', 'host'), { code: 'failed-precondition' });
+  const response = await h.call('recheckSelectionCapacity', 'host', { transition });
+  const accepted = clone(h.match());
+  assert.deepEqual(clone(await h.call('recheckSelectionCapacity', 'host', { transition })), clone(response));
+  assert.deepEqual(h.match(), accepted);
+  const next = presenterContext(h.match().state, 'capacity-stale');
+  h.afterRead((path) => {
+    if (path !== 'questionDeletions') return;
+    h.afterRead(null); h.match().status = 'ended'; h.match().state.phase = 'ended';
+  });
+  await assert.rejects(h.call('recheckSelectionCapacity', 'host', { transition: next }), { code: 'failed-precondition' });
+  assert.equal(h.match().state.phase, 'ended');
+});
+
+test('capacity recovery distinguishes held inventory and never persistently blocks a busy section', async () => {
+  const h = harness(true);
+  const q = { id: 996005, type: 'ct_busy', category: 'custom', question: 'Held capacity fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  Object.assign(h.match(), { enabledTypes: ['ct_busy'], turnIndex: 0, typeCaps: { ct_busy: 4 },
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] } });
+  h.data.matches.B345 = { status: 'playing' };
+  await h.helpers.rotateQuestion([q], 'other-game', 'host', [q], 'held-selection', false, 'B345');
+  const result = await h.call('recheckSelectionCapacity', 'host', { transition: presenterContext(h.match().state, 'held-capacity') });
+  assert.equal(result.busy, true);
+  assert.equal(h.match().state.selectionPause.reason, 'busy');
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_busy?.bank, undefined);
+  h.setClock(40000);
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_busy' })).status, 'accepted');
+  assert.equal(h.match().state.selectionPause ?? null, null, 'successful publication must clear the pause');
+});
+
+test('a temporarily held section returns busy, not a teammate lost-selection claim', async () => {
+  const h = harness(true);
+  const q = { id: 996006, type: 'ct_held_pick', category: 'custom', question: 'Concurrent held pick fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  Object.assign(h.match(), { enabledTypes: ['ct_held_pick'], turnIndex: 0, typeCaps: { ct_held_pick: 4 },
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] } });
+  h.data.matches.B345 = { status: 'playing' };
+  await h.helpers.rotateQuestion([q], 'other-game', 'host', [q], 'held-pick', false, 'B345');
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_held_pick' })).status, 'busy');
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_held_pick?.bank, undefined);
+});
+
+test('pure current-match empty section is marked without consuming history or counters', async () => {
+  const h = harness(true);
+  const q = { id: 996001, type: 'ct_empty', category: 'custom', question: 'Only fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  Object.assign(h.match(), { enabledTypes: ['ct_empty', 'multiple_choice'], turnIndex: 0,
+    state: { phase: 'choose', round: 1, targetTeam: 'A234-1', usedIds: [q.id], usedAssets: [] } });
+  const before = clone(h.data.questionRotation || {});
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_empty' })).status, 'empty');
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_empty?.bank, true);
+  assert.equal(h.match().typeCounts?.['A234-1']?.ct_empty || 0, 0);
+  assert.deepEqual(h.data.questionRotation || {}, before);
+});
+
+test('stale exhausted draw cannot mark a section after the room has ended', async () => {
+  const h = harness(true);
+  const q = { id: 996002, type: 'ct_stale', category: 'custom', question: 'Recent fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  await h.helpers.rotateQuestion([q], 'previous', 'host');
+  Object.assign(h.match(), { enabledTypes: ['ct_stale'], turnIndex: 0,
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] } });
+  h.afterRead((path) => {
+    if (path !== 'questionRotation/host') return;
+    h.afterRead(null);
+    h.match().status = 'ended'; h.match().state.phase = 'ended';
+  });
+  await h.call('chooseType', 'user1', { type: 'ct_stale' });
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_stale?.bank, undefined);
+  assert.equal(h.match().state.phase, 'ended');
+});
+
 test('exhausted rotation leaves selection usable and marks only that section bank', async () => {
   const h = harness();
   const question = { id: 900001, type: 'ct_rotation', category: 'custom', level: 'easy', question: 'السؤال الوحيد', options: ['أ', 'ب', 'ج', 'د'], answer: 0 };
@@ -1465,7 +1565,7 @@ test('all enabled sections must be used per team before any section repeats', as
 
 test('single-section cycle resets and card prices match the client at all match lengths', () => {
   const h = harness();
-  const single = { enabledTypes: ['flag'], sectionCycleByTeam: {} };
+  const single = { enabledTypes: ['flag'], teamOrder: ['one', 'two'], questionsPerTeam: 4, totalRounds: 8, sectionCycleByTeam: {} };
   single.sectionCycleByTeam.one = h.helpers.nextSectionCycle(single, 'one', 'flag');
   assert.equal(h.helpers.sectionCycle(single, 'one').used.length, 0);
   assert.equal(single.sectionCycleByTeam.one.number, 2);
@@ -1783,6 +1883,22 @@ test('start cannot revive a lobby ended after the initial room read', async () =
   assert.equal(h.match().status, 'ended');
 });
 
+test('capped sections are excluded from cooldown on server and client', () => {
+  const h = harness(true);
+  const match = { enabledTypes: ['ct_open', 'ct_capped'], questionsPerTeam: 4, totalRounds: 8, teamOrder: ['one','two'],
+    typeCaps: { ct_open: 4, ct_capped: 1 }, typeCounts: { one: { ct_open: 1, ct_capped: 1 } },
+    sectionCycleByTeam: { one: { number: 2, used: ['ct_open'] } } };
+  assert.equal(h.helpers.sectionCycle(match, 'one').used.includes('ct_open'), false);
+  const file = readFileSync(new URL('../src/lib/matchApi.ts', import.meta.url), 'utf8');
+  const block = file.slice(file.indexOf('export function sectionCycleProgress'), file.indexOf('export async function chooseType'));
+  const client = {};
+  runInNewContext(ts.transpileModule(block, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
+    exports: client, typeCap: (m, t) => m.typeCaps[t],
+  });
+  assert.equal(client.sectionCycleProgress(match, 'one').used.includes('ct_open'), false);
+  assert.equal(client.sectionCycleProgress(match, 'one').remaining, 1);
+});
+
 test('owner contract: an exhausted section cannot trap a team behind the section cooldown', () => {
   const h = harness(true);
   const match = { enabledTypes: ['ct_a', 'ct_b'], questionsPerTeam: 8, totalRounds: 16, teamOrder: ['one', 'two'], sectionCycleByTeam: { one: { number: 1, used: ['ct_a'] } }, rotationBlocked: { one: { ct_b: { bank: true } } } };
@@ -1790,7 +1906,7 @@ test('owner contract: an exhausted section cannot trap a team behind the section
   const file = readFileSync(new URL('../src/lib/matchApi.ts', import.meta.url), 'utf8');
   const block = file.slice(file.indexOf('export function sectionCycleProgress'), file.indexOf('export async function chooseType'));
   const client = {};
-  runInNewContext(ts.transpileModule(block, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: client });
+  runInNewContext(ts.transpileModule(block, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: client, typeCap: (m, t) => m.typeCaps?.[t] ?? 4 });
   assert.equal(client.sectionCycleProgress(match, 'one').used.includes('ct_a'), false);
   assert.equal(client.sectionCycleProgress(match, 'one').remaining, 1);
 });

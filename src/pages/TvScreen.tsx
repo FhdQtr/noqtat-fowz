@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap } from "lucide-react";
-import { getTeamInvites, revealQuestionPrompt, subscribeMatch } from "../lib/matchApi";
+import { getTeamInvites, revealQuestionPrompt, subscribeMatch, typeProgress } from "../lib/matchApi";
+import SelectionRecovery from "../components/SelectionRecovery";
 import type { Match } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion, usesVerbalChoices } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
@@ -133,6 +134,8 @@ export default function TvScreen() {
     );
 
   const st = match.state;
+  const selectionPaused = st.phase === "choose" && (Boolean(st.selectionPause)
+    || Boolean(st.targetTeam && !match.enabledTypes.some((type) => typeProgress(match, st.targetTeam!, type).available)));
   const teams = match.teamOrder.map((c) => match.teams[c]).filter(Boolean);
   const chooseTeam =
     (st.targetTeam ? match.teams[st.targetTeam] : null) ??
@@ -224,7 +227,11 @@ export default function TvScreen() {
         )}
 
         {/* ═══ بين الأسئلة / اختيار النوع ═══ */}
-        {match.status === "playing" && (st.phase === "lobby" || st.phase === "choose" || !st.question) && st.phase !== "showdown" && st.phase !== "showdown_revealed" && (
+        {match.status === "playing" && st.phase === "choose" && st.targetTeam && (
+          <SelectionRecovery tv paused={selectionPaused}
+            busyInventory={st.selectionPause?.reason === "busy"} />
+        )}
+        {match.status === "playing" && (st.phase === "lobby" || st.phase === "choose" || !st.question) && st.phase !== "showdown" && st.phase !== "showdown_revealed" && !selectionPaused && (
           <div className="text-center animate-fade-up">
             <p className="text-muted-foreground text-xl mb-4">
               {st.phase === "choose" ? "الفريق يختار نوع السؤال من أجهزتهم…" : "استعدوا… السؤال القادم لفريق"}

@@ -121,6 +121,7 @@ export interface ShowdownState {
 
 export interface GameState {
   revision?: number; // Answer contract revision; old rooms default to zero.
+  selectionPause?: { reason: "capacity" | "busy"; at: number } | null;
   phase: MatchPhase;
   round: number; // رقم السؤال
   targetTeam: string | null; // الفريق صاحب السؤال الحالي

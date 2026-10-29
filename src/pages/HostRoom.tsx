@@ -9,7 +9,7 @@ import {
   subscribeMatch, startMatch, revealAnswer, judgeVerbal,
   passToNextTeam, advanceTurn, endMatch, deleteMatch, setCaptain,
   setAnswerMode, submitHostAnswer, startQuestionTimer, useAssist as requestAssist,
-  getHostAnswerDetails, isShowdownDue, getTeamInvites, revealQuestionPrompt,
+  getHostAnswerDetails, isShowdownDue, getTeamInvites, revealQuestionPrompt, recheckSelectionCapacity, typeProgress,
 } from "../lib/matchApi";
 import type { TeamInvites, HostAnswerDetails } from "../lib/matchApi";
 import type { AnswerMode, Match } from "../types/game";
@@ -26,6 +26,7 @@ import ShowdownPanel from "../components/ShowdownPanel";
 import { useShowdownFinish } from "../lib/useShowdownFinish";
 import PunishmentPanel from "../components/PunishmentPanel";
 import ScoreAdjustmentPanel from "../components/ScoreAdjustmentPanel";
+import SelectionRecovery from "../components/SelectionRecovery";
 
 const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
 
@@ -34,6 +35,7 @@ export default function HostRoom() {
   const nav = useNavigate();
   const [match, setMatch] = useState<Match | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const [capacityError, setCapacityError] = useState("");
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [connErr, setConnErr] = useState("");
@@ -493,14 +495,26 @@ export default function HostRoom() {
                 </span>
               </div>
               <p className="mt-3 text-sm text-gold-light/90 font-cairo font-bold">
-                {match.answerMode === "representative"
-                  ? "اختيار نوع السؤال متاح فقط لممثل الفريق من جهازه"
-                  : "اختيار نوع السؤال متاح فقط لأعضاء الفريق من أجهزتهم"}
+                {st.selectionPause || !match.enabledTypes.some((type) => typeProgress(match, chooseTeam.code, type).available)
+                  ? "توقف الاختيار لحماية تنوع الأسئلة — استخدم إعادة فحص المخزون أدناه"
+                  : match.answerMode === "representative"
+                    ? "اختيار نوع السؤال متاح فقط لممثل الفريق من جهازه"
+                    : "اختيار نوع السؤال متاح فقط لأعضاء الفريق من أجهزتهم"}
               </p>
             </div>
           )}
 
-          {chooseTeam && (
+          {chooseTeam && match.status === "playing" && st.phase === "choose" && (
+            <>
+              <SelectionRecovery host paused={Boolean(st.selectionPause) || !match.enabledTypes.some((type) => typeProgress(match, chooseTeam.code, type).available)}
+                busyInventory={st.selectionPause?.reason === "busy"} pending={busy}
+                onRecheck={() => { setCapacityError(""); void act(() => recheckSelectionCapacity(code, match)).catch(() => setCapacityError("تعذّر فحص المخزون. تحقق من الاتصال وحدّث حالة الميدان ثم أعد المحاولة؛ لا حاجة لمسح التاريخ.")); }}
+                onEnd={() => { if (window.confirm("إنهاء الميدان غير المكتمل بالنقاط الحالية؟ لن يُحذف سجل الأسئلة. يمكنك اختيار أقسام أخرى في ميدان جديد.")) void act(() => endMatch(code)).catch(() => setCapacityError("تعذّر إنهاء الميدان؛ تحقق من الاتصال وأعد المحاولة.")); }} />
+              {capacityError && <p role="alert" className="max-w-lg text-center text-sm text-gold-light">{capacityError}</p>}
+            </>
+          )}
+
+          {chooseTeam && !st.selectionPause && match.enabledTypes.some((type) => typeProgress(match, chooseTeam.code, type).available) && (
             <div className="glass-card flex w-full max-w-lg flex-col items-center gap-3 px-6 py-8 text-center">
               <Users className="h-10 w-10 text-gold-light" />
               <p className="font-cairo text-lg font-black text-foreground">بانتظار اختيار الفريق…</p>

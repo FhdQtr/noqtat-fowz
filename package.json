@@ -15,7 +15,7 @@
     "test:picture-ui": "node --test scripts/picture-guess-ui.test.mjs",
     "preview": "vite preview",
     "test:admin": "node --test scripts/admin-auth.test.mjs",
-    "test:connection": "node --test scripts/connection.test.mjs scripts/ordinary-answer-ui.test.mjs scripts/content-review.test.mjs"
+    "test:connection": "node --test scripts/connection.test.mjs scripts/ordinary-answer-ui.test.mjs scripts/content-review.test.mjs scripts/backend-policy.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

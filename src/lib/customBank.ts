@@ -3,7 +3,7 @@
 // يُخزَّن في Realtime Database ويُدمج مع البنك الأصلي في السحب
 // ═══════════════════════════════════════════════════════════
 import { ref, set, update, remove, onValue, type Unsubscribe } from "firebase/database";
-import { db, ensureAuth } from "./firebase";
+import { backend, db, ensureAuth } from "./firebase";
 import { registerTypeLabels } from "../types/game";
 import type { Question, CustomType } from "../types/game";
 import type { BrandInfo } from "./matchApi";
@@ -31,6 +31,7 @@ function emit() {
 
 /** يشتغل مرة وحدة — يبقي نسخة محلية محدثة من البنك المخصص */
 function startTypeSync() {
+  if (backend.mode === "disabled") return;
   if (typesStarted) return;
   typesStarted = true;
   void ensureAuth().then(() => {
@@ -44,6 +45,7 @@ function startTypeSync() {
 }
 
 function startQuestionSync() {
+  if (backend.mode === "disabled") return;
   if (questionsStarted) return;
   questionsStarted = true;
   void ensureAuth().then(() => {

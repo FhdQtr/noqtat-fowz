@@ -2,6 +2,31 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+test('first sourced Qatar sports batch has four unique reviewed items with honest editorial difficulty', () => {
+  const review = JSON.parse(readFileSync(new URL('../src/data/editorialSportsBatch1.json', import.meta.url), 'utf8'));
+  assert.equal(review.entries.length, 4);
+  assert.deepEqual(review.entries.map((e) => e.id), [410001,410002,410003,410004]);
+  for (const entry of review.entries) {
+    const q = bank.find((q) => q.id === entry.id);
+    assert.ok(q && !q.disabled);
+    assert.equal(q.category, 'sports');
+    assert.equal(q.options[q.answer], entry.correctAnswer);
+    assert.equal(q.editorialDifficulty, entry.difficulty);
+    assert.ok(['medium','hard'].includes(entry.difficulty));
+    assert.ok(q.conceptId && entry.sourceUrl.startsWith('https://www.olympics.com/'));
+    assert.ok(entry.evidenceQuote && entry.rationale);
+    assert.equal(new Set(q.options.map(normalize)).size, 4);
+  }
+});
+
+test('published built-in counters match every enabled bank type after editorial refresh', async () => {
+  const { BUILTIN_QUESTION_STATS, BUILTIN_QUESTION_COUNT } = await import('../src/data/questionStats.ts');
+  const counts = {};
+  for (const q of bank.filter((q) => !q.disabled)) counts[q.type] = (counts[q.type] || 0) + 1;
+  assert.deepEqual(BUILTIN_QUESTION_STATS, counts);
+  assert.equal(BUILTIN_QUESTION_COUNT, bank.filter((q) => !q.disabled).length);
+});
+
 const normalize = (s) => s.normalize('NFKC').replace(/[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed\u0640]/g,'').replace(/\s+/g,' ').trim();
 test('specific internally invalid or non-unique questions remain reversibly quarantined', () => {
   for (const id of [815,816,820,828,837,847,849,932,946]) {

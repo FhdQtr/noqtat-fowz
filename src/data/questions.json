@@ -823,6 +823,7 @@
   },
   {
     "id": 62,
+    "conceptId": "gcc-foundation-year",
     "type": "multiple_choice",
     "category": "culture",
     "question": "في أي عام أُسست دول مجلس التعاون الخليجي؟",
@@ -10616,6 +10617,7 @@
   },
   {
     "id": 826,
+    "conceptId": "riddle-light-water",
     "type": "riddle",
     "category": "riddles",
     "question": "ما هو الشيء الذي إذا دخل الماء لا يبتل؟",
@@ -10787,6 +10789,7 @@
   },
   {
     "id": 839,
+    "conceptId": "riddle-light-water",
     "type": "riddle",
     "category": "riddles",
     "question": "شيء يدخل الماء ولا يبتل؟",
@@ -11560,6 +11563,7 @@
   },
   {
     "id": 899,
+    "conceptId": "gcc-foundation-year",
     "type": "multiple_choice",
     "category": "gulf",
     "question": "في أي عام تأسس مجلس التعاون الخليجي؟",
@@ -18158,5 +18162,49 @@
         "شل"
       ]
     }
+  },
+  {
+    "id": 410001,
+    "type": "multiple_choice",
+    "category": "sports",
+    "conceptId": "tokyo2020-high-jump-final",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "qatar-sports-1",
+    "question": "ما الارتفاع الذي اجتازه معتز برشم وجانماركو تمبيري في نهائي الوثب العالي للرجال بأولمبياد طوكيو 2020 قبل تقاسمهما الذهب؟",
+    "options": ["2.31 متر", "2.35 متر", "2.37 متر", "2.39 متر"],
+    "answer": 2
+  },
+  {
+    "id": 410002,
+    "type": "multiple_choice",
+    "category": "sports",
+    "conceptId": "tokyo2020-high-jump-final",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "qatar-sports-1",
+    "question": "أي دولة مثّلها ماكسيم نيداسيكاو، صاحب برونزية الوثب العالي للرجال في أولمبياد طوكيو 2020؟",
+    "options": ["أوكرانيا", "بيلاروسيا", "بولندا", "جورجيا"],
+    "answer": 1
+  },
+  {
+    "id": 410003,
+    "type": "multiple_choice",
+    "category": "sports",
+    "conceptId": "tokyo2020-fares-weightlifting-final",
+    "editorialDifficulty": "medium",
+    "editorialBatch": "qatar-sports-1",
+    "question": "في أي فئة وزن أحرز الرباع القطري فارس إبراهيم ذهبية رفع الأثقال في أولمبياد طوكيو 2020؟",
+    "options": ["81 كجم", "96 كجم", "109 كجم", "73 كجم"],
+    "answer": 1
+  },
+  {
+    "id": 410004,
+    "type": "multiple_choice",
+    "category": "sports",
+    "conceptId": "tokyo2020-fares-weightlifting-final",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "qatar-sports-1",
+    "question": "كم بلغ مجموع الخطف والنتر الناجحين لفارس إبراهيم عند فوزه بذهبية فئة 96 كجم في أولمبياد طوكيو 2020؟",
+    "options": ["387 كجم", "395 كجم", "402 كجم", "410 كجم"],
+    "answer": 2
   }
 ]

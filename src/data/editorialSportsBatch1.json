@@ -1,0 +1,13 @@
+{
+  "batch": "qatar-sports-1",
+  "reviewedAt": "2026-10-29",
+  "reviewer": "Hermes editorial review; no independent human calibration",
+  "difficultyMeaning": "Editorial estimates, not measured player performance. No automatic difficulty progression.",
+  "scope": "Four original Arabic text questions, two conservative event families. Public-source facts read in full; no source images copied.",
+  "entries": [
+    {"id":410001,"correctAnswer":"2.37 متر","difficulty":"hard","sourceUrl":"https://www.olympics.com/en/news/qatar-s-mutaz-barshim-and-italy-s-gianmarco-tamberi-share-gold-in-the-men-s-high","evidenceFile":"evidence/olympics-barshim.md","evidenceQuote":"after each jumped 2.37m.","rationale":"Historical final height, not a current record; all alternatives use metres."},
+    {"id":410002,"correctAnswer":"بيلاروسيا","difficulty":"hard","sourceUrl":"https://www.olympics.com/en/news/qatar-s-mutaz-barshim-and-italy-s-gianmarco-tamberi-share-gold-in-the-men-s-high","evidenceFile":"evidence/olympics-barshim.md","evidenceQuote":"Belarusian Maksim Nedasekau","rationale":"Specifies the bronze athlete and Tokyo 2020; no ambiguity with the two gold medallists."},
+    {"id":410003,"correctAnswer":"96 كجم","difficulty":"medium","sourceUrl":"https://www.olympics.com/en/news/fares-el-bakh-makes-history-for-qatar-sets-new-olympic-record-to-take-gold-in-96","evidenceFile":"evidence/olympics-fares.md","evidenceQuote":"men's 96kg Weightlifting final of the Tokyo 2020 Games.","rationale":"Historical weight category explicitly tied to that edition, not current weight classes."},
+    {"id":410004,"correctAnswer":"402 كجم","difficulty":"hard","sourceUrl":"https://www.olympics.com/en/news/fares-el-bakh-makes-history-for-qatar-sets-new-olympic-record-to-take-gold-in-96","evidenceFile":"evidence/olympics-fares.md","evidenceQuote":"a massive combined score of 402","rationale":"Asks the combined successful snatch and clean-and-jerk total, not the failed 232kg attempt."}
+  ]
+}

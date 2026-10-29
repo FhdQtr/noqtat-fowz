@@ -197,6 +197,17 @@ async function rotateQuestion(pool, matchId, owner, allFlags = null) {
     return rotateFlagQuestion(pool, owner, flags);
   }
   const ref = db.ref(`questionRotation/${dbKey(owner)}`);
+  // Editorial families supplement lexical hashes; include every built-in sibling
+  // so histories written before concept metadata still block its paraphrases.
+  const families = new Map();
+  for (const question of [...QUESTIONS, ...pool]) {
+    if (!question.conceptId || question.image || question.video) continue;
+    const aliases = families.get(question.conceptId) || new Set();
+    aliases.add(legacyRotationAssetKey(question));
+    aliases.add(rotationAssetKey(question));
+    families.set(question.conceptId, aliases);
+  }
+  const aliasesFor = (question) => families.get(question.conceptId) || new Set([rotationAssetKey(question)]);
   const draw = randomInt(1000000);
   let selected;
   let reused = false;
@@ -206,16 +217,16 @@ async function rotateQuestion(pool, matchId, owner, allFlags = null) {
     if (!game) { game = { id: matchId, assets: [] }; games.push(game); }
     const recent = games.slice(-15);
     const currentAssets = new Set(Object.values(game.assets || {}));
-    const eligible = pool.filter((q) => !currentAssets.has(rotationAssetKey(q)));
+    const eligible = pool.filter((q) => ![...aliasesFor(q)].some((key) => currentAssets.has(key)));
     if (!eligible.length) return;
     const lastSeen = new Map();
     recent.forEach((entry, index) => Object.values(entry.assets || {}).forEach((asset) => lastSeen.set(asset, index)));
-    const fresh = eligible.filter((q) => !lastSeen.has(rotationAssetKey(q)));
+    const fresh = eligible.filter((q) => ![...aliasesFor(q)].some((key) => lastSeen.has(key)));
     reused = false;
     const available = fresh;
     if (!available.length) return;
     selected = available[draw % available.length];
-    game.assets = [...new Set([...Object.values(game.assets || {}), rotationAssetKey(selected)])];
+    game.assets = [...new Set([...Object.values(game.assets || {}), ...aliasesFor(selected)])];
     return { games: recent };
   }, undefined, false);
   if (!result.committed || !selected) fail("resource-exhausted", "نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة؛ اختر قسمًا آخر أو أضف أسئلة جديدة");
@@ -230,6 +241,10 @@ async function registerRotationMatch(owner, gameId) {
   }, undefined, false);
 }
 function rotationAssetKey(question) {
+  if (question.conceptId && !question.image && !question.video) return createHash("sha256").update(`concept:${question.conceptId}`).digest("hex");
+  return legacyRotationAssetKey(question);
+}
+function legacyRotationAssetKey(question) {
   const normalized = (value) => String(value || "").normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
   const asset = question.image ? `image:${question.image}` : question.video
     ? `video:${question.video.youtubeId}:${question.video.start}:${question.video.end}:${normalized(question.question)}`
@@ -679,16 +694,36 @@ async function joinTeam(uid, data) {
       if (duplicate.teamCode !== teamCode) fail("failed-precondition", "هذا الجهاز مسجل في فريق آخر");
       return { player: publicPlayer(duplicate) };
     }
-    const teamPlayers = Object.values(latestMatch.players || {}).filter((player) => player.teamCode === teamCode);
-    if (teamPlayers.length >= MAX_PLAYERS_PER_TEAM) fail("resource-exhausted", "اكتمل عدد لاعبي هذا الفريق");
-
-    const player = { id: `p_${now()}_${randomInt(100000, 999999)}`, name: text(data.name, 20) || "لاعب", teamCode, joinedAt: now() };
-    await db.ref().update({
-      [`matches/${id}/players/${player.id}`]: player,
-      [`matchAccess/${id}/playerUids/${player.id}`]: uid,
-    });
+    // Room-scoped deterministic identity makes a retry recover the same reservation
+    // if the process dies before its private UID mapping is persisted. Never publish UID.
+    const playerId = `p_${createHash("sha256").update(JSON.stringify([id, match.createdAt || 0, uid])).digest("hex").slice(0, 32)}`;
+    const proposedPlayer = { id: playerId, name: text(data.name, 20) || "لاعب", teamCode, joinedAt: now() };
+    let rejection;
+    const reserved = await db.ref(`matches/${id}`).transaction((current) => {
+      rejection = null;
+      if (!current) return current;
+      const existingPlayer = current.players?.[playerId];
+      if (existingPlayer) {
+        if (existingPlayer.teamCode !== teamCode) { rejection = "team"; return; }
+        return current;
+      }
+      if (current.status !== "lobby") { rejection = "closed"; return; }
+      if (!current.teams?.[teamCode]) { rejection = "team"; return; }
+      if (Object.values(current.players || {}).filter((p) => p.teamCode === teamCode).length >= MAX_PLAYERS_PER_TEAM) {
+        rejection = "full"; return;
+      }
+      current.players ||= {};
+      current.players[playerId] = proposedPlayer;
+      return current;
+    }, undefined, false);
+    if (!reserved.committed || !reserved.snapshot.val()?.players?.[playerId]) {
+      if (rejection === "full") fail("resource-exhausted", "اكتمل عدد لاعبي هذا الفريق");
+      fail("failed-precondition", rejection === "team" ? "هذا الجهاز مسجل في فريق آخر" : "أُغلق دخول الفرق بعد بدء المسابقة");
+    }
+    const player = reserved.snapshot.val().players[playerId];
+    await db.ref(`matchAccess/${id}/playerUids/${player.id}`).set(uid);
     await safelyRecordUsage(() => recordPlayerUsage(uid));
-    return { player };
+    return { player: publicPlayer(player) };
   } finally {
     await claimRef.remove();
   }
@@ -1196,7 +1231,12 @@ async function advance(id, match, skipShowdown = false) {
   const tied = candidates.filter((team) => match.teams[team].score === high);
   if (tied.length > 1) {
     const cycle = (match.tieBreaker?.cycle || 0) + 1;
-    await db.ref(`matches/${id}`).update({ totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false });
+    // A deciding cycle grants one extra pick per tied team, not a normal-game
+    // section cap. Preserve scoring counts and never reuse consumed questions.
+    const typeCaps = Object.fromEntries(match.enabledTypes.map((type) => [type, Math.max(typeCap(match, type), ...tied.map((team) => Number(match.typeCounts?.[team]?.[type]) || 0)) + 1]));
+    const sectionCycleByTeam = { ...(match.sectionCycleByTeam || {}) };
+    for (const team of tied) sectionCycleByTeam[team] = { used: [], number: (sectionCycle(match, team).number || 1) + 1 };
+    await db.ref(`matches/${id}`).update({ typeCaps, sectionCycleByTeam, totalRounds: state.round + tied.length, turnIndex: match.turnIndex + 1, tieBreaker: { active: true, teams: tied, cursor: 0, cycle }, "state/phase": "choose", "state/question": null, "state/answer": null, "state/isCorrect": null, "state/targetTeam": tied[0], "state/viewUntil": null, "state/questionStartedAt": null, "state/questionDuration": null, "state/selectionRequestId": null, "state/attemptedTeams": null, "state/answerClaimId": null, "state/cardClaimId": null, "state/assistUsed": false, "state/questionValue": null, "state/pointMultiplier": 1, "state/extraTimeUsed": false, "state/stealFullValue": false, "state/forcedPlayerId": null, "state/forcedPlayerName": null, "state/cardsFrozenTeam": null, "state/cardUsedThisTurn": false });
     return { ended: false, tieBreaker: true };
   }
   const endedAt = now();
@@ -1424,8 +1464,9 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "getTeamInvites") {
     const isHost = match.hostUid === uid;
     const isViewer = access.viewerKey && safeEqual(data.viewerKey, access.viewerKey);
-    // The simple audience code permits joining during the waiting room only.
-    if (!isHost && !isViewer && match.status !== "lobby") fail("permission-denied", "روابط الفرق للمقدم وشاشة العرض المصرح بها فقط");
+    // Knowing the public audience code grants viewing, not team membership.
+    // The host's keyed TV link can still display issued invitations in the lobby.
+    if (!isHost && !isViewer) fail("permission-denied", "روابط الفرق للمقدم وشاشة العرض المصرح بها فقط");
     return {
       teamKeys: access.teamKeys || {},
       shortTeamCodes: await shortTeamCodes(id, access),
@@ -1450,12 +1491,19 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     }
     const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
     if (!secret || secret.questionId !== state.question.id || !Array.isArray(secret.options)) return { accepted: false };
-    await db.ref(`matches/${id}/state/question`).update({
-      question: text(secret.question, 500),
-      options: secret.options.map((option) => text(option, 300)),
-      promptHidden: null,
-    });
-    return { accepted: true };
+    // A public TV may trigger this deterministic reveal, but never before its
+    // server time or for a replaced/answered question. No membership is granted.
+    const result = await db.ref(`matches/${id}`).transaction((current) => {
+      if (!current) return current;
+      const latest = current.state;
+      if (current.status !== "playing" || latest?.phase !== "question" || latest.answer || latest.question?.id !== secret.questionId || !latest.question.promptHidden || !latest.viewUntil || now() < latest.viewUntil || (latest.revision || 0) !== (state.revision || 0)) return;
+      latest.question.question = text(secret.question, 500);
+      latest.question.options = secret.options.map((option) => text(option, 300));
+      delete latest.question.promptHidden;
+      latest.revision = (latest.revision || 0) + 1;
+      return current;
+    }, undefined, false);
+    return { accepted: result.committed && Boolean(result.snapshot.val()?.state?.question && !result.snapshot.val().state.question.promptHidden) };
   }
   if (action === "leaveMatch") {
     const playerId = text(data.playerId, 80);
@@ -1473,12 +1521,18 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     if (!latestState || latestState.phase !== "question" || !usesVerbalChoices(latestState.question?.type) || latestState.assistUsed || latestState.targetTeam !== teamCode) return { accepted: false };
     const secret = (await db.ref(`matchSecrets/${id}`).get()).val();
     if (!secret || secret.questionId !== latestState.question.id || !Array.isArray(secret.options)) return { accepted: false };
-    await db.ref(`matches/${id}/state`).update({
-      assistUsed: true,
-      "question/options": secret.options.map((option) => text(option, 300)),
-      "question/optionsHidden": null,
-    });
-    return { accepted: true };
+    const result = await db.ref(`matches/${id}`).transaction((current) => {
+      if (!current) return current;
+      const latest = attachAccess(current, access);
+      const state = current.state;
+      if (!canPlayFor(latest, uid, teamCode) || current.status !== "playing" || state?.phase !== "question" || state.answer || state.targetTeam !== teamCode || state.question?.id !== secret.questionId || !usesVerbalChoices(state.question?.type) || state.assistUsed || (state.revision || 0) !== (latestState.revision || 0)) return;
+      state.assistUsed = true;
+      state.question.options = secret.options.map((option) => text(option, 300));
+      delete state.question.optionsHidden;
+      state.revision = (state.revision || 0) + 1;
+      return current;
+    }, undefined, false);
+    return { accepted: result.committed && Boolean(result.snapshot.val()?.state?.assistUsed) };
   }
   if (action === "usePowerCard") {
     return playPowerCard(uid, data, id, match, access);

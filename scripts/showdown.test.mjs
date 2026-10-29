@@ -121,7 +121,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   const snapshot = (value) => ({ val: () => clone(value), exists: () => value !== null });
   const ref = (path = '') => ({
     child: (key) => ref(`${path}/${key}`),
-    get: async () => { const snap = snapshot(read(path)); afterRead?.(); return snap; },
+    get: async () => { const snap = snapshot(clone(read(path))); afterRead?.(path); return snap; },
     set: async (value) => write(path, value),
     remove: async () => write(path, null),
     update: async (values) => { for (const [key, value] of Object.entries(values)) write(`${path}/${key}`, value); },
@@ -177,6 +177,105 @@ test('room endpoints reject missing and malformed codes before any room read', a
       assert.equal(reads, 0, 'invalid room paths never reach Admin SDK reads');
     }
   }
+});
+
+function joinFixture() {
+  const h = harness();
+  h.match().status = 'lobby';
+  h.match().players = {};
+  h.data.matchAccess.A234.teamKeys = { 'A234-1': 'invite-one' };
+  return h;
+}
+
+test('join capacity is reserved atomically across different identities', async () => {
+  const h = joinFixture();
+  for (let i = 0; i < 19; i++) h.match().players[`existing-${i}`] = { id: `existing-${i}`, teamCode: 'A234-1', name: 'QA' };
+  const results = await Promise.allSettled(['new-one', 'new-two'].map((uid) => h.call('joinTeam', uid, { teamCode: 'A234-1', inviteKey: 'invite-one', name: 'Hermes QA' })));
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(Object.keys(h.match().players).length, 20);
+  assert.equal(results.find((r) => r.status === 'rejected').reason.code, 'resource-exhausted');
+});
+
+test('join capacity is rechecked after a competing last-slot reservation', async () => {
+  const h = joinFixture();
+  for (let i = 0; i < 19; i++) h.match().players[`existing-${i}`] = { id: `existing-${i}`, teamCode: 'A234-1', name: 'QA' };
+  let reads = 0;
+  h.afterRead((path) => {
+    if (path === 'matches/A234' && ++reads === 2) h.match().players.last = { id: 'last', teamCode: 'A234-1', name: 'QA last slot' };
+  });
+  await assert.rejects(h.call('joinTeam', 'new-one', { teamCode: 'A234-1', inviteKey: 'invite-one', name: 'Hermes QA' }), { code: 'resource-exhausted' });
+  assert.equal(Object.keys(h.match().players).length, 20);
+});
+
+test('public TV can view a lobby but cannot enumerate private invitations', async () => {
+  const h = joinFixture();
+  assert.ok((await h.call('getMatch', 'audience')).match);
+  await assert.rejects(h.call('getTeamInvites', 'audience'), { code: 'permission-denied' });
+  const invites = await h.call('getTeamInvites', 'host');
+  assert.equal(invites.teamKeys['A234-1'], 'invite-one');
+});
+
+test('join rejects start race and restores a committed reservation after missing mapping', async () => {
+  const closed = joinFixture();
+  closed.beforeTransaction(() => { closed.match().status = 'playing'; });
+  await assert.rejects(closed.call('joinTeam', 'new-one', { teamCode: 'A234-1', inviteKey: 'invite-one' }), { code: 'failed-precondition' });
+  assert.equal(Object.keys(closed.match().players).length, 0);
+  const h = joinFixture();
+  const request = { teamCode: 'A234-1', inviteKey: 'invite-one', name: 'Hermes QA' };
+  const first = await h.call('joinTeam', 'new-one', request);
+  delete h.data.matchAccess.A234.playerUids[first.player.id];
+  const second = await h.call('joinTeam', 'new-one', request);
+  assert.equal(second.player.id, first.player.id);
+  assert.equal(Object.keys(h.match().players).length, 1);
+  assert.equal(h.data.matchAccess.A234.playerUids[first.player.id], 'new-one');
+  assert.equal('authUid' in second.player, false);
+});
+
+test('assist cannot copy old secret choices onto a replacement question', async () => {
+  const h = harness();
+  Object.assign(h.match().state, { phase: 'question', targetTeam: 'A234-1', question: { id: 42, type: 'brand', optionsHidden: true }, assistUsed: false });
+  h.data.matchSecrets.A234.options = ['old a', 'old b'];
+  h.afterRead((path) => { if (path === 'matchSecrets/A234') h.match().state.question = { id: 43, type: 'brand', optionsHidden: true }; });
+  const result = await h.call('useAssist', 'user1', { teamCode: 'A234-1' });
+  assert.equal(result.accepted, false);
+  assert.equal(h.match().state.question.id, 43);
+  assert.equal(h.match().state.question.options, undefined);
+});
+
+test('timed prompt reveal cannot overwrite a replacement memory question', async () => {
+  const h = harness();
+  Object.assign(h.match().state, { phase: 'question', question: { id: 42, type: 'memory', promptHidden: true }, viewUntil: 1000 });
+  Object.assign(h.data.matchSecrets.A234, { question: 'old prompt', options: ['old a', 'old b'] });
+  h.afterRead((path) => { if (path === 'matchSecrets/A234') h.match().state.question = { id: 43, type: 'memory', promptHidden: true }; });
+  const result = await h.call('revealQuestionPrompt', 'user1');
+  assert.equal(result.accepted, false);
+  assert.equal(h.match().state.question.id, 43);
+  assert.equal(h.match().state.question.question, undefined);
+});
+
+test('editorial concept families block paraphrases and migrate legacy text history', async () => {
+  const h = harness();
+  const a = { id: 900001, type: 'multiple_choice', conceptId: 'qa-concept', question: 'First phrasing', options: ['a', 'b'], answer: 0 };
+  const b = { ...a, id: 900002, question: 'Different wording of the same fact' };
+  const first = await h.helpers.rotateQuestion([a], 'qa-game-one', 'host');
+  assert.equal(first.question.id, a.id);
+  await assert.rejects(h.helpers.rotateQuestion([b], 'qa-game-two', 'host'), { code: 'resource-exhausted' });
+  const old = harness();
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const original = bank.find((q) => q.id === 62);
+  const legacyHash = createHash('sha256').update(`text:${original.question.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()}`).digest('hex');
+  old.data.questionRotation = { host: { games: [{ id: 'legacy-game', assets: [legacyHash] }] } };
+  await assert.rejects(old.helpers.rotateQuestion([bank.find((q) => q.id === 899)], 'qa-game-new', 'host'), { code: 'resource-exhausted' });
+});
+
+test('a tied single-section match opens fresh section capacity for its deciding cycle', async () => {
+  const h = harness();
+  Object.assign(h.match(), { totalRounds: 8, turnIndex: 7, questionsPerTeam: 4, enabledTypes: ['multiple_choice'], typeCaps: { multiple_choice: 4 }, typeCounts: { 'A234-1': { multiple_choice: 4 }, 'A234-2': { multiple_choice: 4 } }, sectionCycleByTeam: { 'A234-1': { used: ['multiple_choice'], number: 4 }, 'A234-2': { used: ['multiple_choice'], number: 4 } } });
+  h.match().teams['A234-2'].score = 100;
+  Object.assign(h.match().state, { phase: 'revealed', round: 8 });
+  assert.equal((await h.call('advanceTurn')).tieBreaker, true);
+  assert.equal((await h.call('chooseType', 'user1', { type: 'multiple_choice', requestId: 'tie-pick-one' })).status, 'accepted');
+  assert.equal(h.match().state.targetTeam, 'A234-1');
 });
 
 function ordinaryAnswerFixture() {
@@ -615,12 +714,12 @@ for (const type of ['multiple_choice', 'flag', 'memory']) {
   });
 }
 
-test('audience lobby gets unique short team codes that resolve to the right team', async () => {
+test('host lobby gets unique short team codes that resolve to the right team', async () => {
   const h = harness();
   h.match().status = 'lobby';
   h.match().expiresAt = 999999;
   h.data.matchAccess.A234.teamKeys = { 'A234-1': 'SECRET11', 'A234-2': 'SECRET22' };
-  const invites = await h.call('getTeamInvites', 'audience');
+  const invites = await h.call('getTeamInvites', 'host');
   const codes = Object.values(invites.shortTeamCodes);
   assert.equal(new Set(codes).size, 2);
   for (const value of codes) assert.match(value, /^[A-Z][0-9]{3}$/);
@@ -629,7 +728,7 @@ test('audience lobby gets unique short team codes that resolve to the right team
     assert.equal(result.teamCode, teamCode);
     assert.equal(result.inviteKey, h.data.matchAccess.A234.teamKeys[teamCode]);
   }
-  const again = await h.call('getTeamInvites', 'audience');
+  const again = await h.call('getTeamInvites', 'host');
   assert.deepEqual(again.shortTeamCodes, invites.shortTeamCodes);
   h.match().status = 'ended';
   await assert.rejects(h.call('resolveTeamCode', 'guest', { shortCode: codes[0] }), { code: 'not-found' });
@@ -987,22 +1086,22 @@ test('invalid bulk ids leave all availability unchanged', async () => {
   assert.equal(h.data.questionExclusions, undefined);
 });
 
-test('admin inventory counts exactly the playable bank and explains a 739 to 723 difference', async () => {
+test('admin inventory counts exactly the playable bank and explains deletion/exclusion differences', async () => {
   const h = harness();
   const base = await h.adminCall('getAdminQuestions');
   const builtin = base.questions.filter((q) => q.type === 'multiple_choice' && !q.disabled && !q.custom);
-  assert.equal(builtin.length, 739);
+  assert.equal(builtin.length, 743);
   h.data.questionDeletions = Object.fromEntries(builtin.slice(0, 10).map((q) => [q.id, true]));
   h.data.questionExclusions = Object.fromEntries(builtin.slice(10, 16).map((q) => [q.id, true]));
   // A deleted and excluded marker must not subtract the same question twice.
   h.data.questionExclusions[builtin[0].id] = true;
   const catalog = await h.adminCall('getAdminQuestions');
   const counts = catalog.inventory.multiple_choice;
-  assert.equal(counts.builtin, 789);
+  assert.equal(counts.builtin, 793);
   assert.equal(counts.legacyDisabled, 50);
   assert.equal(counts.deleted, 10);
   assert.equal(counts.excluded, 6);
-  assert.equal(counts.available, 723);
+  assert.equal(counts.available, 727);
   const bank = await h.helpers.questionBank();
   for (const [type, inventory] of Object.entries(catalog.inventory)) {
     assert.equal(inventory.available, bank.filter((q) => q.type === type && !q.disabled).length);
@@ -1021,11 +1120,11 @@ test('admin inventory refreshes after custom additions and permanent deletion', 
   h.data.customQuestions = { 900001: { id: 900001, type: 'multiple_choice', question: 'خاص', options: ['أ', 'ب'], answer: 0 } };
   let catalog = await h.adminCall('getAdminQuestions');
   assert.equal(catalog.inventory.multiple_choice.customAvailable, 1);
-  assert.equal(catalog.inventory.multiple_choice.available, 740);
+  assert.equal(catalog.inventory.multiple_choice.available, 744);
   await h.adminCall('deleteAdminQuestions', { ids: [900001] });
   catalog = await h.adminCall('getAdminQuestions');
   assert.equal(catalog.inventory.multiple_choice.customAvailable, 0);
-  assert.equal(catalog.inventory.multiple_choice.available, 739);
+  assert.equal(catalog.inventory.multiple_choice.available, 743);
 });
 
 test('solo challenge never draws questions excluded by admin', async () => {

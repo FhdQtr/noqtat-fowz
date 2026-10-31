@@ -7,5 +7,9 @@
   "dependencies": {
     "firebase-admin": "^14.2.0",
     "firebase-functions": "^7.3.2"
+  },
+  "overrides": {
+    "google-gax@>=5 <6": "5.0.4",
+    "gcp-metadata@>=8 <9": "8.1.2"
   }
 }

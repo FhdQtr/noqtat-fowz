@@ -35,6 +35,7 @@ export default function HostRoom() {
   const nav = useNavigate();
   const [match, setMatch] = useState<Match | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
   const [capacityError, setCapacityError] = useState("");
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
@@ -188,11 +189,15 @@ export default function HostRoom() {
       }).sort((left, right) => right.awayAt - left.awayAt)
     : [];
 
-  const act = async (fn: () => Promise<unknown>) => {
+  const act = async (fn: () => Promise<unknown>, onError?: () => void) => {
     setBusy(true);
+    setActionError("");
     unlockAudio();
     try {
       await fn();
+    } catch {
+      setActionError("تعذّر تأكيد الإجراء. تحقق من الاتصال وراجع آخر حالة ظاهرة قبل إعادة المحاولة؛ لا تكرر احتساب النقاط إذا ظهر التغيير بالفعل.");
+      onError?.();
     } finally {
       setBusy(false);
     }
@@ -239,6 +244,7 @@ export default function HostRoom() {
         </div>
         <ScoreAdjustmentPanel match={match} matchCode={code} />
         <div className="mt-8 flex flex-wrap gap-3 justify-center">
+          {actionError ? <p role="alert" className="w-full rounded-xl border border-maroon-light/60 bg-night p-4 text-center text-gold-light">{actionError}</p> : null}
           <button onClick={() => nav("/host")} className="btn-gold flex items-center gap-2">
             <Trophy className="w-5 h-5" />
             مسابقة جديدة
@@ -262,6 +268,7 @@ export default function HostRoom() {
         </div>
 
         <p className="text-sm text-muted-foreground">كود المسابقة</p>
+        {actionError ? <p role="alert" className="mb-4 w-full max-w-3xl rounded-xl border border-maroon-light/60 bg-night p-4 text-center text-gold-light">{actionError}</p> : null}
         <div className="flex items-center gap-3 mt-1">
           <span className="text-4xl sm:text-5xl font-black font-cairo tracking-[0.3em] text-gold-gradient" dir="ltr">{code}</span>
           <button onClick={shareTv} className="btn-ghost-gold !p-2" title="نسخ رابط شاشة العرض">
@@ -322,7 +329,8 @@ export default function HostRoom() {
                       return (
                         <button
                           key={p.id}
-                          onClick={() => setCaptain(code, t.code, isCap ? null : p.id)}
+                          onClick={() => act(() => setCaptain(code, t.code, isCap ? null : p.id))}
+                          disabled={busy}
                           title={isCap ? "إلغاء التعيين" : "تعيين ممثل الفريق"}
                           className={`rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in transition-all flex items-center gap-1 ${
                             isCap ? "ring-2 ring-gold scale-105" : "hover:scale-105"
@@ -371,6 +379,7 @@ export default function HostRoom() {
     <div className="min-h-dvh px-4 py-5 flex flex-col max-w-3xl mx-auto w-full">
       <PowerCardEvent match={match} />
       <ScoreAdjustmentPanel match={match} matchCode={code} />
+      {actionError ? <p role="alert" className="mb-4 rounded-xl border border-maroon-light/60 bg-night p-4 text-center text-gold-light">{actionError}</p> : null}
       <div className="fixed inset-0 -z-10">
         <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-20" />
         <div className="absolute inset-0 bg-night/88" />
@@ -508,8 +517,8 @@ export default function HostRoom() {
             <>
               <SelectionRecovery host paused={Boolean(st.selectionPause) || !match.enabledTypes.some((type) => typeProgress(match, chooseTeam.code, type).available)}
                 busyInventory={st.selectionPause?.reason === "busy"} pending={busy}
-                onRecheck={() => { setCapacityError(""); void act(() => recheckSelectionCapacity(code, match)).catch(() => setCapacityError("تعذّر فحص المخزون. تحقق من الاتصال وحدّث حالة الميدان ثم أعد المحاولة؛ لا حاجة لمسح التاريخ.")); }}
-                onEnd={() => { if (window.confirm("إنهاء الميدان غير المكتمل بالنقاط الحالية؟ لن يُحذف سجل الأسئلة. يمكنك اختيار أقسام أخرى في ميدان جديد.")) void act(() => endMatch(code)).catch(() => setCapacityError("تعذّر إنهاء الميدان؛ تحقق من الاتصال وأعد المحاولة.")); }} />
+                onRecheck={() => { setCapacityError(""); void act(() => recheckSelectionCapacity(code, match), () => setCapacityError("تعذّر فحص المخزون. تحقق من الاتصال وحدّث حالة الميدان ثم أعد المحاولة؛ لا حاجة لمسح التاريخ.")); }}
+                onEnd={() => { if (window.confirm("إنهاء الميدان غير المكتمل بالنقاط الحالية؟ لن يُحذف سجل الأسئلة. يمكنك اختيار أقسام أخرى في ميدان جديد.")) void act(() => endMatch(code), () => setCapacityError("تعذّر إنهاء الميدان؛ تحقق من الاتصال وأعد المحاولة.")); }} />
               {capacityError && <p role="alert" className="max-w-lg text-center text-sm text-gold-light">{capacityError}</p>}
             </>
           )}

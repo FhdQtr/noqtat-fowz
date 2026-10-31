@@ -453,9 +453,12 @@ async function adminQuestions(action, data) {
   return { count: ids.length };
 }
 
-async function beginPunishment(uid, data, id, match, teamCode, usedCount, requestId, selectionKey) {
+async function beginPunishment(uid, data, id, match, teamCode, usedCount, requestId, selectionKey, access) {
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (!current) return current;
+    if (current.state?.phase === "question" && current.state.selectionKey === selectionKey) return current;
+    if (current.status !== "playing" || !sameTurnContext(current, match)
+      || !canChoose(attachAccess(current, access), uid, teamCode)) return;
     if (current.state.phase !== "choose" || current.state.question || current.state.targetTeam !== teamCode) return;
     if (sectionCycle(current, teamCode).used.includes("punishment")) return;
     current.state = { ...current.state, phase: "question", round: current.state.round + 1,
@@ -464,6 +467,7 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
       questionValue: 0, pointMultiplier: 1, answer: null, isCorrect: null,
       questionStartedAt: null, questionDuration: 0, viewUntil: null, selectionRequestId: requestId, selectionKey, secretVersion: null,
       punishment: { stage: "prepare", byTeam: teamCode, prepareUntil: now() + 60000 },
+      revision: (current.state.revision || 0) + 1,
     };
     current.typeCounts ||= {};
     current.typeCounts[teamCode] ||= {};
@@ -477,12 +481,27 @@ async function beginPunishment(uid, data, id, match, teamCode, usedCount, reques
   return { status: result.committed && result.snapshot.val()?.state?.punishment ? "accepted" : "late" };
 }
 
-async function punishmentAction(uid, data, id, match) {
+async function punishmentAction(uid, data, id, match, access) {
   const action = data.action;
   const st = match.state;
   const p = st.punishment;
   if (st.question?.type !== "punishment" || !p) fail("failed-precondition", "لا يوجد سؤال وعقاب");
   if (Number(data.questionId) !== st.question.id) fail("failed-precondition", "هذا الطلب لسؤال قديم");
+  if (action === "preparePunishment") {
+    if (!canChoose(match, uid, p.byTeam)) fail("permission-denied", "ممثل الفريق فقط يجهّز السؤال");
+  } else if (action === "requestPunishmentOutcome") {
+    if (!canChoose(match, uid, p.targetTeam)) fail("permission-denied", "ممثل الفريق المستهدف يختار");
+  } else requireHost(match, uid);
+  const contextKey = hostTransitionKey(data);
+  // Bind actor, displayed context and exact intent. Only the last accepted
+  // command is replayable; the high-entropy client request id stays hashed.
+  const commandKey = contextKey && createHash("sha256").update(JSON.stringify([contextKey, uid, data.questionId,
+    code(data.targetTeam), text(data.prompt, 500), text(data.answerText, 300), text(data.penalty, 200),
+    data.mode ?? null, data.correct ?? null])).digest("hex");
+  if (commandKey && st.punishmentReceipt?.key === commandKey) return { ok: true };
+  if (!commandKey || !hostTransitionMatches(st, data.transition)) {
+    fail("failed-precondition", "تغيّر سياق الجولة؛ حدّث الشاشة قبل إعادة الطلب");
+  }
   if (action === "preparePunishment") {
     if (!canChoose(match, uid, p.byTeam)) fail("permission-denied", "ممثل الفريق فقط يجهّز السؤال");
     if (p.stage !== "prepare" || now() > p.prepareUntil) fail("deadline-exceeded", "انتهت دقيقة تجهيز السؤال؛ المقدم ينهي الجولة");
@@ -491,35 +510,69 @@ async function punishmentAction(uid, data, id, match) {
     const selectedMode = data.mode;
     const penalty = selectedMode === "perform" ? text(data.penalty, 200) || "تنفيذ العقاب المتفق عليه" : null;
     if (target === p.byTeam || !match.teams[target] || !prompt || !answerText || !["perform", "deduct"].includes(selectedMode)) fail("invalid-argument", "اختر المنافس واكتب السؤال والإجابة وحدد العقاب أو خصم ٢٠٠ نقطة");
-    const secret = await db.ref(`matchSecrets/${id}`).transaction((current) => {
-      if (current?.questionId === st.question.id && current.punishmentPrepared) return;
-      return { questionId: st.question.id, answer: -1, answerText, question: prompt, options: [], punishmentPrepared: true };
-    }, undefined, false);
-    if (!secret.committed) fail("failed-precondition", "تم تثبيت السؤال بالفعل");
-    const prepared = await db.ref(`matches/${id}`).transaction((current) => {
+    // Separate executor ownership from the displayed turn. Never replace the
+    // legacy secret root: a delayed draft must not erase a newer version tree.
+    const owner = randomUUID();
+    const matchRef = db.ref(`matches/${id}`);
+    const acquired = await matchRef.transaction((current) => {
       if (!current) return current;
-      if (current.state.question?.id !== st.question.id || current.state.punishment?.stage !== "prepare" || now() > p.prepareUntil) return;
-      current.state.targetTeam = target;
-      current.state.question.question = prompt;
-      current.state.punishment = { ...p, stage: "answering", targetTeam: target, penalty, selectedMode };
+      if (current.state?.punishmentReceipt?.key === commandKey) return current;
+      if (current.status !== "playing" || !sameTurnContext(current, match)
+        || !canChoose(attachAccess(current, access), uid, current.state.punishment?.byTeam)
+        || current.state.punishment?.stage !== "prepare" || now() > current.state.punishment.prepareUntil
+        || (current.state.punishmentLease?.expiresAt > now())) return;
+      current.state.punishmentLease = { owner, expiresAt: now() + 30000 };
       return current;
     }, undefined, false);
-    if (!prepared.committed) fail("failed-precondition", "تغيّر السؤال أو انتهت دقيقة التجهيز");
-    return { ok: true };
+    if (acquired.snapshot.val()?.state?.punishmentReceipt?.key === commandKey) return { ok: true };
+    if (!acquired.committed || acquired.snapshot.val()?.state?.punishmentLease?.owner !== owner) {
+      fail("failed-precondition", "تغيّر السؤال أو يجري تثبيت طلب آخر؛ حدّث الحالة ثم أعد المحاولة");
+    }
+    try {
+      await db.ref(`matchSecrets/${id}/versions/${owner}`).set({ questionId: st.question.id,
+        answer: -1, answerText, question: prompt, options: [], punishmentPrepared: true });
+      const prepared = await matchRef.transaction((current) => {
+        if (!current) return current;
+        const state = current.state;
+        if (current.status !== "playing" || !sameTurnContext(current, match)
+          || !canChoose(attachAccess(current, access), uid, state.punishment?.byTeam)
+          || state.punishmentLease?.owner !== owner || state.punishmentLease.expiresAt <= now()
+          || state.punishment?.stage !== "prepare" || now() > state.punishment.prepareUntil) return;
+        state.targetTeam = target;
+        state.question.question = prompt;
+        state.secretVersion = owner;
+        state.punishment = { ...state.punishment, stage: "answering", targetTeam: target, penalty, selectedMode };
+        state.revision = (state.revision || 0) + 1;
+        state.punishmentReceipt = { key: commandKey };
+        delete state.punishmentLease;
+        return current;
+      }, undefined, false);
+      if (!prepared.committed || prepared.snapshot.val()?.state?.secretVersion !== owner) fail("failed-precondition", "تغيّر السؤال أو انتهت دقيقة التجهيز");
+      return { ok: true };
+    } finally {
+      await matchRef.transaction((current) => {
+        if (!current) return current;
+        if (current.state?.punishmentLease?.owner !== owner) return;
+        delete current.state.punishmentLease;
+        return current;
+      }, undefined, false);
+    }
   }
   if (action === "requestPunishmentOutcome") {
     if (p.selectedMode) fail("failed-precondition", "تم تحديد الجزاء قبل السؤال ولا يمكن تغييره");
-    if (!canChoose(match, uid, p.targetTeam)) fail("permission-denied", "ممثل الفريق المستهدف يختار");
     if (!["perform", "deduct"].includes(data.mode) || p.stage !== "failed") fail("failed-precondition", "الاختيار بعد الإجابة الخاطئة فقط");
-    await db.ref(`matches/${id}/state/punishment/requestedMode`).set(data.mode);
-    return { ok: true };
   }
-  requireHost(match, uid);
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (!current) return current;
     const state = current.state, penalty = state.punishment;
-    if (state.question?.id !== st.question.id || !penalty) return;
-    if (action === "judgePunishment") {
+    if (state.punishmentReceipt?.key === commandKey) return current;
+    if (current.status !== "playing" || !sameTurnContext(current, match) || !penalty) return;
+    const authorized = attachAccess(current, access);
+    if (action === "requestPunishmentOutcome") {
+      if (!canChoose(authorized, uid, penalty.targetTeam) || penalty.selectedMode || penalty.stage !== "failed") return;
+      penalty.requestedMode = data.mode;
+    } else if (authorized.hostUid !== uid) return;
+    else if (action === "judgePunishment") {
       if (penalty.stage !== "answering" || typeof data.correct !== "boolean") return;
       state.isCorrect = data.correct;
       penalty.stage = data.correct ? "resolved" : "failed";
@@ -537,6 +590,8 @@ async function punishmentAction(uid, data, id, match) {
       if (!["prepare", "submitting", "answering"].includes(penalty.stage)) return;
       penalty.stage = "resolved"; penalty.mode = "cancelled"; state.phase = "revealed"; state.isCorrect = null;
     } else return;
+    state.revision = (state.revision || 0) + 1;
+    state.punishmentReceipt = { key: commandKey };
     return current;
   }, undefined, false);
   if (!result.committed || !result.snapshot.val()) fail("failed-precondition", "تغيّرت الجولة أو تم تثبيت النتيجة بالفعل");
@@ -961,7 +1016,7 @@ async function chooseType(uid, data) {
   if (usedCount >= typeCap(match, type)) return { status: "cap" };
   let candidates;
   candidates = await questionBank();
-  if (type === "punishment") return beginPunishment(uid, data, id, match, teamCode, usedCount, requestId, selectionKey);
+  if (type === "punishment") return beginPunishment(uid, data, id, match, teamCode, usedCount, requestId, selectionKey, access);
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
@@ -1794,7 +1849,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
   if (action === "judgePictureGuess") return judgePictureGuess(uid, data, id, match);
   if (action === "startPictureGuessTimer") return startPictureGuessTimer(uid, data, id, match);
   if (action === "adjustTeamScore") return adjustTeamScore(uid, data, id, match);
-  if (["preparePunishment", "judgePunishment", "requestPunishmentOutcome", "resolvePunishment", "cancelPunishment"].includes(action)) return punishmentAction(uid, data, id, match);
+  if (["preparePunishment", "judgePunishment", "requestPunishmentOutcome", "resolvePunishment", "cancelPunishment"].includes(action)) return punishmentAction(uid, data, id, match, access);
   if (action === "getTeamInvites") {
     const isHost = match.hostUid === uid;
     const isViewer = access.viewerKey && safeEqual(data.viewerKey, access.viewerKey);

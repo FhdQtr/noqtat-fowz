@@ -31,7 +31,7 @@ export default function PunishmentPanel({ match, matchCode, teamCode, host = fal
   }, [host, matchCode, q.id, p.stage]);
   const act = async (action: Parameters<typeof runPunishmentAction>[1], details: Record<string, unknown> = {}) => {
     setBusy(true); setError("");
-    try { await runPunishmentAction(matchCode, action, q.id, details); }
+    try { await runPunishmentAction(matchCode, action, match, details); }
     catch (cause) { setError((cause as { message?: string }).message || "تعذّر تثبيت الطلب، أعد المحاولة"); }
     finally { setBusy(false); }
   };

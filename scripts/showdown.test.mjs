@@ -173,7 +173,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
     }
     return exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: {
       action, matchCode: 'A234', ...selection,
-      ...(['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer', 'usePowerCard'].includes(action)
+      ...(['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer', 'usePowerCard', 'preparePunishment', 'judgePunishment', 'requestPunishmentOutcome', 'resolvePunishment', 'cancelPunishment'].includes(action)
         ? { transition: presenterContext(data.matches.A234.state, `presenter-${++presenterSequence}`) } : {}), ...extra,
     } });
   };
@@ -1236,6 +1236,126 @@ function punishmentFixture() {
   return h;
 }
 
+test('punishment section selection cannot revive an ended room or ignore a changed displayed revision', async () => {
+  for (const mutate of [(match) => { match.status = 'ended'; }, (match) => { match.state.revision = 8; }]) {
+    const h = punishmentFixture();
+    h.beforeTransaction(() => mutate(h.match()));
+    const reply = await h.call('chooseType', 'user1', { type: 'punishment' });
+    assert.equal(reply.status, 'late');
+    assert.equal(h.match().state.question ?? null, null);
+    assert.equal(h.match().state.punishment ?? null, null);
+  }
+});
+
+test('punishment preparation cannot replace a newer private secret after the room ends during its initial read', async () => {
+  const h = punishmentFixture();
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const state = clone(h.match().state);
+  const original = clone(h.data.matchSecrets.A234);
+  h.afterRead((path) => {
+    if (path === 'matchAccess/A234') h.match().status = 'ended';
+  });
+  await assert.rejects(h.call('preparePunishment', 'user1', {
+    questionId: state.question.id, transition: presenterContext(state, 'ended-draft'),
+    targetTeam: 'A234-2', prompt: 'obsolete draft', answerText: 'obsolete answer', mode: 'deduct',
+  }), { code: 'failed-precondition' });
+  assert.deepEqual(h.data.matchSecrets.A234, original, 'a stale preparation must not overwrite the private root or version tree');
+  assert.equal(h.match().state.punishment.stage, 'prepare');
+});
+
+test('punishment commands require the displayed context even when the question id still matches', async () => {
+  for (const transition of [null, presenterContext({ phase: 'question', round: 99, question: { id: 2000 } }, 'stale-punishment')]) {
+    const h = punishmentFixture();
+    await h.call('chooseType', 'user1', { type: 'punishment' });
+    const before = clone(h.match());
+    const secret = clone(h.data.matchSecrets);
+    await assert.rejects(h.call('preparePunishment', 'user1', { questionId: h.match().state.question.id,
+      transition, targetTeam: 'A234-2', prompt: 'old context', answerText: 'private', mode: 'perform',
+    }), { code: 'failed-precondition' });
+    assert.deepEqual(h.match(), before);
+    assert.deepEqual(h.data.matchSecrets, secret);
+  }
+});
+
+test('punishment retry replays one immutable preparation and one deduction without exposing or replacing other private versions', async () => {
+  const h = punishmentFixture();
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const originalRoot = clone(h.data.matchSecrets.A234);
+  const command = { questionId: h.match().state.question.id,
+    transition: presenterContext(h.match().state, 'same-punishment-command'),
+    targetTeam: 'A234-2', prompt: 'retryable prompt', answerText: 'private answer', mode: 'deduct' };
+  await h.call('preparePunishment', 'user1', command);
+  const published = clone(h.match());
+  const secrets = clone(h.data.matchSecrets.A234);
+  assert.deepEqual(clone(await h.call('preparePunishment', 'user1', command)), { ok: true });
+  assert.deepEqual(h.match(), published);
+  assert.deepEqual(h.data.matchSecrets.A234, secrets);
+  assert.equal(h.data.matchSecrets.A234.answer, originalRoot.answer, 'legacy root retained');
+  assert.ok(h.match().state.secretVersion);
+  assert.equal(JSON.stringify(h.match()).includes('private answer'), false);
+  assert.equal((await h.call('getHostAnswer')).answerText, 'private answer');
+  await assert.rejects(h.call('preparePunishment', 'user1', { ...command, answerText: 'changed answer' }), { code: 'failed-precondition' });
+  const judge = { questionId: command.questionId, correct: false, transition: presenterContext(h.match().state, 'one-deduction') };
+  await h.call('judgePunishment', 'host', judge);
+  const judged = clone(h.match());
+  assert.deepEqual(clone(await h.call('judgePunishment', 'host', judge)), { ok: true });
+  assert.deepEqual(h.match(), judged);
+  assert.equal(h.match().teams['A234-2'].score, -50);
+  await assert.rejects(h.call('judgePunishment', 'host', { ...judge, correct: true }), { code: 'failed-precondition' });
+});
+
+test('punishment commits revalidate room status and current representative rather than stale loaded state', async () => {
+  for (const action of ['preparePunishment', 'judgePunishment', 'requestPunishmentOutcome', 'resolvePunishment', 'cancelPunishment']) {
+    const h = punishmentFixture();
+    if (action === 'preparePunishment') await h.call('chooseType', 'user1', { type: 'punishment' });
+    else await preparedPunishment(h);
+    if (['resolvePunishment', 'requestPunishmentOutcome'].includes(action)) {
+      await h.call('judgePunishment', 'host', { questionId: h.match().state.question.id, correct: false });
+      delete h.match().state.punishment.selectedMode; // legacy-room choice path
+    }
+    const before = clone(h.match().state);
+    h.afterRead((path) => { if (path === 'matchAccess/A234') h.match().status = 'ended'; });
+    await assert.rejects(h.call(action, action === 'preparePunishment' ? 'user1' : action === 'requestPunishmentOutcome' ? 'user2' : 'host', {
+      questionId: before.question.id, transition: presenterContext(before, `ended-${action}`),
+      targetTeam: 'A234-2', prompt: 'obsolete', answerText: 'secret', mode: 'perform', correct: false,
+    }), { code: 'failed-precondition' }, action);
+    assert.deepEqual(h.match().state, before, action);
+  }
+  const h = punishmentFixture();
+  h.match().answerMode = 'representative';
+  h.match().teams['A234-1'].captainId = 'p1';
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const before = clone(h.match().state);
+  h.beforeTransaction(() => { h.match().teams['A234-1'].captainId = 'p3'; });
+  await assert.rejects(h.call('preparePunishment', 'user1', { questionId: before.question.id,
+    targetTeam: 'A234-2', prompt: 'obsolete captain', answerText: 'secret', mode: 'deduct',
+  }), { code: 'failed-precondition' });
+  assert.deepEqual(h.match().state, before);
+});
+
+test('punishment delayed staging cannot publish after lease takeover or release a successor executor', async () => {
+  const h = punishmentFixture();
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const before = clone(h.match().state);
+  const original = clone(h.data.matchSecrets.A234);
+  let transactions = 0;
+  h.beforeTransaction(() => {
+    if (++transactions === 2) {
+      h.match().state.punishmentLease = { owner: 'successor', expiresAt: 40000 };
+      h.data.matchSecrets.A234.versions ||= {};
+      h.data.matchSecrets.A234.versions.successor = { questionId: 99, answer: 2 };
+    }
+  });
+  await assert.rejects(h.call('preparePunishment', 'user1', {
+    questionId: before.question.id, targetTeam: 'A234-2', prompt: 'delayed draft', answerText: 'private', mode: 'perform',
+  }), { code: 'failed-precondition' });
+  assert.equal(h.match().state.punishment.stage, 'prepare');
+  assert.equal(h.match().state.punishmentLease.owner, 'successor');
+  assert.equal(h.match().state.secretVersion ?? null, null);
+  assert.equal(h.data.matchSecrets.A234.answer, original.answer);
+  assert.equal(h.data.matchSecrets.A234.versions.successor.answer, 2);
+});
+
 async function preparedPunishment(h, mode = 'perform') {
   assert.equal((await h.call('chooseType', 'user1', { type: 'punishment', requestId: 'p-request' })).status, 'accepted');
   const questionId = h.match().state.question.id;
@@ -1334,7 +1454,8 @@ test('two simultaneous punishment drafts cannot mismatch prompt and private answ
   const results = await Promise.allSettled(['one', 'two'].map((suffix) => h.call('preparePunishment', 'user1', { questionId, targetTeam: 'A234-2', prompt: `prompt-${suffix}`, answerText: `answer-${suffix}`, penalty: 'حركة', mode: 'perform' })));
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
   const prompt = h.match().state.question.question;
-  assert.equal(h.data.matchSecrets.A234.answerText, prompt.replace('prompt-', 'answer-'));
+  assert.equal((await h.call('getHostAnswer')).answerText, prompt.replace('prompt-', 'answer-'));
+  assert.equal(Object.keys(h.data.matchSecrets.A234.versions).length, 1, 'only the winning executor stages a private version');
 });
 
 

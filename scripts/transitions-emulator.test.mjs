@@ -45,6 +45,72 @@ async function fixture() {
   return { ref, match, read, context, call, uid };
 }
 
+test('real punishment preparation isolates private versions, serializes drafts and replays deduction once', async () => {
+  const f = await fixture();
+  const actor = `${f.uid}-player`;
+  await db.ref(`matchAccess/${f.ref.key}/playerUids/p1`).set(actor);
+  await f.ref.update({ enabledTypes: ['punishment'] });
+  await f.ref.child('state').set({ phase: 'choose', round: 0, revision: 0, targetTeam: 'A' });
+  const pick = f.context((await f.read()).state);
+  assert.equal((await f.call('chooseType', pick, { type: 'punishment', requestId: pick.requestId }, actor)).status, 'accepted');
+  const before = await f.read();
+  const secretRef = db.ref(`matchSecrets/${f.ref.key}`);
+  const original = (await secretRef.get()).val();
+  const transition = f.context(before.state);
+  const draft = { questionId: before.state.question.id, targetTeam: 'B', prompt: 'Hermes QA punishment prompt', answerText: 'fixture private answer', mode: 'deduct' };
+  const results = await Promise.allSettled([
+    f.call('preparePunishment', transition, draft, actor),
+    f.call('preparePunishment', transition, draft, actor),
+  ]);
+  assert.ok(results.some((r) => r.status === 'fulfilled'));
+  const prepared = await f.read();
+  assert.equal(prepared.state.punishment.stage, 'answering');
+  assert.equal(prepared.state.revision, before.state.revision + 1);
+  assert.equal(prepared.state.punishmentLease ?? null, null);
+  assert.equal(JSON.stringify(prepared).includes(draft.answerText), false);
+  const root = (await secretRef.get()).val();
+  assert.equal(root.answer, original.answer);
+  assert.equal(Object.keys(root.versions).length, 1);
+  assert.equal(root.versions[prepared.state.secretVersion].answerText, draft.answerText);
+  assert.equal((await f.call('getHostAnswer')).answerText, draft.answerText);
+  await assert.rejects(f.call('getHostAnswer', null, {}, actor), { code: 'permission-denied' });
+  await f.call('preparePunishment', transition, draft, actor);
+  assert.deepEqual(await f.read(), prepared);
+  assert.deepEqual((await secretRef.get()).val(), root);
+  await assert.rejects(f.call('preparePunishment', transition, { ...draft, answerText: 'altered answer' }, actor), { code: 'failed-precondition' });
+  const judge = f.context(prepared.state), judgment = { questionId: draft.questionId, correct: false };
+  await Promise.all([f.call('judgePunishment', judge, judgment), f.call('judgePunishment', judge, judgment)]);
+  const judged = await f.read();
+  assert.equal(judged.teams.B.score, -150);
+  assert.equal(judged.state.revision, prepared.state.revision + 1);
+  assert.equal(judged.state.punishment.stage, 'resolved');
+  await f.call('judgePunishment', judge, judgment);
+  assert.deepEqual(await f.read(), judged);
+});
+
+test('real punishment preparation recovers an expired executor but respects a live lease and ended-room fence', async () => {
+  const f = await fixture(), actor = `${f.uid}-player`;
+  await db.ref(`matchAccess/${f.ref.key}/playerUids/p1`).set(actor);
+  await f.ref.update({ enabledTypes: ['punishment'] });
+  await f.ref.child('state').set({ phase: 'choose', round: 0, revision: 0, targetTeam: 'A' });
+  const pick = f.context((await f.read()).state);
+  await f.call('chooseType', pick, { type: 'punishment', requestId: pick.requestId }, actor);
+  const before = await f.read();
+  const draft = { questionId: before.state.question.id, targetTeam: 'B', prompt: 'Hermes QA recovery prompt', answerText: 'private', mode: 'perform' };
+  await f.ref.child('state/punishmentLease').set({ owner: 'crashed-owner', expiresAt: Date.now() + 30000 });
+  await assert.rejects(f.call('preparePunishment', f.context(before.state), draft, actor), { code: 'failed-precondition' });
+  assert.equal((await db.ref(`matchSecrets/${f.ref.key}/versions`).get()).val(), null);
+  await f.ref.child('state/punishmentLease/expiresAt').set(Date.now() - 1);
+  await f.call('preparePunishment', f.context(before.state), draft, actor);
+  const prepared = await f.read();
+  assert.equal(prepared.state.punishment.stage, 'answering');
+  assert.notEqual(prepared.state.secretVersion, 'crashed-owner');
+  await f.call('endMatch');
+  const ended = await f.read();
+  await assert.rejects(f.call('judgePunishment', f.context(ended.state), { questionId: draft.questionId, correct: false }), { code: 'failed-precondition' });
+  assert.deepEqual(await f.read(), ended);
+});
+
 test('real capacity recheck pauses exhausted sections, replays concurrent retries and recovers without history deletion', async (t) => {
   const f = await fixture();
   const type = `ct_qa_${randomUUID().replaceAll('-', '')}`;

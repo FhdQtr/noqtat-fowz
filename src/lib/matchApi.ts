@@ -72,8 +72,11 @@ export async function setAdminQuestionAvailability(ids: number[], disabled: bool
   return gameAction<{ count: number }>("setAdminQuestionAvailability", { ids, disabled });
 }
 
-export async function runPunishmentAction(matchCode: string, action: "preparePunishment" | "judgePunishment" | "requestPunishmentOutcome" | "resolvePunishment" | "cancelPunishment", questionId: number, details: Record<string, unknown> = {}) {
-  return gameAction(action, { matchCode, questionId, ...details });
+export async function runPunishmentAction(matchCode: string, action: "preparePunishment" | "judgePunishment" | "requestPunishmentOutcome" | "resolvePunishment" | "cancelPunishment", match: Match, details: Record<string, unknown> = {}) {
+  const payload = { ...details, matchCode, questionId: match.state.question?.id ?? null,
+    transition: captureHostTransition(match.state) };
+  try { return await gameAction<{ ok: boolean }>(action, payload); }
+  catch { return gameAction<{ ok: boolean }>(action, payload); }
 }
 
 export interface TeamInvites {

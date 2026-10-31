@@ -18,6 +18,27 @@ test('client explicitly requests advisory ordinary timers, including a no-timer 
   assert.equal(calls[0].payload.options.timer, 0);
 });
 
+test('punishment client captures displayed context and freezes the draft through a lost-response retry', async () => {
+  const exports = {}, calls = [];
+  const fragment = raw.slice(raw.indexOf('export async function runPunishmentAction('), raw.indexOf('export interface TeamInvites'));
+  const match = { state: { question: { id: 42 }, phase: 'question', round: 2, revision: 7 } };
+  const details = { prompt: 'captured prompt', answerText: 'captured answer', mode: 'deduct' };
+  runInNewContext(ts.transpileModule(fragment, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
+    exports, captureHostTransition: (state) => ({ phase: state.phase, revision: state.revision, requestId: 'punishment-request' }),
+    gameAction: async (action, payload) => {
+      calls.push(JSON.parse(JSON.stringify({ action, payload })));
+      if (calls.length === 1) { match.state.revision = 99; details.answerText = 'edited after sending'; throw new Error('response lost'); }
+      return { ok: true };
+    },
+  });
+  assert.equal((await exports.runPunishmentAction('A234', 'preparePunishment', match, details)).ok, true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].payload.questionId, 42);
+  assert.equal(calls[0].payload.transition.revision, 7);
+  assert.equal(calls[0].payload.answerText, 'captured answer');
+  assert.deepEqual(calls[0], calls[1]);
+});
+
 test('section selection freezes the displayed choose context across a lost-response retry', async () => {
   const exports = {}, calls = [];
   const fragment = raw.slice(raw.indexOf('export async function chooseType('), raw.indexOf('export interface AnswerContext'));

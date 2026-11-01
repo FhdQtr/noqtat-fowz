@@ -55,6 +55,25 @@ test('reviewed poetry 920 keeps the exact missing words and correction aliases; 
   assert.equal(bank.find(q => q.id === 924).options[1], 'طول حياته');
 });
 
+test('second varied batch adds eight distinct reviewed concepts across small sections and family-accessible subjects', () => {
+  const ids = [410201,410202,410203,410204,410205,410206,410207,410208];
+  const expected = ['معاصر التمر', 'مسجد أبو القبيب ثم متحف قطر الوطني ثم منشآت الغاز في رأس لفان', 'شدة الإضاءة', 'طيبا', 'الأوائل', 'الاكتفاء من القهوة', 'نبتون ثم أورانوس ثم زحل ثم المشتري', 'خطأ'];
+  for (const [index,id] of ids.entries()) {
+    const q = bank.find(q => q.id === id);
+    assert.ok(q && !q.disabled, `source-reviewed addition ${id}`);
+    assert.equal(q.options[q.answer], expected[index]);
+    assert.equal(q.editorialBatch, 'varied-refresh-2');
+    assert.ok(['easy','medium','hard'].includes(q.editorialDifficulty));
+    assert.ok(q.conceptId);
+    assert.equal(new Set(q.options.map(normalize)).size, q.options.length);
+  }
+  const additions = bank.filter(q => ids.includes(q.id));
+  assert.equal(new Set(additions.map(q => q.conceptId)).size, 8);
+  assert.deepEqual([...new Set(additions.map(q => q.type))].sort(), ['completion','multiple_choice','ordering','true_false']);
+  assert.ok(additions.some(q => q.editorialDifficulty === 'easy'), 'preserve family-accessible choice');
+  assert.equal(additions.filter(q => ['completion','ordering'].includes(q.type)).length, 4);
+});
+
 const normalize = (s) => s.normalize('NFKC').replace(/[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed\u0640]/g,'').replace(/\s+/g,' ').trim();
 test('specific internally invalid or non-unique questions remain reversibly quarantined', () => {
   for (const id of [815,816,820,828,837,847,849,932,946]) {

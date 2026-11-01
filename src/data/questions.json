@@ -18244,5 +18244,103 @@
       "متحف قطر الوطني ثم متحف الفن الإسلامي ثم متحف: المتحف العربي للفن الحديث"
     ],
     "answer": 1
+  },
+  {
+    "id": 410201,
+    "type": "multiple_choice",
+    "category": "gulf",
+    "conceptId": "zubarah-madabis-function",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "varied-refresh-2",
+    "question": "ما وظيفة «المدابس» التي عُثر على بقاياها في موقع الزبارة الأثري؟",
+    "options": ["أحواض صباغة الأقمشة", "مخازن أدوات الغوص", "معاصر التمر", "أفران صهر المعادن"],
+    "answer": 2
+  },
+  {
+    "id": 410202,
+    "type": "ordering",
+    "category": "gulf",
+    "conceptId": "qcb-fifth-series-reverse-value-order",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "varied-refresh-2",
+    "question": "رتّب هذه المعالم حسب قيمة الورقة القطرية التي تظهر على ظهرها في الإصدار الخامس، من الأقل إلى الأعلى: منشآت الغاز في رأس لفان، مسجد أبو القبيب، متحف قطر الوطني.",
+    "options": [
+      "مسجد أبو القبيب ثم منشآت الغاز في رأس لفان ثم متحف قطر الوطني",
+      "متحف قطر الوطني ثم مسجد أبو القبيب ثم منشآت الغاز في رأس لفان",
+      "منشآت الغاز في رأس لفان ثم متحف قطر الوطني ثم مسجد أبو القبيب",
+      "مسجد أبو القبيب ثم متحف قطر الوطني ثم منشآت الغاز في رأس لفان"
+    ],
+    "answer": 3
+  },
+  {
+    "id": 410203,
+    "type": "multiple_choice",
+    "category": "science",
+    "conceptId": "si-candela-base-quantity",
+    "editorialDifficulty": "medium",
+    "editorialBatch": "varied-refresh-2",
+    "question": "أي كمية فيزيائية تُقاس بوحدة الكانديلا (cd) الأساسية في النظام الدولي للوحدات؟",
+    "options": ["شدة الإضاءة", "شدة التيار الكهربائي", "كمية المادة", "درجة الحرارة الديناميكية الحرارية"],
+    "answer": 0
+  },
+  {
+    "id": 410204,
+    "type": "completion",
+    "category": "language",
+    "conceptId": "poem-yukhatibuni-oud-line",
+    "editorialDifficulty": "medium",
+    "editorialBatch": "varied-refresh-2",
+    "question": "أكمل لفظ البيت: يزيد سفاهةً فأزيد حلماً كعودٍ زاده الإحراق ___",
+    "options": ["لهيبا", "طيبا", "نورا", "صلابة"],
+    "answer": 1
+  },
+  {
+    "id": 410205,
+    "type": "completion",
+    "category": "language",
+    "conceptId": "poem-ala-fi-sabil-almajd-last-era-line",
+    "editorialDifficulty": "hard",
+    "editorialBatch": "varied-refresh-2",
+    "question": "أكمل لفظ البيت: وإني وإن كنتُ الأخيرَ زمانُه لآتٍ بما لم تستطعه ___",
+    "options": ["القبائل", "الرسائل", "الأوائل", "المحافل"],
+    "answer": 2
+  },
+  {
+    "id": 410206,
+    "type": "multiple_choice",
+    "category": "gulf",
+    "conceptId": "arabic-coffee-cup-shake-etiquette",
+    "editorialDifficulty": "easy",
+    "editorialBatch": "varied-refresh-2",
+    "question": "بحسب آداب الضيافة المرتبطة بالقهوة العربية، على ماذا يدل هزّ الضيف لفنجانه عادةً؟",
+    "options": ["طلب ملء الفنجان حتى حافته", "طلب تبريد القهوة", "طلب تغيير نوع البن", "الاكتفاء من القهوة"],
+    "answer": 3
+  },
+  {
+    "id": 410207,
+    "type": "ordering",
+    "category": "science",
+    "conceptId": "outer-four-planets-equatorial-diameter-order",
+    "editorialDifficulty": "medium",
+    "editorialBatch": "varied-refresh-2",
+    "question": "رتّب هذه الكواكب حسب القطر الاستوائي من الأصغر إلى الأكبر، لا حسب الكتلة: زحل، نبتون، المشتري، أورانوس.",
+    "options": [
+      "نبتون ثم أورانوس ثم زحل ثم المشتري",
+      "أورانوس ثم نبتون ثم زحل ثم المشتري",
+      "نبتون ثم أورانوس ثم المشتري ثم زحل",
+      "نبتون ثم زحل ثم أورانوس ثم المشتري"
+    ],
+    "answer": 0
+  },
+  {
+    "id": 410208,
+    "type": "true_false",
+    "category": "gulf",
+    "conceptId": "falconry-not-only-falcons-definition",
+    "editorialDifficulty": "medium",
+    "editorialBatch": "varied-refresh-2",
+    "question": "الصقارة، وفق تعريف اليونسكو للتراث الحي، تقتصر على تدريب الصقور ولا تشمل أي طيور جارحة أخرى.",
+    "options": ["صح", "خطأ"],
+    "answer": 1
   }
 ]

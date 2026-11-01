@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
+test('favicon uses a compact raster of the unchanged brand instead of the full logo download', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(html, /rel="icon" type="image\/png" sizes="64x64" href="\/brand\/favicon-64.png"/);
+  const image = readFileSync(new URL('../public/brand/favicon-64.png', import.meta.url));
+  assert.ok(image.length < 12_000, 'favicon payload budget');
+  assert.equal(image.readUInt32BE(16), 64);
+  assert.equal(image.readUInt32BE(20), 64);
+  assert.ok(existsSync(new URL('../public/brand/al-midan-logo.png', import.meta.url)), 'original logo preserved');
+});
+
 const path = new URL('../src/lib/routeMetadata.ts', import.meta.url);
 test('crawler files enumerate only deliberate public routes and private routes have a header-level noindex', () => {
   const robotsPath = new URL('../public/robots.txt', import.meta.url);

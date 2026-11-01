@@ -1,0 +1,20 @@
+# Bounded editorial refresh workflow
+
+This is a source/review workflow, not permission to overwrite a live custom bank or clear host history. npm run review:content is read-only and never publishes.
+
+1. Choose a finite batch (1–25 items). Prefer scarce sections and genuinely different concepts, not cosmetic rewording or new IDs for familiar answers. Keep an accessible family choice. Consult the existing bank and exact remaining-review ledger before creating duplicates.
+2. Read public primary sources where possible. Archive the actual page outside frontend bundles, register its URL in the task citations ledger, and attach literal supporting quotations. Read every premise of an ordering question. Do not substitute generated commentary, search snippets, citation self-consistency or an inherited manifest for source verification.
+3. Author original Arabic stems with one defensible answer; normalize Arabic marks when comparing alternatives. A completion asks for exact text, not any synonymous ending; uncertain authorship need not become a question. An ordering stem must not print the answer in order. Do not copy protected images or competitor banks.
+4. Give each new concept a stable conceptId, editorialBatch and honest editorialDifficulty (easy/medium/hard estimate, NOT calibrated player performance). Record sourceUrl, evidenceFile, evidenceQuote, correctAnswer, rationale and difficulty in a manifest shaped like editorialVariedBatch2.json. This command supports additions with matching bank batch/difficulty metadata; historical correction manifests need the existing correction/alias review, not a false addition label.
+5. For corrections retain original IDs and rotationLegacyPrompts/concept/image aliases as required. Reproduce historical prompt exclusions through unfinished section cycles and g1…g10; obsolete answer-bearing prompts stay private. Never reset live history to make a batch look fresh.
+6. Add a failing content test before editing the bank. Change only the finite reviewed IDs, preserve uncertain/deferred IDs, refresh questionStats, and run:
+
+    node scripts/review-editorial-batch.mjs --batch src/data/editorialVariedBatch2.json
+    npm run check
+
+The command validates local metadata and rejects drifting answers, duplicate/empty/oversized entries, missing/disabled items, incomplete HTTPS provenance and mismatched difficulty/batch. It reports total/active bank and uncalibrated active counts. It does NOT fetch/validate the source's truth, certify that a quote is actually in its evidence file, measure difficulty, inspect custom/excluded production inventory or prove live capacity. Quote matching and editorial reading are separate evidence steps, as are cycle/history tests.
+
+7. Exercise any changed selector paths on the isolated demo emulators. Confirm all eligible types/flags, section exhaustion AND ten intervening consumed-game exclusion, semantic/image aliases, same-host persistence/isolation, capacity pause, ties/swaps and retry/concurrency. Real historical/live inventory counts remain access-dependent. New facts expand inventory, not a licence to recycle recent assets.
+8. Review the diff/manifest/quotes, keep exact added/corrected/flagged/deferred counts and the unchanged remainder. Update the frontend/functions/rules/bank compatibility manifest and follow the release gate. A passing source refresh is not permission to deploy only the frontend against an incompatible backend. Do not bulk-import over a live custom bank.
+
+Gameplay topic/difficulty presets are not implemented by this report. A later finite preset implementation must filter create/start/ordinary/swap/showdown/recheck consistently, fail honestly on insufficient reviewed capacity and keep the same host history/cycle universe. The default mixed family pool must remain available; do not label all unclassified legacy questions easy or hard.

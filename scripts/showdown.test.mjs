@@ -1781,18 +1781,19 @@ test('admin inventory counts exactly the playable bank and explains deletion/exc
   const h = harness();
   const base = await h.adminCall('getAdminQuestions');
   const builtin = base.questions.filter((q) => q.type === 'multiple_choice' && !q.disabled && !q.custom);
-  assert.equal(builtin.length, 743);
+  const expectedBuiltin = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8')).filter(q => q.type === 'multiple_choice');
+  assert.equal(builtin.length, expectedBuiltin.filter(q => !q.disabled).length);
   h.data.questionDeletions = Object.fromEntries(builtin.slice(0, 10).map((q) => [q.id, true]));
   h.data.questionExclusions = Object.fromEntries(builtin.slice(10, 16).map((q) => [q.id, true]));
   // A deleted and excluded marker must not subtract the same question twice.
   h.data.questionExclusions[builtin[0].id] = true;
   const catalog = await h.adminCall('getAdminQuestions');
   const counts = catalog.inventory.multiple_choice;
-  assert.equal(counts.builtin, 793);
-  assert.equal(counts.legacyDisabled, 50);
+  assert.equal(counts.builtin, expectedBuiltin.length);
+  assert.equal(counts.legacyDisabled, expectedBuiltin.filter(q => q.disabled).length);
   assert.equal(counts.deleted, 10);
   assert.equal(counts.excluded, 6);
-  assert.equal(counts.available, 727);
+  assert.equal(counts.available, builtin.length - 16);
   const bank = await h.helpers.questionBank();
   for (const [type, inventory] of Object.entries(catalog.inventory)) {
     assert.equal(inventory.available, bank.filter((q) => q.type === type && !q.disabled).length);
@@ -1808,14 +1809,15 @@ test('admin inventory counts exactly the playable bank and explains deletion/exc
 
 test('admin inventory refreshes after custom additions and permanent deletion', async () => {
   const h = harness();
+  const expectedActive = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8')).filter(q => q.type === 'multiple_choice' && !q.disabled).length;
   h.data.customQuestions = { 900001: { id: 900001, type: 'multiple_choice', question: 'خاص', options: ['أ', 'ب'], answer: 0 } };
   let catalog = await h.adminCall('getAdminQuestions');
   assert.equal(catalog.inventory.multiple_choice.customAvailable, 1);
-  assert.equal(catalog.inventory.multiple_choice.available, 744);
+  assert.equal(catalog.inventory.multiple_choice.available, expectedActive + 1);
   await h.adminCall('deleteAdminQuestions', { ids: [900001] });
   catalog = await h.adminCall('getAdminQuestions');
   assert.equal(catalog.inventory.multiple_choice.customAvailable, 0);
-  assert.equal(catalog.inventory.multiple_choice.available, 743);
+  assert.equal(catalog.inventory.multiple_choice.available, expectedActive);
 });
 
 test('solo challenge never draws questions excluded by admin', async () => {

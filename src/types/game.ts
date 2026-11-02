@@ -19,6 +19,7 @@ export type BuiltinQuestionType =
 export type QuestionType = string;
 
 export type AnswerMode = "anyone" | "representative" | "host";
+export type ContentPreset = "mixed" | "gulf" | "reviewed_challenge";
 export type PowerCardId = "extraTime" | "doublePoints" | "swapQuestion" | "freeze" | "steal" | "pickPlayer";
 
 export interface TeamPowerCards {
@@ -187,6 +188,7 @@ export interface Match {
   answerMode?: AnswerMode;
   challengeMode?: "classic" | "picture_guess";
   enabledTypes: QuestionType[];
+  contentPreset?: ContentPreset;
   rotationBlocked?: Record<string, Record<string, Record<string, boolean>>>;
   typeCaps?: Record<string, number>; // الحصة العادلة لكل قسم بحسب حجم البنك وعدد الفرق
   state: GameState;

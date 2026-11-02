@@ -7,12 +7,13 @@ import ts from 'typescript';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const require = createRequire(import.meta.url);
-function renderSetup() {
+function renderSetup(preset = 'mixed') {
   const exports = {};
   const source = ts.transpileModule(readFileSync(new URL('../src/pages/HostSetup.tsx', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const load = (name) => {
+    if (name === 'react') return { ...require('react'), useState: (value) => require('react').useState(value === 'mixed' ? preset : value) };
     if (name === 'react-router') return { useNavigate: () => () => {}, Link: ({ to, children, ...props }) => require('react').createElement('a', { href: to, ...props }, children) };
     if (name === '../lib/useCustomBank') return { useCustomTypes: () => [] };
     if (name === '../lib/matchApi') return { createMatch: () => { throw new Error('No backend calls during setup rendering'); } };
@@ -34,6 +35,24 @@ test('setup announces all existing selected states and explains each device with
   assert.match(html, /جوال واحد على الأقل لكل فريق/);
   assert.match(html, /شاشة الجمهور للعرض/);
   assert.match(html, /حتى في وضع «المقدم فقط»/);
+});
+
+test('setup offers honest opt-in topic/difficulty presets without changing mixed family defaults', () => {
+  const html = renderSetup();
+  assert.match(html, /<label[^>]*for="content-preset"/);
+  assert.match(html, /<select[^>]*id="content-preset"/);
+  assert.match(html, /value="mixed" selected=""/);
+  assert.match(html, /value="gulf"/);
+  assert.match(html, /value="reviewed_challenge"/);
+  assert.match(html, /الصعوبة في معظم البنك غير مصنفة/);
+  assert.match(renderSetup('reviewed_challenge'), /تقدير تحريري، لا قياس أداء/);
+});
+
+test('filtered setup disables unclassified punishment and picture choices with an explanation', () => {
+  const html = renderSetup('gulf');
+  assert.match(html, /<button[^>]*disabled=""[^>]*>سؤال وعقاب<\/button>/);
+  assert.match(html, /<button[^>]*disabled=""[^>]*><span[^>]*>تحدي الصور/);
+  assert.match(html, /لا تشمل سؤال وعقاب أو تحدي الصور/);
 });
 
 test('quick setup hides advanced controls by default but keeps their values in a visible summary', () => {

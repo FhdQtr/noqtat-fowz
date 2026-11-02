@@ -2,7 +2,7 @@
 import { onDisconnect, onValue, ref, remove, serverTimestamp, set, type Unsubscribe } from "firebase/database";
 import { httpsCallable } from "firebase/functions";
 import { db, ensureAuth, functions } from "./firebase";
-import type { AnswerMode, Match, Player, PowerCardId, QuestionType, TeamColor } from "../types/game";
+import type { AnswerMode, ContentPreset, Match, Player, PowerCardId, QuestionType, TeamColor } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 import { normalizeMatch } from "./normalizeMatch";
 
@@ -14,6 +14,7 @@ export interface CreateMatchOptions {
   answerMode: AnswerMode;
   enabledTypes: QuestionType[];
   challengeMode?: "classic" | "picture_guess";
+  contentPreset?: ContentPreset;
 }
 
 type ActionName =

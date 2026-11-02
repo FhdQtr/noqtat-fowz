@@ -10,6 +10,80 @@ const source = readFileSync(new URL('../functions/index.js', import.meta.url), '
 const realRequire = createRequire(new URL('../functions/index.js', import.meta.url));
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+test('create rejects unknown content preset before writing a lobby or rotation history', async () => {
+  const h = harness();
+  await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['multiple_choice'], questionsPerTeam: 2, contentPreset: 'silently-ignore-me' } }), { code: 'invalid-argument' });
+  assert.equal(Object.keys(h.data.matches).length, 1);
+  assert.equal(h.data.questionRotation, undefined);
+});
+
+test('gulf preset creation rejects an incompatible flag section instead of silently using global inventory', async () => {
+  const h = harness();
+  await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['flag'], questionsPerTeam: 2, contentPreset: 'gulf' } }), { code: 'failed-precondition' });
+  assert.equal(Object.keys(h.data.matches).length, 1);
+});
+
+test('reviewed difficulty preset never treats unclassified brand inventory as medium or hard', async () => {
+  const h = harness();
+  await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['brand'], questionsPerTeam: 2, contentPreset: 'reviewed_challenge' } }), { code: 'failed-precondition' });
+});
+
+for (const preset of ['gulf', 'reviewed_challenge']) for (const action of ['startMatch', 'chooseType', 'usePowerCard', 'recheckSelectionCapacity', 'advanceTurn']) test(`${preset} preset remains binding in ${action} when its pool is exhausted`, async () => {
+  const h = harness();
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  h.data.questionExclusions = Object.fromEntries(bank.filter(q => preset === 'gulf'
+    ? q.category === 'gulf' || ['gulf','qatari'].includes(q.region)
+    : ['medium','hard'].includes(q.editorialDifficulty)).map(q => [q.id, true]));
+  const match = h.match();
+  Object.assign(match, { contentPreset: preset, hostUid: 'host', enabledTypes: ['multiple_choice'], questionsPerTeam: 2,
+    typeCaps: { multiple_choice: 4 }, typeCounts: {}, usedIdsByTeam: {}, sectionCycleByTeam: {} });
+  match.teams['A234-1'].cardBalance = 1000; match.teams['A234-1'].powerCards = { swapQuestion: true };
+  match.state = { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] };
+  if (action === 'startMatch') {
+    match.status = 'lobby'; match.state.phase = 'lobby';
+    await assert.rejects(h.call(action, 'host', { firstTeamCode: 'A234-1' }), { code: 'failed-precondition' });
+    assert.equal(match.status, 'lobby');
+  } else if (action === 'chooseType') {
+    assert.equal((await h.call(action, 'user1', { type: 'multiple_choice' })).status, 'empty');
+    assert.equal(h.match().state.question ?? null, null);
+  } else if (action === 'recheckSelectionCapacity') {
+    const transition = presenterContext(match.state, 'preset-capacity');
+    assert.equal((await h.call(action, 'host', { transition })).available, false);
+    assert.equal(h.match().state.selectionPause.reason, 'capacity');
+  } else if (action === 'usePowerCard') {
+    Object.assign(match.state, { phase: 'question', round: 1, question: { id: 42, type: 'multiple_choice', options: ['A','B','C','D'], answer: -1 } });
+    const reply = await h.call(action, 'user1', { teamCode: 'A234-1', card: 'swapQuestion' });
+    assert.equal(reply.accepted, false); assert.equal(reply.reason, 'empty');
+    assert.equal(h.match().teams['A234-1'].cardBalance, 1000);
+    assert.equal(h.match().state.question.id, 42);
+  } else {
+    Object.assign(match.state, { phase: 'revealed', round: 6, question: { id: 42, type: 'multiple_choice', options: ['A','B','C','D'], answer: -1 } });
+    match.showdownCount = 0;
+    await h.call(action);
+    assert.equal(h.match().state.phase, 'choose', 'optional showdown must not secretly draw a different topic');
+  }
+});
+
+test('filtered presets reject player-authored punishment and unclassified picture mini-games', async () => {
+  for (const extra of [{ enabledTypes: ['multiple_choice', 'punishment'] }, { enabledTypes: ['multiple_choice'], challengeMode: 'picture_guess' }]) {
+    const h = harness();
+    await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], questionsPerTeam: 2, contentPreset: 'gulf', ...extra } }), { code: 'invalid-argument' });
+  }
+});
+
+test('changing content presets cannot shrink a section universe to recycle used items or clear its cycle', async () => {
+  const h = harness();
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const used = bank.filter(q => q.type === 'multiple_choice' && !q.disabled && (q.category === 'gulf' || ['gulf','qatari'].includes(q.region))).map(q => h.helpers.rotationAssetKey(q));
+  const ledger = { policyVersion: 2, games: [], cycles: { multiple_choice: { number: 3, used } } };
+  h.data.questionRotation = { host: clone(ledger) };
+  const options = { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['multiple_choice'], questionsPerTeam: 2 };
+  await assert.rejects(h.call('createMatch', 'host', { options: { ...options, contentPreset: 'gulf' } }), { code: 'failed-precondition' });
+  assert.deepEqual(clone(h.data.questionRotation.host), ledger);
+  await h.call('createMatch', 'host', { options: { ...options, contentPreset: 'mixed' } });
+  assert.deepEqual(clone(h.data.questionRotation.host), ledger, 'preflight is pure and other section content stays eligible without reset');
+});
+
 test('sixty reviewed bank additions have verified answer mappings, unique image assets and valid orderings', () => {
   const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
   const review = JSON.parse(readFileSync(new URL('../src/data/bankSources-20261006.json', import.meta.url), 'utf8'));

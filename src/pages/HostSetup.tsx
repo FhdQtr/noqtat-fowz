@@ -10,7 +10,7 @@ import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import { createMatch } from "../lib/matchApi";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useCustomTypes } from "../lib/useCustomBank";
-import type { AnswerMode, QuestionType } from "../types/game";
+import type { AnswerMode, ContentPreset, QuestionType } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 
 const TEAM_COLOR_ORDER = ["maroon", "emerald", "royal", "gold"] as const;
@@ -29,7 +29,12 @@ const TYPE_OPTIONS: { id: QuestionType; label: string }[] = [
   { id: "punishment", label: "سؤال وعقاب" },
 ];
 
-const QUESTIONS_PER_TEAM_OPTIONS = [4, 6, 8, 10, 12];
+const CONTENT_PRESETS: { id: ContentPreset; label: string }[] = [
+  { id: "mixed", label: "متنوع — للمجلس والعائلة" },
+  { id: "gulf", label: "قطري وخليجي — موضوع محدد" },
+  { id: "reviewed_challenge", label: "تحدٍ قصير — متوسط وأصعب بتحرير موثق" },
+];
+const QUESTIONS_PER_TEAM_OPTIONS = [2, 4, 6, 8, 10, 12];
 const TIMER_OPTIONS = [10, 15, 20, 30, 40, 50, 60];
 const ANSWER_MODE_OPTIONS: { id: AnswerMode; label: string; hint: string }[] = [
   { id: "representative", label: "ممثل الفريق", hint: "شخص واحد من كل فريق يثبت الإجابة" },
@@ -48,6 +53,7 @@ export default function HostSetup() {
   const [answerMode, setAnswerMode] = useState<AnswerMode>("representative");
   const [challengeMode, setChallengeMode] = useState<"classic" | "picture_guess">("classic");
   const [types, setTypes] = useState<QuestionType[]>(TYPE_OPTIONS.map((t) => t.id));
+  const [contentPreset, setContentPreset] = useState<ContentPreset>("mixed");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const advancedRef = useRef<HTMLDetailsElement>(null);
@@ -60,10 +66,10 @@ export default function HostSetup() {
   ];
   const customIds = customTypes.map((t) => t.id);
   useEffect(() => {
-    if (customIds.length)
+    if (contentPreset === "mixed" && customIds.length)
       setTypes((prev) => (customIds.every((id) => prev.includes(id)) ? prev : [...prev, ...customIds.filter((id) => !prev.includes(id))]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customIds.join(",")]);
+  }, [customIds.join(","), contentPreset]);
 
   const setCount = (n: number) => {
     const c = Math.min(4, Math.max(2, n));
@@ -78,6 +84,15 @@ export default function HostSetup() {
 
   const toggleType = (t: QuestionType) => {
     setTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  };
+
+  const applyContentPreset = (preset: ContentPreset) => {
+    setContentPreset(preset);
+    setTypes(preset === "mixed" ? allTypeOptions.map((type) => type.id)
+      : preset === "gulf" ? ["multiple_choice"] : ["multiple_choice", "ordering"]);
+    setQuestionsPerTeam(preset === "mixed" ? 8 : preset === "gulf" ? 4 : 2);
+    if (preset !== "mixed") setChallengeMode("classic");
+    setErr("");
   };
 
   const create = async () => {
@@ -101,6 +116,7 @@ export default function HostSetup() {
           answerMode,
           enabledTypes: types,
           challengeMode,
+          contentPreset,
         }),
         new Promise<never>((_, rej) =>
           setTimeout(() => rej(new Error("الاتصال بالسيرفر أخذ وقتًا أطول من المعتاد — تأكد من الإنترنت أو جرّب شبكة ثانية")), 20000)
@@ -145,6 +161,20 @@ export default function HostSetup() {
           </details>
 
           {/* اسم المقدم */}
+          <label htmlFor="content-preset" className="mb-2 block text-sm font-bold text-gold-light">محتوى المجلس</label>
+          <select id="content-preset" value={contentPreset} disabled={busy}
+            onChange={(event) => applyContentPreset(event.target.value as ContentPreset)}
+            aria-describedby="content-preset-help"
+            className="input-night min-h-11 mb-2 [&>option]:bg-night-800">
+            {CONTENT_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+          </select>
+          <p id="content-preset-help" className="mb-6 text-xs leading-relaxed text-muted-foreground">
+            {contentPreset === "gulf" ? "أسئلة مصنفة قطرية أو خليجية، بصعوبة مختلطة؛ ليست كل إجابات البنك مراجعة مستقلًا. "
+              : contentPreset === "reviewed_challenge" ? "دفعة صغيرة من الأسئلة الموثقة فقط؛ متوسط وأصعب تقدير تحريري، لا قياس أداء. قد تنفد سريعًا بسبب سجل آخر عشر مسابقات. "
+              : "المحتوى المتنوع لا يفرض صعوبة أعلى على المجلس. الصعوبة في معظم البنك غير مصنفة. "}
+            تغيير الحزمة يضبط الأقسام المقترحة وطول المسابقة؛ يمكنك تعديلهما أدناه. الحزمة لا تمسح التاريخ، والخادم يفحص التوفر الفعلي. الحزم المحددة لا تشمل سؤال وعقاب أو تحدي الصور.
+          </p>
+
           <label htmlFor="presenter-name" className="block text-sm font-bold mb-2 text-gold-light/90">اسمك (الحكم)</label>
           <input
             id="presenter-name"
@@ -250,7 +280,7 @@ export default function HostSetup() {
             <legend className="mb-2 text-sm font-bold text-gold-light/90">نوع التحدي بعد 3 أسئلة لكل فريق</legend>
             <div className="grid gap-2">
               {([{ id: "classic", label: "مواجهة الجميع: اختيارات", hint: "سؤال مشترك؛ الأسرع بالإجابة الصحيحة يفوز" }, { id: "picture_guess", label: "تحدي الصور: هل هو…؟", hint: "فريقان، صورتان مختلفتان؛ الحكم يبدأ الدقيقتين ويختار الفائز بعد الوقت" }] as const).map((option) => (
-                <button key={option.id} type="button" disabled={option.id === "picture_guess" && teamCount !== 2} onClick={() => setChallengeMode(option.id)} aria-pressed={challengeMode === option.id}
+                <button key={option.id} type="button" disabled={option.id === "picture_guess" && (teamCount !== 2 || contentPreset !== "mixed")} onClick={() => setChallengeMode(option.id)} aria-pressed={challengeMode === option.id}
                   className={`rounded-xl border px-4 py-3 text-right font-cairo disabled:opacity-40 ${challengeMode === option.id ? "border-gold bg-gold/20 text-gold-light" : "border-gold-faint/40 text-muted-foreground"}`}>
                   <span className="block font-bold">{option.label}</span><span className="mt-1 block text-xs">{option.hint}</span>
                 </button>
@@ -308,6 +338,7 @@ export default function HostSetup() {
                 <button
                   key={id}
                   onClick={() => toggleType(id)}
+                  disabled={id === "punishment" && contentPreset !== "mixed"}
                   aria-pressed={on}
                   className={`flex min-w-[132px] flex-1 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-cairo font-bold border transition-all ${
                     on

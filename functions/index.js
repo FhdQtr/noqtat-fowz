@@ -381,6 +381,20 @@ async function questionBankState(includeCustom = true) {
   return { bank, excluded, deleted };
 }
 
+function contentPreset(value) {
+  if (value === undefined || value === null || value === "") return "mixed";
+  if (!["mixed", "gulf", "reviewed_challenge"].includes(value)) fail("invalid-argument", "حزمة المحتوى غير معروفة؛ حدّث إعداد الميدان");
+  return value;
+}
+
+function presetQuestions(bank, presetValue) {
+  const preset = contentPreset(presetValue);
+  if (preset === "gulf") return bank.filter((q) => q.category === "gulf" || ["gulf", "qatari"].includes(q.region));
+  if (preset === "reviewed_challenge") return bank.filter((q) => ["medium", "hard"].includes(q.editorialDifficulty)
+    && QUESTIONS.some((builtin) => builtin.id === q.id && builtin.question === q.question && builtin.editorialBatch === q.editorialBatch));
+  return bank;
+}
+
 async function questionBank(includeCustom = true) {
   return (await questionBankState(includeCustom)).bank;
 }
@@ -778,10 +792,14 @@ async function createMatch(uid, options) {
   if (options.timerMode !== undefined && options.timerMode !== "advisory") {
     fail("invalid-argument", "المؤقت العادي إرشادي فقط؛ القفل عند الصفر غير مدعوم");
   }
+  const preset = contentPreset(options.contentPreset);
   const challengeMode = options.challengeMode === "picture_guess" ? "picture_guess" : "classic";
   if (challengeMode === "picture_guess" && names.length !== 2) fail("invalid-argument", "تحدي الصور يحتاج فريقين");
   const enabledTypes = Array.isArray(options.enabledTypes) ? [...new Set(options.enabledTypes.map((x) => text(x, 50)).filter(Boolean))] : [];
   if (!enabledTypes.length) fail("invalid-argument", "اختر نوع سؤال واحداً على الأقل");
+  if (preset !== "mixed" && (enabledTypes.includes("punishment") || challengeMode === "picture_guess")) {
+    fail("invalid-argument", "حزمة المحتوى المختارة للأسئلة البنكية فقط؛ ألغ سؤال وعقاب وتحدي الصور أو اختر المحتوى المختلط");
+  }
   // توافق مؤقت مع الواجهة الحالية في الإنتاج التي ترسل totalRounds،
   // ومع الواجهة الجديدة التي ترسل questionsPerTeam.
   const requestedPerTeam = Number(options.questionsPerTeam);
@@ -795,7 +813,7 @@ async function createMatch(uid, options) {
   const timer = Math.min(120, Math.max(0, Number(options.timer) || 0));
   await settleRotationReservations(uid);
   const bank = await questionBank();
-  const active = bank.filter((question) => !question.disabled && enabledTypes.includes(question.type));
+  const active = presetQuestions(bank, preset).filter((question) => !question.disabled && enabledTypes.includes(question.type));
   const available = active.length ? await rotateQuestion(active, "preflight", uid, bank, null, true) : [];
   const typeCaps = fairTypeCaps(enabledTypes, names.length, questionsPerTeam, available);
   const fullCycles = Math.floor(questionsPerTeam / enabledTypes.length);
@@ -827,7 +845,7 @@ async function createMatch(uid, options) {
     const createdAt = now();
     const match = {
       hostName: text(options.hostName, 20) || "المقدم",
-      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, timerMode: "advisory", answerMode, challengeMode, enabledTypes, typeCaps, teams,
+      createdAt, expiresAt: createdAt + LOBBY_TTL_MS, status: "lobby", contentPreset: preset, teamOrder, turnIndex: 0, questionsPerTeam, totalRounds, timer, timerMode: "advisory", answerMode, challengeMode, enabledTypes, typeCaps, teams,
       state: { phase: "lobby", round: 0, targetTeam: null, originalTeam: null, passCount: 0, question: null, answer: null, isCorrect: null, timer, questionStartedAt: null, questionDuration: null, selectionRequestId: null, usedIds: [], usedAssets: [], questionValue: 0, viewUntil: null, assistUsed: false, pointMultiplier: 1, extraTimeUsed: false, stealFullValue: false, forcedPlayerId: null, forcedPlayerName: null, cardsFrozenTeam: null, cardUsedThisTurn: false },
     };
     // A cold transaction cache retries against the remote record. Never overwrite
@@ -961,7 +979,7 @@ async function recheckSelectionCapacity(id, match, transitionKey) {
   await settleRotationReservations(owner);
   const bank = await questionBank();
   const usedIds = new Set(match.state.usedIds || []), usedAssets = new Set(match.state.usedAssets || []);
-  const pool = bank.filter((q) => !q.disabled && match.enabledTypes.includes(q.type)
+  const pool = presetQuestions(bank, match.contentPreset).filter((q) => !q.disabled && match.enabledTypes.includes(q.type)
     && !usedIds.has(q.id) && !usedAssets.has(questionAssetKey(q)));
   const inspection = pool.length ? await rotateQuestion(pool, rotationGameId(id, match), owner, bank, null, "capacity")
     : { questions: [], heldTypes: [] };
@@ -1020,7 +1038,7 @@ async function chooseType(uid, data) {
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
   const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
-  const teamPool = candidates.filter((q) => q.type === type && !q.disabled && !teamUsedIds.has(q.id));
+  const teamPool = presetQuestions(candidates, match.contentPreset).filter((q) => q.type === type && !q.disabled && !teamUsedIds.has(q.id));
   if (!teamPool.length) {
     await markSectionUnavailable(id, match, teamCode, typeKey);
     return { status: "empty" };
@@ -1178,7 +1196,7 @@ async function startShowdown(id, match, transitionKey = null, skipUnanswered = f
   const usedIds = new Set(match.state.usedIds || []);
   const usedAssets = new Set(match.state.usedAssets || []);
   const bank = await questionBank();
-  const eligible = bank.filter((question) =>
+  const eligible = presetQuestions(bank, match.contentPreset).filter((question) =>
     !question.disabled
     && !usesVerbalChoices(question.type)
     && Array.isArray(question.options)
@@ -1685,7 +1703,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       const usedIds = new Set(state.usedIds || []);
       const usedAssets = new Set(state.usedAssets || []);
       const teamUsedIds = new Set(match.usedIdsByTeam?.[teamCode] || []);
-      const teamPool = candidates.filter((question) => question.type === state.question.type && !question.disabled && !teamUsedIds.has(question.id));
+      const teamPool = presetQuestions(candidates, match.contentPreset).filter((question) => question.type === state.question.type && !question.disabled && !teamUsedIds.has(question.id));
       if (!teamPool.length) return { accepted: false, reason: "empty" };
       const pool = teamPool.filter((question) => !usedIds.has(question.id) && !usedAssets.has(questionAssetKey(question)));
       if (!pool.length) return { accepted: false, reason: "empty" };
@@ -1950,7 +1968,7 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
       if (missing) fail("failed-precondition", "عيّن ممثلاً لكل فريق قبل بدء المسابقة");
     }
     const bank = await questionBank();
-    const active = bank.filter((question) => !question.disabled && match.enabledTypes.includes(question.type));
+    const active = presetQuestions(bank, match.contentPreset).filter((question) => !question.disabled && match.enabledTypes.includes(question.type));
     await settleRotationReservations(uid);
     const available = active.length ? await rotateQuestion(active, rotationGameId(id, match), uid, bank, null, true) : [];
     const perTeam = match.questionsPerTeam || Math.ceil(match.totalRounds / match.teamOrder.length);

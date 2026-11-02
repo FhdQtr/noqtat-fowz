@@ -226,6 +226,77 @@ for (const teamCount of [2, 3, 4]) test(`real ${teamCount}-team create/join/star
   assert.equal(Object.values(Object.values(games)[0].assets).length, seen.size);
 });
 
+for (const teamCount of [2, 3, 4]) test(`real scarce ${teamCount}-team repeated tie pauses without recycling and empty swap preserves balance before bounded refresh recovery`, async (t) => {
+  const uid = `HQA-scarce-${randomUUID()}`, type = `ct_qa_${randomUUID().replaceAll('-', '')}`;
+  const count = teamCount * 3 + 1;
+  const ids = Array.from({ length: count + teamCount }, (_, i) => 998000 + teamCount * 100 + i);
+  const items = ids.map((id) => ({ id, type, category: 'custom', question: `Hermes QA scarce ${type} item ${id}`, options: ['A','B','C','D'], answer: 0 }));
+  t.after(async () => { await Promise.all(ids.map(id => db.ref(`customQuestions/${id}`).remove())); });
+  for (const q of items.slice(0, count)) await db.ref(`customQuestions/${q.id}`).set(q);
+  const send = (action, extra = {}, actor = uid) => exports.gameAction({ auth: { uid: actor }, rawRequest: { ip: `192.0.2.${150 + teamCount}` }, data: { action, ...extra } });
+  const room = (await send('createMatch', { options: { teamNames: Array.from({ length: teamCount }, (_, i) => `Hermes QA ${i + 1}`), enabledTypes: [type], questionsPerTeam: 2, answerMode: 'anyone', timerMode: 'advisory' } })).code;
+  const read = async () => (await db.ref(`matches/${room}`).get()).val();
+  const context = (state) => ({ questionId: state.question?.id ?? null, phase: state.phase, round: state.round || 0,
+    attemptId: `${state.round || 0}:${state.targetTeam || ''}:${state.passCount || 0}:${state.selectionRequestId || ''}`, revision: state.revision || 0, requestId: randomUUID() });
+  const invites = await send('getTeamInvites', { matchCode: room });
+  const initial = await read(), actors = {}, seen = new Set();
+  for (const [i, team] of initial.teamOrder.entries()) {
+    actors[team] = `${uid}-player-${i}`;
+    await send('joinTeam', { matchCode: room, teamCode: team, inviteKey: invites.teamKeys[team], name: `Hermes QA ${i + 1}` }, actors[team]);
+  }
+  await send('startMatch', { matchCode: room, firstTeamCode: initial.teamOrder[0] });
+  let swapped = false, emptySwap = false;
+  for (let turn = 0; turn < teamCount * 3; turn++) {
+    let match = await read(); const team = match.state.targetTeam;
+    const transition = context(match.state), pick = { matchCode: room, type, transition, requestId: transition.requestId };
+    assert.equal((await send('chooseType', pick, actors[team])).status, 'accepted');
+    match = await read(); assert.equal(seen.has(match.state.question.id), false); seen.add(match.state.question.id);
+    if (!swapped && match.teams[team].cardBalance >= 50) {
+      const command = { matchCode: room, teamCode: team, card: 'swapQuestion', transition: context(match.state) };
+      assert.equal((await send('usePowerCard', command, actors[team])).accepted, true);
+      match = await read(); assert.equal(seen.has(match.state.question.id), false); seen.add(match.state.question.id);
+      const replay = await send('usePowerCard', command, actors[team]); assert.equal(replay.accepted, true); assert.deepEqual(await read(), match);
+      swapped = true;
+    } else if (seen.size === count) {
+      const command = { matchCode: room, teamCode: team, card: 'swapQuestion', transition: context(match.state) };
+      const response = await send('usePowerCard', command, actors[team]);
+      assert.equal(response.accepted, false); assert.equal(response.reason, 'empty');
+      const after = await read();
+      assert.deepEqual(after.teams, match.teams); assert.equal(after.state.question.id, match.state.question.id);
+      assert.equal(after.state.revision, match.state.revision); assert.equal(after.state.cardUsedThisTurn, match.state.cardUsedThisTurn);
+      emptySwap = true;
+    }
+    await send('judgeVerbal', { matchCode: room, correct: !match.tieBreaker?.active, transition: context((await read()).state) });
+    await send('advanceTurn', { matchCode: room, transition: context((await read()).state) });
+  }
+  assert.equal(swapped, true); assert.equal(emptySwap, true); assert.equal(seen.size, count);
+  let paused = await read(); assert.equal(paused.tieBreaker.cycle, 2); assert.equal(paused.status, 'playing');
+  const beforeHistory = (await db.ref(`questionRotation/${uid}`).get()).val();
+  const beforeScores = Object.values(paused.teams).map(team => team.score);
+  const transition = context(paused.state), pick = { matchCode: room, type, transition, requestId: transition.requestId };
+  assert.equal((await send('chooseType', pick, actors[paused.state.targetTeam])).status, 'empty');
+  paused = await read();
+  const check = { matchCode: room, transition: context(paused.state) };
+  assert.equal((await send('recheckSelectionCapacity', check)).available, false);
+  paused = await read(); assert.equal(paused.state.selectionPause.reason, 'capacity');
+  assert.deepEqual(Object.values(paused.teams).map(team => team.score), beforeScores);
+  assert.deepEqual((await db.ref(`questionRotation/${uid}`).get()).val(), beforeHistory);
+  for (const q of items.slice(count)) await db.ref(`customQuestions/${q.id}`).set(q);
+  assert.equal((await send('recheckSelectionCapacity', { matchCode: room, transition: context(paused.state) })).available, true);
+  assert.deepEqual((await db.ref(`questionRotation/${uid}`).get()).val(), beforeHistory, 'refresh/recheck must preserve consumed history');
+  for (let turn = 0; turn < teamCount; turn++) {
+    let match = await read(); const team = match.state.targetTeam, transition = context(match.state);
+    assert.equal((await send('chooseType', { matchCode: room, type, transition, requestId: transition.requestId }, actors[team])).status, 'accepted');
+    match = await read(); assert.ok(ids.slice(count).includes(match.state.question.id)); assert.equal(seen.has(match.state.question.id), false); seen.add(match.state.question.id);
+    await send('judgeVerbal', { matchCode: room, correct: team === initial.teamOrder[0], transition: context(match.state) });
+    await send('advanceTurn', { matchCode: room, transition: context((await read()).state) });
+  }
+  const ended = await read(); assert.equal(ended.status, 'ended'); assert.equal(ended.state.phase, 'ended');
+  assert.equal(seen.size, ids.length); assert.ok(ended.teams[initial.teamOrder[0]].score > ended.teams[initial.teamOrder[1]].score);
+  const games = Object.values((await db.ref(`questionRotation/${uid}`).get()).val().games);
+  assert.equal(games.length, 1); assert.equal(Object.values(games[0].assets).length, seen.size);
+});
+
 test('real concurrent classic and picture showdown publication commits one private assignment and replays it', async () => {
   for (const challengeMode of ['classic', 'picture_guess']) {
     const f = await fixture();

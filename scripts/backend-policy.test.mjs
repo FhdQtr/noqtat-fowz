@@ -5,6 +5,49 @@ import { runInNewContext } from 'node:vm';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
 
+function creationHarness(capabilities, unavailable = false) {
+  const calls = [];
+  const bankVersion = JSON.parse(readFileSync(new URL('../src/data/questionBankVersion.json', import.meta.url), 'utf8'));
+  const source = ts.transpileModule(readFileSync(new URL('../src/lib/matchApi.ts', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const exports = {};
+  runInNewContext(source, { exports, require: (name) => {
+    if (name === '../data/questionBankVersion.json') return bankVersion;
+    if (name === './firebase') return { ensureAuth: async () => {}, functions: {} };
+    if (name === 'firebase/functions') return { httpsCallable: () => async (payload) => {
+      calls.push(payload.action);
+      if (payload.action === 'getGameCapabilities') {
+        if (unavailable) throw new Error('network unavailable');
+        return { data: capabilities };
+      }
+      return { data: { code: 'A234' } };
+    } };
+    return {};
+  } });
+  return { calls, create: exports.createMatch, bankVersion };
+}
+
+test('new competition fails closed against legacy or mismatched backend before any room write', async () => {
+  for (const capabilities of [{ pictureGuessManual: true }, { protocol: 'al-midan-contextual-rotation2-presets1', builtinBankSha256: 'wrong-bank' }]) {
+    const h = creationHarness(capabilities);
+    await assert.rejects(h.create({ enabledTypes: ['multiple_choice'], challengeMode: 'classic' }), /تحديث|توافق/);
+    assert.deepEqual(h.calls, ['getGameCapabilities']);
+  }
+});
+
+test('capability transport failure is distinct from unsupported version and is retryable without room writes', async () => {
+  const h = creationHarness({}, true);
+  await assert.rejects(h.create({ enabledTypes: ['multiple_choice'] }), /الاتصال/);
+  assert.deepEqual(h.calls, ['getGameCapabilities']);
+});
+
+test('matching backend and bank allow mixed or reviewed competition without claiming deployed rules verification', async () => {
+  const bankVersion = JSON.parse(readFileSync(new URL('../src/data/questionBankVersion.json', import.meta.url), 'utf8'));
+  const h = creationHarness({ protocol: 'al-midan-contextual-rotation2-presets1', builtinBankSha256: bankVersion.sha256, pictureGuessManual: true });
+  assert.equal(await h.create({ enabledTypes: ['multiple_choice'], contentPreset: 'reviewed_challenge' }), 'A234');
+  assert.deepEqual(h.calls, ['getGameCapabilities', 'createMatch']);
+});
+
 function adminInitialization(env) {
   const realRequire = createRequire(new URL('../functions/index.js', import.meta.url));
   let options;

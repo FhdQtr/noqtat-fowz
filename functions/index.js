@@ -191,6 +191,8 @@ async function settleRotationReservations(owner) {
       if (reservation.expiresAt > now() && current.status === "playing") return;
       current.rotationPublications ||= {};
       current.rotationPublications[reservation.publicationKey] = "cancelled";
+      current.rotationPublicationExpiries ||= {};
+      current.rotationPublicationExpiries[reservation.publicationKey] = reservation.expiresAt;
       return current;
     }, undefined, false);
     const marker = room.snapshot.val()?.rotationPublications?.[reservation.publicationKey];
@@ -220,6 +222,49 @@ async function settleRotationReservations(owner) {
     }, undefined, false);
   }
 }
+async function cleanupMatchArtifacts(id, owner) {
+  const pending = (await db.ref(`questionRotation/${dbKey(owner)}/pending`).get()).val() || {};
+  const held = new Set(Object.values(pending).map((entry) => entry.publicationKey));
+  const cutoff = now();
+  const secrets = (await db.ref(`matchSecrets/${id}/versions`).get()).val() || {};
+  let privateKeys = [];
+  const room = await db.ref(`matches/${id}`).transaction((current) => {
+    privateKeys = [];
+    if (!current) {
+      // An executor may stage after normal room expiry removed its secret root.
+      // Delete only observed new-format versions, never recreate a room/root.
+      privateKeys = Object.entries(secrets).filter(([, secret]) => Number.isFinite(secret.stagingExpiresAt))
+        .slice(0, 128).map(([key]) => key);
+      return current;
+    }
+    // Expiry itself fences every delayed publisher. A published marker must
+    // additionally survive until its pending ledger entry has been finalized.
+    const expired = Object.entries(current.rotationPublicationExpiries || {})
+      .filter(([key, expiry]) => Number.isFinite(expiry) && expiry <= cutoff && !held.has(key))
+      .slice(0, 128);
+    for (const [key] of expired) {
+      delete current.rotationPublications?.[key];
+      delete current.rotationPublicationExpiries[key];
+    }
+    // Force a room-side conflict for any executor whose pre-expiry public
+    // transaction was in flight. Its retried deadline/context guard must fail.
+    privateKeys = Object.entries(secrets).filter(([key, secret]) => key !== current.state?.secretVersion
+      && Number.isFinite(secret.stagingExpiresAt) && secret.stagingExpiresAt <= cutoff).slice(0, 128).map(([key]) => key);
+    if (expired.length || privateKeys.length) current.artifactSweepRevision = (current.artifactSweepRevision || 0) + 1;
+    return current;
+  }, undefined, false);
+  if (!room.committed) return;
+  const missingRoom = !room.snapshot.exists();
+  if (!privateKeys.length) return;
+  await db.ref(`matchSecrets/${id}`).transaction((root) => {
+    if (!root) return root;
+    for (const key of privateKeys) {
+      const secret = root.versions?.[key];
+      if (Number.isFinite(secret?.stagingExpiresAt) && (missingRoom || secret.stagingExpiresAt <= cutoff)) delete root.versions[key];
+    }
+    return root;
+  }, undefined, false);
+}
 function rotationPublicationAllowed(current, reservation) {
   return !reservation || (reservation.expiresAt > now()
     && current.rotationPublications?.[reservation.key] !== "cancelled");
@@ -228,6 +273,8 @@ function recordRotationPublication(current, reservation) {
   if (!reservation) return;
   current.rotationPublications ||= {};
   current.rotationPublications[reservation.key] = "published";
+  current.rotationPublicationExpiries ||= {};
+  current.rotationPublicationExpiries[reservation.key] = reservation.expiresAt;
 }
 // Selection holds inventory; only an atomically published room receipt consumes it.
 // Legacy helper calls without a publication target retain immediate consumption.
@@ -544,7 +591,8 @@ async function punishmentAction(uid, data, id, match, access) {
     }
     try {
       await db.ref(`matchSecrets/${id}/versions/${owner}`).set({ questionId: st.question.id,
-        answer: -1, answerText, question: prompt, options: [], punishmentPrepared: true });
+        answer: -1, answerText, question: prompt, options: [], punishmentPrepared: true,
+        stagingExpiresAt: acquired.snapshot.val().state.punishmentLease.expiresAt });
       const prepared = await matchRef.transaction((current) => {
         if (!current) return current;
         const state = current.state;
@@ -570,6 +618,7 @@ async function punishmentAction(uid, data, id, match, access) {
         delete current.state.punishmentLease;
         return current;
       }, undefined, false);
+      await cleanupMatchArtifacts(id, match.hostUid || uid);
     }
   }
   if (action === "requestPunishmentOutcome") {
@@ -1124,7 +1173,7 @@ async function chooseType(uid, data) {
 
     // Stage a private immutable secret before a conditional public commit.
     const secretVersion = rotated.reservation.key;
-    await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(questionSecret(question));
+    await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set({ ...questionSecret(question), stagingExpiresAt: rotated.reservation.expiresAt });
     const expected = match;
     const published = await db.ref(`matches/${id}`).transaction((current) => {
       if (!current) return current;
@@ -1165,16 +1214,18 @@ async function chooseType(uid, data) {
   } finally {
     await release();
     await settleRotationReservations(historyOwner);
+    await cleanupMatchArtifacts(id, historyOwner);
   }
 }
 
 async function publishShowdown(id, match, nextState, secret, number, transitionKey, reservation = null) {
   const secretVersion = reservation?.key || randomUUID();
-  await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(secret);
+  const stagingExpiresAt = reservation?.expiresAt || now() + 30000;
+  await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set({ ...secret, stagingExpiresAt });
   const result = await db.ref(`matches/${id}`).transaction((current) => {
     if (!current) return current;
     if (transitionKey && current.state?.hostTransition?.key === transitionKey) return current;
-    if (current.status !== "playing" || !sameTurnContext(current, match)
+    if (now() >= stagingExpiresAt || current.status !== "playing" || !sameTurnContext(current, match)
       || !rotationPublicationAllowed(current, reservation)
       || (current.showdownCount || 0) !== (match.showdownCount || 0)) return;
     current.showdownCount = number;
@@ -1184,6 +1235,7 @@ async function publishShowdown(id, match, nextState, secret, number, transitionK
     return current;
   }, undefined, false);
   const state = result.snapshot.val()?.state;
+  await cleanupMatchArtifacts(id, match.hostUid || "shared");
   return { showdown: Boolean(result.committed && (state?.secretVersion === secretVersion
     || (transitionKey && state?.hostTransition?.key === transitionKey))) };
 }
@@ -1538,6 +1590,7 @@ function hostTransitionMatches(state, transition) {
 function sameTurnContext(current, expected) {
   const a = current?.state, b = expected?.state;
   return Boolean(a && b && current.status === expected.status
+    && (current.createdAt || 0) === (expected.createdAt || 0)
     && current.turnIndex === expected.turnIndex
     && a.phase === b.phase && a.round === b.round
     && (a.question?.id ?? null) === (b.question?.id ?? null)
@@ -1730,7 +1783,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       updates["state/forcedPlayerId"] = null;
       updates["state/forcedPlayerName"] = null;
       const secretVersion = reservation.key;
-      await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set(questionSecret(question));
+      await db.ref(`matchSecrets/${id}/versions/${secretVersion}`).set({ ...questionSecret(question), stagingExpiresAt: reservation.expiresAt });
       updates["state/secretVersion"] = secretVersion;
       updates["state/rotationReused"] = rotated.reused;
       updates[`usedIdsByTeam/${teamCode}`] = [...teamUsedIds, question.id];
@@ -1800,6 +1853,7 @@ async function playPowerCard(uid, data, id, initialMatch, access) {
       return current;
     }, undefined, false);
     if (reservation) await settleRotationReservations(initialMatch.hostUid || uid);
+    await cleanupMatchArtifacts(id, initialMatch.hostUid || uid);
   }
 }
 
@@ -1826,7 +1880,9 @@ exports.gameAction = onCall({ region: "asia-southeast1", enforceAppCheck: proces
     return { totals: totalsSnapshot.val() || {}, daily: daily.reverse() };
   }
   if (action === "startChallenge") return startChallenge(uid);
-  if (action === "getGameCapabilities") return { pictureGuess: true, pictureGuessManual: true };
+  if (action === "getGameCapabilities") return { pictureGuess: true, pictureGuessManual: true,
+    protocol: "al-midan-contextual-rotation2-presets1",
+    builtinBankSha256: createHash("sha256").update(JSON.stringify(QUESTIONS)).digest("hex") };
   if (action === "answerChallenge") return answerChallenge(uid, data);
   if (action === "createMatch") return createMatch(uid, data.options || {});
   if (action === "joinTeam") return joinTeam(uid, data);

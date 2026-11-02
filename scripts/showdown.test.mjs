@@ -10,6 +10,15 @@ const source = readFileSync(new URL('../functions/index.js', import.meta.url), '
 const realRequire = createRequire(new URL('../functions/index.js', import.meta.url));
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+test('release capabilities identify the contextual exhaustion ten-game presets protocol and built-in bank', async () => {
+  const h = harness();
+  const capabilities = await h.call('getGameCapabilities');
+  assert.equal(capabilities.protocol, 'al-midan-contextual-rotation2-presets1');
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  assert.equal(capabilities.builtinBankSha256, createHash('sha256').update(JSON.stringify(bank)).digest('hex'));
+  assert.equal(capabilities.pictureGuessManual, true);
+});
+
 test('create rejects unknown content preset before writing a lobby or rotation history', async () => {
   const h = harness();
   await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['multiple_choice'], questionsPerTeam: 2, contentPreset: 'silently-ignore-me' } }), { code: 'invalid-argument' });
@@ -233,7 +242,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, publicQuestion, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { publishShowdown, cleanupMatchArtifacts, settleRotationReservations, rotationPublicationAllowed, rotateQuestion, rotationAssetKey, publicQuestion, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
   let presenterSequence = 0;
   const selections = new Map();
@@ -261,6 +270,113 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
     answer: (n, choice = 3) => call('submitShowdownAnswer', `user${n}`, { playerId: `p${n}`, questionId: 42, choice }),
   };
 }
+
+test('expired settled publication markers compact without permitting a delayed publisher', async () => {
+  const h = harness();
+  const q = { id: 71001, type: 'multiple_choice', question: 'Hermes QA marker lifecycle', options: ['A','B','C','D'], answer: 0 };
+  const draw = await h.helpers.rotateQuestion([q], 'qa-series', 'host', [q], 'qa-marker', false, 'A234');
+  const pending = Object.values(h.data.questionRotation.host.pending)[0];
+  h.match().rotationPublications = { [draw.reservation.key]: 'published' };
+  h.match().rotationPublicationExpiries = { [draw.reservation.key]: draw.reservation.expiresAt };
+  h.setClock(draw.reservation.expiresAt + 1);
+  await h.helpers.settleRotationReservations('host');
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(Object.keys(h.data.questionRotation.host.pending || {}).length, 0);
+  assert.ok(pending.publicationKey);
+  assert.ok(h.data.questionRotation.host.games.some(game => game.id === 'qa-series'));
+  assert.equal(h.match().rotationPublications?.[draw.reservation.key], undefined);
+  assert.equal(h.match().rotationPublicationExpiries?.[draw.reservation.key], undefined);
+  assert.equal(h.helpers.rotationPublicationAllowed(h.match(), draw.reservation), false);
+});
+
+test('publication marker compaction retains pending and unexpired receipts and bounds removals', async () => {
+  const h = harness();
+  h.match().rotationPublications = { legacy: 'cancelled', pending: 'published', live: 'cancelled' };
+  h.match().rotationPublicationExpiries = { pending: 1000, live: 3000 };
+  h.data.questionRotation = { host: { pending: { hold: { publicationKey: 'pending' } } } };
+  for (let i = 0; i < 140; i++) {
+    h.match().rotationPublications[`old${i}`] = 'cancelled';
+    h.match().rotationPublicationExpiries[`old${i}`] = 1000;
+  }
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(Object.keys(h.match().rotationPublications).length, 15);
+  assert.equal(h.match().rotationPublications.pending, 'published');
+  assert.equal(h.match().rotationPublications.live, 'cancelled');
+  assert.equal(h.match().rotationPublications.legacy, 'cancelled');
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(Object.keys(h.match().rotationPublications).length, 3);
+});
+
+test('bounded cleanup removes expired private or picture orphans but keeps current live and legacy secrets', async () => {
+  const h = harness();
+  h.match().state.secretVersion = 'current';
+  h.data.matchSecrets.A234 = { answer: 2, versions: {
+    current: { questionId: 42, answer: 3, stagingExpiresAt: 1000 },
+    orphan: { questionId: 44, answer: 0, stagingExpiresAt: 1000 },
+    picture: { questionId: 45, mode: 'picture_guess', pictures: { A: { id: 9 } }, stagingExpiresAt: 1000 },
+    live: { questionId: 46, answer: 1, stagingExpiresAt: 3000 },
+    legacy: { questionId: 47, answer: 2 },
+  } };
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  const root = h.data.matchSecrets.A234;
+  assert.equal(root.versions.orphan, undefined);
+  assert.equal(root.versions.picture, undefined);
+  assert.equal(root.versions.current.answer, 3);
+  assert.equal(root.versions.live.answer, 1);
+  assert.equal(root.versions.legacy.answer, 2);
+  assert.equal(root.answer, 2);
+});
+
+test('late staging after room removal is cleaned without recreating the room or erasing a legacy secret', async () => {
+  const h = harness();
+  delete h.data.matches.A234;
+  h.data.matchSecrets.A234.versions = { late: { answer: 1, stagingExpiresAt: 32000 } };
+  const legacyAnswer = h.data.matchSecrets.A234.answer;
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(h.data.matches.A234, undefined);
+  assert.equal(h.data.matchSecrets.A234.versions.late, undefined);
+  assert.equal(h.data.matchSecrets.A234.answer, legacyAnswer);
+});
+
+test('a delayed picture preparation cannot publish into a newly created room reusing the same short code', async () => {
+  const h = harness();
+  h.match().createdAt = 1000;
+  const before = clone(h.match());
+  h.beforeTransaction(() => { h.match().createdAt = 1500; });
+  const result = await h.helpers.publishShowdown('A234', before, { ...before.state, phase: 'showdown' },
+    { questionId: 800001, mode: 'picture_guess', pictures: { A: { id: 'qa' } } }, 1, 'qa-old-incarnation');
+  assert.equal(result.showdown, false);
+  assert.deepEqual(clone(h.match().state), before.state);
+});
+
+test('runtime ordinary publication records its expiry for bounded compaction', async () => {
+  const h = harness();
+  h.data.matchSecrets.A234.versions = { obsolete: { answer: 0, stagingExpiresAt: 1000 } };
+  h.match().rotationPublications = { obsolete: 'cancelled' };
+  h.match().rotationPublicationExpiries = { obsolete: 1000 };
+  Object.assign(h.match(), { enabledTypes: ['multiple_choice'], typeCounts: {}, usedIdsByTeam: {}, sectionCycleByTeam: {} });
+  h.match().state = { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] };
+  assert.equal((await h.call('chooseType', 'user1', { type: 'multiple_choice' })).status, 'accepted');
+  assert.equal(h.data.matchSecrets.A234.versions.obsolete, undefined);
+  assert.equal(h.match().rotationPublications.obsolete, undefined);
+  const key = h.match().state.secretVersion;
+  assert.ok(h.match().rotationPublicationExpiries?.[key] > 2000);
+  assert.equal(h.data.matchSecrets.A234.versions[key].stagingExpiresAt, h.match().rotationPublicationExpiries[key]);
+});
+
+test('expired picture preparation cannot publish after staging or resurrect its cleaned assignment', async () => {
+  const h = harness();
+  const before = clone(h.match());
+  h.beforeTransaction(() => h.setClock(40000));
+  const result = await h.helpers.publishShowdown('A234', before, { ...before.state, phase: 'showdown' },
+    { questionId: 800001, mode: 'picture_guess', pictures: { A: { id: 'qa' } } }, 1, 'qa-picture');
+  assert.equal(result.showdown, false);
+  assert.deepEqual(clone(h.match().state), before.state);
+  assert.deepEqual(clone(h.match().teams), before.teams);
+  assert.equal(h.match().status, before.status);
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(Object.keys(h.data.matchSecrets.A234.versions || {}).length, 0);
+});
 
 test('unpublished expired ordinary selection does not consume a competition or section asset', async () => {
   const h = harness();
@@ -783,7 +899,9 @@ function pictureGuessFixture() {
 
 test('picture challenge prepares private pictures after three questions per team and waits for host timer', async () => {
   const h = pictureGuessFixture();
+  h.data.matchSecrets.A234.versions = { orphan: { mode: 'picture_guess', stagingExpiresAt: 1000 } };
   await h.call('advanceTurn');
+  assert.equal(h.data.matchSecrets.A234.versions.orphan, undefined);
   const s = h.match().state;
   assert.equal(s.showdown.kind, 'picture_guess');
   assert.equal(s.showdown.opensAt, 0);
@@ -1073,8 +1191,12 @@ test('swapping a logo refreshes presenter details and avoids reuse for the other
   await h.call('chooseType', 'user1', { type: 'brand' });
   const first = clone(h.match().state.question);
   Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { swapQuestion: true } });
+  h.data.matchSecrets.A234.versions.orphanSwap = { answer: 0, stagingExpiresAt: 1000 };
   assert.equal((await h.call('usePowerCard', 'user1', { card: 'swapQuestion', teamCode: 'A234-1' })).accepted, true);
+  assert.equal(h.data.matchSecrets.A234.versions.orphanSwap, undefined);
   const second = clone(h.match().state.question);
+  assert.equal(h.data.matchSecrets.A234.versions[h.match().state.secretVersion].stagingExpiresAt,
+    h.match().rotationPublicationExpiries[h.match().state.secretVersion]);
   assert.notEqual(second.image, first.image);
   assert.equal('brandInfo' in second, false);
   const details = await h.call('getHostAnswer');
@@ -1355,17 +1477,20 @@ test('punishment retry replays one immutable preparation and one deduction witho
   const h = punishmentFixture();
   await h.call('chooseType', 'user1', { type: 'punishment' });
   const originalRoot = clone(h.data.matchSecrets.A234);
+  h.data.matchSecrets.A234.versions = { orphanPunishment: { answer: 0, stagingExpiresAt: 1000 } };
   const command = { questionId: h.match().state.question.id,
     transition: presenterContext(h.match().state, 'same-punishment-command'),
     targetTeam: 'A234-2', prompt: 'retryable prompt', answerText: 'private answer', mode: 'deduct' };
   await h.call('preparePunishment', 'user1', command);
   const published = clone(h.match());
   const secrets = clone(h.data.matchSecrets.A234);
+  assert.equal(secrets.versions.orphanPunishment, undefined);
   assert.deepEqual(clone(await h.call('preparePunishment', 'user1', command)), { ok: true });
   assert.deepEqual(h.match(), published);
   assert.deepEqual(h.data.matchSecrets.A234, secrets);
   assert.equal(h.data.matchSecrets.A234.answer, originalRoot.answer, 'legacy root retained');
   assert.ok(h.match().state.secretVersion);
+  assert.equal(secrets.versions[h.match().state.secretVersion].stagingExpiresAt, 32000);
   assert.equal(JSON.stringify(h.match()).includes('private answer'), false);
   assert.equal((await h.call('getHostAnswer')).answerText, 'private answer');
   await assert.rejects(h.call('preparePunishment', 'user1', { ...command, answerText: 'changed answer' }), { code: 'failed-precondition' });

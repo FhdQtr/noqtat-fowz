@@ -16,7 +16,7 @@ const wrappedRequire = (name) => {
   return require(name);
 };
 wrappedRequire.resolve = require.resolve;
-runInNewContext(readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8'), {
+runInNewContext(readFileSync(new URL('../functions/index.js', import.meta.url), 'utf8') + '\nexports.lifecycle = { cleanupMatchArtifacts, settleRotationReservations, publishShowdown };', {
   require: wrappedRequire, exports, Buffer, console,
   process: { env: { FUNCTIONS_EMULATOR: 'true', GCLOUD_PROJECT: 'demo-al-midan', FIREBASE_DATABASE_EMULATOR_HOST: '127.0.0.1:9000' } },
 });
@@ -44,6 +44,60 @@ async function fixture() {
   const call = (action, transition, extra = {}, callerUid = uid) => exports.gameAction({ auth: { uid: callerUid }, rawRequest: { ip: '192.0.2.99' }, data: { action, matchCode: room, transition, ...extra } });
   return { ref, match, read, context, call, uid };
 }
+
+test('real lifecycle cleanup preserves pending consumption and current private answer then compacts settled expiry', async () => {
+  const f = await fixture(), past = Date.now() - 1000;
+  const generation = randomUUID();
+  await f.ref.update({ rotationPublications: { [generation]: 'published', legacy: 'cancelled' },
+    rotationPublicationExpiries: { [generation]: past } });
+  await f.ref.child('state/secretVersion').set('current');
+  await db.ref(`matchSecrets/${f.ref.key}/versions`).set({
+    current: { questionId: 42, answer: 3, stagingExpiresAt: past },
+    orphan: { questionId: 99, answer: 1, stagingExpiresAt: past },
+    picture: { questionId: 800001, mode: 'picture_guess', pictures: { A: { id: 'qa' } }, stagingExpiresAt: past },
+    legacy: { questionId: 41, answer: 2 },
+  });
+  const ledger = db.ref(`questionRotation/${f.uid}`);
+  await ledger.set({ policyVersion: 2, pending: { qa: { room: f.ref.key, publicationKey: generation, expiresAt: past,
+    gameId: 'Hermes-QA-consumed', type: 'multiple_choice', cycleNumber: 1, assets: ['qa-asset'], baseUsed: [],
+    receiptKey: 'qa-receipt', outcome: { id: 42 } } } });
+  await Promise.all([exports.lifecycle.cleanupMatchArtifacts(f.ref.key, f.uid), exports.lifecycle.cleanupMatchArtifacts(f.ref.key, f.uid)]);
+  assert.equal((await f.read()).rotationPublications[generation], 'published');
+  const secrets = (await db.ref(`matchSecrets/${f.ref.key}`).get()).val();
+  assert.equal(secrets.versions.orphan, undefined); assert.equal(secrets.versions.picture, undefined);
+  assert.equal(secrets.versions.current.answer, 3); assert.equal(secrets.versions.legacy.answer, 2); assert.equal(secrets.answer, 3);
+  assert.equal((await f.call('getHostAnswer')).answer, 3);
+  await exports.lifecycle.settleRotationReservations(f.uid);
+  await exports.lifecycle.cleanupMatchArtifacts(f.ref.key, f.uid);
+  assert.equal((await f.read()).rotationPublications[generation], undefined);
+  assert.equal((await f.read()).rotationPublications.legacy, 'cancelled');
+  const settled = (await ledger.get()).val();
+  assert.equal(settled.pending, undefined);
+  assert.deepEqual(settled.games[0].assets, ['qa-asset']);
+  assert.deepEqual(settled.cycles.multiple_choice.used, ['qa-asset']);
+});
+
+test('real late staging after room expiry is removed without recreating the room or private root', async () => {
+  const f = await fixture();
+  await f.ref.remove();
+  await db.ref(`matchSecrets/${f.ref.key}`).remove();
+  await db.ref(`matchSecrets/${f.ref.key}/versions/late`).set({ answer: 1, stagingExpiresAt: Date.now() + 30000 });
+  await exports.lifecycle.cleanupMatchArtifacts(f.ref.key, f.uid);
+  assert.equal((await f.ref.get()).exists(), false);
+  assert.equal((await db.ref(`matchSecrets/${f.ref.key}`).get()).exists(), false);
+});
+
+test('real expired staged publication cannot replace the current context after cleanup', async () => {
+  const f = await fixture(), before = await f.read();
+  const reservation = { key: randomUUID(), expiresAt: Date.now() - 1000 };
+  const result = await exports.lifecycle.publishShowdown(f.ref.key, { ...before, hostUid: f.uid },
+    { ...before.state, phase: 'showdown' }, { questionId: 800001, mode: 'picture_guess', pictures: { A: { id: 'qa' } } },
+    1, 'qa-obsolete-picture', reservation);
+  assert.equal(result.showdown, false);
+  assert.deepEqual((await f.read()).state, before.state);
+  assert.deepEqual((await f.read()).teams, before.teams);
+  assert.equal((await db.ref(`matchSecrets/${f.ref.key}/versions`).get()).exists(), false);
+});
 
 test('real punishment preparation isolates private versions, serializes drafts and replays deduction once', async () => {
   const f = await fixture();

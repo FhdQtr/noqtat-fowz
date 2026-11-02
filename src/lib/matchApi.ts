@@ -5,6 +5,7 @@ import { db, ensureAuth, functions } from "./firebase";
 import type { AnswerMode, ContentPreset, Match, Player, PowerCardId, QuestionType, TeamColor } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 import { normalizeMatch } from "./normalizeMatch";
+import bankVersion from "../data/questionBankVersion.json";
 
 export interface CreateMatchOptions {
   hostName: string;
@@ -127,13 +128,18 @@ async function gameAction<T>(action: ActionName, payload: Record<string, unknown
 }
 
 export async function createMatch(opts: CreateMatchOptions): Promise<string> {
-  if (opts.challengeMode === "picture_guess") {
-    try {
-      const capabilities = await gameAction<{ pictureGuessManual?: boolean }>("getGameCapabilities", {});
-      if (!capabilities.pictureGuessManual) throw new Error("unsupported");
-    } catch {
-      throw new Error("تحدي الصور يحتاج تحديث وظائف Firebase إلى آخر نسخة. المسابقة العادية ما زالت متاحة.");
-    }
+  let capabilities: { protocol?: string; builtinBankSha256?: string; pictureGuessManual?: boolean };
+  try {
+    capabilities = await gameAction("getGameCapabilities", {});
+  } catch {
+    throw new Error("تعذّر فحص توافق الخادم بسبب الاتصال؛ لم ننشئ ميداناً. تحقق من الشبكة ثم أعد المحاولة.");
+  }
+  if (capabilities?.protocol !== "al-midan-contextual-rotation2-presets1"
+    || capabilities.builtinBankSha256 !== bankVersion.sha256) {
+    throw new Error("نسخة اللعب وبنك الخادم غير متوافقين. يلزم إكمال تحديث Firebase والواجهة معاً قبل إنشاء ميدان جديد؛ لا تعِد ضبط سجل الأسئلة.");
+  }
+  if (opts.challengeMode === "picture_guess" && !capabilities.pictureGuessManual) {
+    throw new Error("تحدي الصور يحتاج تحديث وظائف Firebase إلى آخر نسخة. المسابقة العادية ما زالت متاحة.");
   }
   const result = await gameAction<{ code: string }>("createMatch", { options: { ...opts, timerMode: "advisory" } });
   return result.code;

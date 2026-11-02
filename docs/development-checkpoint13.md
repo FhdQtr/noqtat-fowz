@@ -1,0 +1,43 @@
+# Checkpoint13 — bounded lifecycle and release compatibility preflight
+
+OWNER-RESUME-20261031.md read FIRST; OWNER-UPDATE.md and CONTINUATION.md acknowledged. Existing worktree/branch/PR1 retained, not a new audit or replacement branch. Parent owns Telegram monitoring; no messages, second worker, new production rooms, exploit probes or unrelated profile/Nibras changes. Publication remains already authorized AFTER gates, not awaiting another consent.
+
+## Mandatory owner contract unchanged
+
+Eligible-section exhaustion AND g1…g10 consumed-competition exclusion (g11 earliest only if both allow), established same-host UID persistence/isolation, all bank types including flags, semantic/image/old-wording aliases, non-destructive legacy15 handling, empty/unshown events, disabled/changed/scarce pools, concurrent/retried draws, ties/swaps and honest capacity pause remain mandatory. This slice never clears/migrates live history or silently repeats a recent question. Full LIVE release gate stays open.
+
+## Lifecycle behavior actually implemented
+
+All newly staged ordinary, swap, classic-showdown, picture-showdown and prepared-punishment private versions carry private `stagingExpiresAt`, bound to the actual reservation/lease. Picture preparation, previously without a bank reservation, now also has a30-second publication deadline checked in the committing room transaction. This limits preparation, NOT the host-started120-second picture gameplay timer or advisory ordinary timer.
+
+Public bank publication/cancellation receipts retain their existing string statuses. A companion opaque-key expiry map enables safe bounded compaction. A receipt cannot be removed while the host ledger still has its pending generation; the consumed game/cycle must be durably finalized first. Expiry itself must have passed before any receipt is removed. Cancellation fences stay intact until expiry, so removal cannot allow a delayed executor to publish. Legacy markers lacking new expiry metadata remain untouched until normal existing room lifecycle; no unproven old timestamp inference.
+
+Cleanup is activity-driven after bank selection, card execution, punishment preparation and showdown publication, not a new scheduler, global inventory scan or distributed service. Each pass removes at most128 expired marker/expiry pairs and128 expired noncurrent private versions. Reads are room/host scoped but NOT paginated; the128 limit bounds removals, not total bytes read. Unexpired versions, current version (even if its preparation expired), legacy unversioned root and unannotated versions remain. Existing room expiry eventually owns inactive-room cleanup.
+
+The room transaction captures the current private reference and increments a separate artifact-sweep revision when actual garbage is eligible, forcing in-flight pre-expiry room transactions to retry their context/deadline guard. It does NOT change the gameplay revision, scores, cards or question. Callback-local candidate lists reset on retries/cold-null cache. The private-root transaction removes only the expired selected keys and preserves concurrent fresh staging. A writer delayed until after a sweep can restage a now-expired orphan; it still cannot publish, and the next active pass/normal room expiry can remove it. If the room has already been removed, the pass removes at most128 observed new-format staged versions even before their preparation deadline, without recreating the room or touching the legacy root. Turn-context guards also bind createdAt, so a delayed picture preparation cannot adopt a newly created room reusing the same short code. Fresh concurrent versions not in the observed candidate set are preserved. RED→GREEN reproduced both the removed-room orphan and reused-room publication defects; real RTDB confirms no room/private-root resurrection after expiry. No claim of zero orphan bytes at every instant. Retained legacy artifacts are deliberate compatibility protection, not a hidden global-erasure promise.
+
+## RED → GREEN and real corroboration
+
+Focused VM failures were observed for unbounded settled markers, expired orphan retention, missing staging expiry in ordinary/swap/punishment, missing automatic cleanup hooks, and expired picture publication incorrectly accepted. Logs retain the actual failures and targeted passes, including intermediate full-suite fixture failure after the new capability preflight changed create sequencing. The advisory-timer test was updated to supply genuine matching capability fields and still asserts explicit timerMode and timer0; no assertion/test was dropped.
+
+Real RTDB corroboration (not RED-first evidence) additionally proves concurrent cleanups preserve a pending published receipt until ledger finalization, then compact it without losing consumed game/cycle assets, preserve host-readable current private answer and legacy root, remove expired picture/private orphans, and reject expired staged publication with state/scores unchanged. Existing real owner g10/g11, flags, alias, concurrency/retry and scarce2/3/4-team fixtures also pass.
+
+## Genuine release preflight
+
+New-game creation checks exact `al-midan-contextual-rotation2-presets1` and the SHA256 of JSON.stringify of the packaged built-in bank on EVERY new game, not only picture mode. A legacy picture boolean, mismatched protocol or mismatched bank fails BEFORE createMatch. Network/service failure has a separate retryable explanation. A matching backend passes; picture still requires manual-picture support. This is not a security boundary, rules attestation, old-client drain or deployed source verification. Details and explicit access-dependent drain/cutover/rollback stop conditions: [release-compatibility.md](release-compatibility.md).
+
+## Actual final checks
+
+- Node24 full npm run check:236pass,0fail/skip/cancel; mechanical bank/lint/backend syntax/TypeScript/Vite passed.
+- Node22 real isolated Auth/RTDB integration:35pass,0fail/skip/cancel (6rules,9rotation,20transitions/lifecycle/series). Permission-denied warnings are expected negative-rules cases, not hidden skips.
+- Fresh root and functions omit-dev audit:0 known advisories; no dependency/config/lock updates.
+- Fresh actual isolated HTTP/Auth/Functions/RTDB browser2/3/4-team natural finishes with durable ended readbacks:4/12/16ordinary selections,4/14/18unique question IDs, reviewed_challenge for2 and gulf for3/4, earned swaps/common showdown in3/4. Presenter1280, independent teams390, publicTV1920;0unexpected runtime/console errors or remote game-backend requests. All own ports released.
+- Three representative new screenshots inspected: presenter question and answer grid intact;390px team wallet/leave separated and answers readable;1920px TV has the question/options without private answer material. Mobile identity text is close to the decorative separator, a minor existing visual limitation, not a new privacy/functional failure. No physical-device/screen-reader/full WCAG claim. Prior presenter cancellation/touch, reconnect and repeated-new-game evidence remains dated historical evidence, not newly rerun in this sample.
+- Content unchanged1404total/1307active/97disabled,14prior additions/3corrections;0new facts/corrections/additions this round,1377exact manual-review remainder and flagged936 remain. Do not relabel inherited source manifests or this gameplay as comprehensive fact checking/live custom inventory.
+- Explicit requesting-code-review ONE-SHOT SELF-REVIEW EXCEPTION; diff/security/deadline/current-reference/finalization paths checked, NOT independent approval. No verified commit prefix.
+
+## Delivery / honest handoff
+
+Same PR1 remains draft. Final source SHA/component hashes/remote readbacks are in mission evidence/checkpoint13-verification.json and checkpoint13-compatibility-inventory.json; do not substitute a protected preview's build status for Firebase readiness. No main merge or production deployment was done. Known legitimate access dependencies are exact-project Firebase OAuth/ADC and Vercel reauthorization (prior API403 invalidToken; protected preview302). No repeated blind failed auth calls or protection bypass.
+
+Finite source lifecycle/capability work and local final matrix are delivered. Live deployed-source/rules/bank inspection, actual old-client maintenance/drain derived from that verified baseline, compatible release/rollback execution and official SHA/domain/behavior readback remain access-dependent. Physical/human pilot and independent reviewer are transparently deferred handoffs, not fabricated acceptance or requests for repeated publication consent. Parent must keep mandatory full live acceptance false until exact remote verification.

@@ -35,6 +35,7 @@ export default function HostRoom() {
   const nav = useNavigate();
   const [match, setMatch] = useState<Match | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const actionInFlight = useRef(false);
   const [actionError, setActionError] = useState("");
   const [capacityError, setCapacityError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -190,6 +191,8 @@ export default function HostRoom() {
     : [];
 
   const act = async (fn: () => Promise<unknown>, onError?: () => void) => {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setBusy(true);
     setActionError("");
     unlockAudio();
@@ -199,6 +202,7 @@ export default function HostRoom() {
       setActionError("تعذّر تأكيد الإجراء. تحقق من الاتصال وراجع آخر حالة ظاهرة قبل إعادة المحاولة؛ لا تكرر احتساب النقاط إذا ظهر التغيير بالفعل.");
       onError?.();
     } finally {
+      actionInFlight.current = false;
       setBusy(false);
     }
   };
@@ -250,7 +254,7 @@ export default function HostRoom() {
             مسابقة جديدة
           </button>
           <button onClick={() => nav("/")} className="btn-ghost-gold">الرئيسية</button>
-          <button onClick={() => act(() => deleteMatch(code))} className="btn-ghost-gold !border-maroon/50 !text-maroon-light flex items-center gap-2">
+          <button onClick={() => { if (window.confirm("حذف هذه الغرفة المنتهية؟ ستتعطل روابطها ولن تتمكن من عرض نتيجتها هنا. هذا لا يمسح سجل منع تكرار الأسئلة، وليس محوًا شاملًا لكل البيانات.")) void act(() => deleteMatch(code)); }} disabled={busy} className="btn-ghost-gold !border-maroon/50 !text-maroon-light flex items-center gap-2">
             <Trash2 className="w-4 h-4" />
             حذف الغرفة
           </button>
@@ -271,7 +275,7 @@ export default function HostRoom() {
         {actionError ? <p role="alert" className="mb-4 w-full max-w-3xl rounded-xl border border-maroon-light/60 bg-night p-4 text-center text-gold-light">{actionError}</p> : null}
         <div className="flex items-center gap-3 mt-1">
           <span className="text-4xl sm:text-5xl font-black font-cairo tracking-[0.3em] text-gold-gradient" dir="ltr">{code}</span>
-          <button onClick={shareTv} className="btn-ghost-gold !p-2" title="نسخ رابط شاشة العرض">
+          <button onClick={shareTv} className="btn-ghost-gold min-h-11 min-w-11 !p-2" aria-label="نسخ رابط شاشة العرض" title="نسخ رابط شاشة العرض">
             {copied ? <CheckCircle2 className="w-5 h-5 text-emerald2-light" /> : <Share2 className="w-5 h-5" />}
           </button>
         </div>
@@ -331,8 +335,9 @@ export default function HostRoom() {
                           key={p.id}
                           onClick={() => act(() => setCaptain(code, t.code, isCap ? null : p.id))}
                           disabled={busy}
+                          aria-pressed={isCap}
                           title={isCap ? "إلغاء التعيين" : "تعيين ممثل الفريق"}
-                          className={`rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in transition-all flex items-center gap-1 ${
+                          className={`min-h-11 min-w-11 rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in transition-all flex items-center gap-1 ${
                             isCap ? "ring-2 ring-gold scale-105" : "hover:scale-105"
                           }`}
                           style={{
@@ -392,10 +397,10 @@ export default function HostRoom() {
         </div>
         <ScoreBoard match={match} highlight={st.targetTeam} />
         <div className="flex gap-2">
-          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}${invites?.viewerKey ? `?key=${encodeURIComponent(invites.viewerKey)}` : ""}`, "_blank", "noopener,noreferrer")} className="btn-ghost-gold !p-2" title="شاشة العرض">
+          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}${invites?.viewerKey ? `?key=${encodeURIComponent(invites.viewerKey)}` : ""}`, "_blank", "noopener,noreferrer")} className="btn-ghost-gold min-h-11 min-w-11 !p-2" aria-label="شاشة العرض — تفتح في نافذة جديدة" title="شاشة العرض">
             <Tv className="w-4 h-4" />
           </button>
-          <button onClick={() => act(() => endMatch(code))} className="btn-ghost-gold !p-2 !border-maroon/50 !text-maroon-light" title="إنهاء">
+          <button onClick={() => { if (window.confirm("إنهاء الميدان الآن بالنقاط الحالية؟ سيتوقف اللعب للجميع، ولا يمكن استئناف هذه المسابقة. لن يُحذف سجل الأسئلة.")) void act(() => endMatch(code)); }} disabled={busy} className="btn-ghost-gold min-h-11 min-w-11 !p-2 !border-maroon/50 !text-maroon-light" aria-label="إنهاء الميدان" title="إنهاء">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
@@ -468,7 +473,10 @@ export default function HostRoom() {
                     <button
                       key={p.id}
                       onClick={() => act(() => setCaptain(code, t.code, isCap ? null : p.id))}
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold font-cairo transition-all flex items-center gap-1 ${
+                      disabled={busy}
+                      aria-pressed={isCap}
+                      title={isCap ? "إلغاء التعيين" : "تعيين ممثل الفريق"}
+                      className={`min-h-11 min-w-11 rounded-full px-2.5 py-0.5 text-[11px] font-bold font-cairo transition-all flex items-center gap-1 ${
                         isCap ? "ring-1 ring-gold" : "opacity-75 hover:opacity-100"
                       }`}
                       style={{
@@ -745,7 +753,7 @@ export default function HostRoom() {
             )}
             {st.phase === "question" && (
               <div className="flex gap-2 opacity-80">
-                <button onClick={() => act(() => advanceTurn(code, match, true))} disabled={busy} className="btn-ghost-gold !text-sm !px-4 !py-2 flex items-center gap-2">
+                <button onClick={() => { if (window.confirm("تخطي السؤال الحالي بلا نقاط؟ سينتقل الدور ولن تتمكن من الإجابة عن هذه المحاولة. سيبقى السؤال محسوبًا ضمن سجل منع التكرار.")) void act(() => advanceTurn(code, match, true)); }} disabled={busy} className="btn-ghost-gold !text-sm !px-4 !py-2 flex items-center gap-2">
                   <SkipForward className="w-4 h-4" />
                   تخطي السؤال
                 </button>
@@ -801,6 +809,7 @@ function AnswerModeControls({
               key={mode}
               onClick={() => onChange(mode)}
               disabled={disabled || active}
+              aria-pressed={active}
               className={`rounded-xl border px-3 py-2 text-right font-cairo transition-colors ${
                 active
                   ? "border-gold bg-gold/20 text-gold-light"

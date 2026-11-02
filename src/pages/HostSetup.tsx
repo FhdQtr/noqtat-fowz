@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import {
   ArrowRight, Minus, Plus, Crown, Timer, TimerOff, Layers, Loader2,
   HelpCircle,
@@ -10,7 +10,7 @@ import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import { createMatch } from "../lib/matchApi";
 import { sfx, unlockAudio } from "../lib/sounds";
 import { useCustomTypes } from "../lib/useCustomBank";
-import type { AnswerMode, QuestionType } from "../types/game";
+import type { AnswerMode, ContentPreset, QuestionType } from "../types/game";
 import { TEAM_COLORS } from "../types/game";
 
 const TEAM_COLOR_ORDER = ["maroon", "emerald", "royal", "gold"] as const;
@@ -29,7 +29,12 @@ const TYPE_OPTIONS: { id: QuestionType; label: string }[] = [
   { id: "punishment", label: "سؤال وعقاب" },
 ];
 
-const QUESTIONS_PER_TEAM_OPTIONS = [4, 6, 8, 10, 12];
+const CONTENT_PRESETS: { id: ContentPreset; label: string }[] = [
+  { id: "mixed", label: "متنوع — للمجلس والعائلة" },
+  { id: "gulf", label: "قطري وخليجي — موضوع محدد" },
+  { id: "reviewed_challenge", label: "تحدٍ قصير — متوسط وأصعب بتحرير موثق" },
+];
+const QUESTIONS_PER_TEAM_OPTIONS = [2, 4, 6, 8, 10, 12];
 const TIMER_OPTIONS = [10, 15, 20, 30, 40, 50, 60];
 const ANSWER_MODE_OPTIONS: { id: AnswerMode; label: string; hint: string }[] = [
   { id: "representative", label: "ممثل الفريق", hint: "شخص واحد من كل فريق يثبت الإجابة" },
@@ -48,8 +53,11 @@ export default function HostSetup() {
   const [answerMode, setAnswerMode] = useState<AnswerMode>("representative");
   const [challengeMode, setChallengeMode] = useState<"classic" | "picture_guess">("classic");
   const [types, setTypes] = useState<QuestionType[]>(TYPE_OPTIONS.map((t) => t.id));
+  const [contentPreset, setContentPreset] = useState<ContentPreset>("mixed");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const advancedRef = useRef<HTMLDetailsElement>(null);
+  const typesRef = useRef<HTMLFieldSetElement>(null);
 
   // الأنواع المعروضة = الأساسية + أنواع المقدم المخصصة (تُفعَّل تلقائياً أول ما تظهر)
   const allTypeOptions = [
@@ -58,10 +66,10 @@ export default function HostSetup() {
   ];
   const customIds = customTypes.map((t) => t.id);
   useEffect(() => {
-    if (customIds.length)
+    if (contentPreset === "mixed" && customIds.length)
       setTypes((prev) => (customIds.every((id) => prev.includes(id)) ? prev : [...prev, ...customIds.filter((id) => !prev.includes(id))]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customIds.join(",")]);
+  }, [customIds.join(","), contentPreset]);
 
   const setCount = (n: number) => {
     const c = Math.min(4, Math.max(2, n));
@@ -78,9 +86,20 @@ export default function HostSetup() {
     setTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
   };
 
+  const applyContentPreset = (preset: ContentPreset) => {
+    setContentPreset(preset);
+    setTypes(preset === "mixed" ? allTypeOptions.map((type) => type.id)
+      : preset === "gulf" ? ["multiple_choice"] : ["multiple_choice", "ordering"]);
+    setQuestionsPerTeam(preset === "mixed" ? 8 : preset === "gulf" ? 4 : 2);
+    if (preset !== "mixed") setChallengeMode("classic");
+    setErr("");
+  };
+
   const create = async () => {
     if (types.length === 0) {
       setErr("اختر نوع سؤال واحد على الأقل");
+      if (advancedRef.current) advancedRef.current.open = true;
+      typesRef.current?.querySelector('button')?.focus();
       return;
     }
     setBusy(true);
@@ -97,6 +116,7 @@ export default function HostSetup() {
           answerMode,
           enabledTypes: types,
           challengeMode,
+          contentPreset,
         }),
         new Promise<never>((_, rej) =>
           setTimeout(() => rej(new Error("الاتصال بالسيرفر أخذ وقتًا أطول من المعتاد — تأكد من الإنترنت أو جرّب شبكة ثانية")), 20000)
@@ -117,7 +137,7 @@ export default function HostSetup() {
 
       <div className="w-full max-w-xl">
         <div className="mb-5 flex items-center justify-between gap-3">
-        <button onClick={() => nav("/")} className="flex items-center gap-2 text-muted-foreground hover:text-gold-light transition-colors">
+        <button onClick={() => nav("/")} className="flex min-h-11 items-center gap-2 text-muted-foreground hover:text-gold-light transition-colors">
           <ArrowRight className="w-4 h-4" />
           <span className="text-sm">رجوع</span>
         </button>
@@ -130,7 +150,31 @@ export default function HostSetup() {
             <div><h1 className="text-2xl font-black font-cairo text-gold-gradient">جهّز الميدان</h1><p className="mt-1 text-xs text-muted-foreground">دقائق بسيطة وتبدأ المواجهة</p></div>
           </div>
 
+          <details className="setup-help mb-6 border-b border-gold-faint/40 pb-2">
+            <summary className="min-h-11 cursor-pointer text-sm font-bold text-gold-light">أول مرة؟ جهّز الأجهزة</summary>
+            <ul className="mt-2 space-y-2 text-sm leading-relaxed">
+              <li>المقدم يدير اللعب ويحتسب النقاط من جهازه؛ لا تشارك رابط تحكمه.</li>
+              <li>جوال واحد على الأقل لكل فريق: ادخلوا بدعوة الفريق قبل البداية، ثم اختاروا الأقسام من الجوال، حتى في وضع «المقدم فقط».</li>
+              <li>شاشة الجمهور للعرض: افتح رابط الشاشة على التلفزيون أو الكمبيوتر، ولا تعرض لوحة المقدم التي تكشف الأجوبة.</li>
+            </ul>
+            <Link to="/help" className="inline-flex min-h-11 items-center text-gold-light underline">طريقة اللعب واستعادة الاتصال</Link>
+          </details>
+
           {/* اسم المقدم */}
+          <label htmlFor="content-preset" className="mb-2 block text-sm font-bold text-gold-light">محتوى المجلس</label>
+          <select id="content-preset" value={contentPreset} disabled={busy}
+            onChange={(event) => applyContentPreset(event.target.value as ContentPreset)}
+            aria-describedby="content-preset-help"
+            className="input-night min-h-11 mb-2 [&>option]:bg-night-800">
+            {CONTENT_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+          </select>
+          <p id="content-preset-help" className="mb-6 text-xs leading-relaxed text-muted-foreground">
+            {contentPreset === "gulf" ? "أسئلة مصنفة قطرية أو خليجية، بصعوبة مختلطة؛ ليست كل إجابات البنك مراجعة مستقلًا. "
+              : contentPreset === "reviewed_challenge" ? "دفعة صغيرة من الأسئلة الموثقة فقط؛ متوسط وأصعب تقدير تحريري، لا قياس أداء. قد تنفد سريعًا بسبب سجل آخر عشر مسابقات. "
+              : "المحتوى المتنوع لا يفرض صعوبة أعلى على المجلس. الصعوبة في معظم البنك غير مصنفة. "}
+            تغيير الحزمة يضبط الأقسام المقترحة وطول المسابقة؛ يمكنك تعديلهما أدناه. الحزمة لا تمسح التاريخ، والخادم يفحص التوفر الفعلي. الحزم المحددة لا تشمل سؤال وعقاب أو تحدي الصور.
+          </p>
+
           <label htmlFor="presenter-name" className="block text-sm font-bold mb-2 text-gold-light/90">اسمك (الحكم)</label>
           <input
             id="presenter-name"
@@ -144,11 +188,11 @@ export default function HostSetup() {
           {/* عدد الفرق */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90">عدد الفرق</label>
           <div className="flex items-center gap-4 mb-5">
-            <button aria-label="تقليل عدد الفرق" onClick={() => setCount(teamCount - 1)} className="btn-ghost-gold !p-2.5" disabled={teamCount <= 2}>
+            <button aria-label="تقليل عدد الفرق" onClick={() => setCount(teamCount - 1)} className="btn-ghost-gold min-h-11 min-w-11 !p-2.5" disabled={teamCount <= 2}>
               <Minus className="w-5 h-5" />
             </button>
             <span className="text-4xl font-black font-cairo text-gold-gradient w-12 text-center">{teamCount}</span>
-            <button aria-label="زيادة عدد الفرق" onClick={() => setCount(teamCount + 1)} className="btn-ghost-gold !p-2.5" disabled={teamCount >= 4}>
+            <button aria-label="زيادة عدد الفرق" onClick={() => setCount(teamCount + 1)} className="btn-ghost-gold min-h-11 min-w-11 !p-2.5" disabled={teamCount >= 4}>
               <Plus className="w-5 h-5" />
             </button>
             <span className="text-xs text-muted-foreground">من ٢ إلى ٤ فرق</span>
@@ -186,6 +230,7 @@ export default function HostSetup() {
               <button
                 key={n}
                 onClick={() => setQuestionsPerTeam(n)}
+                aria-pressed={questionsPerTeam === n}
                 className={`flex-1 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
                   questionsPerTeam === n
                     ? "bg-gold/20 border-gold text-gold-light"
@@ -200,6 +245,17 @@ export default function HostSetup() {
             المجموع: {questionsPerTeam * teamCount} سؤال · كل فريق له {questionsPerTeam} أسئلة
           </p>
 
+          <section id="setup-summary" aria-label="ملخص إعداد الميدان" className="mb-4 rounded-xl border border-gold-faint/40 bg-gold/5 p-4 text-sm leading-relaxed">
+            <h2 className="font-bold text-gold-light mb-1">جاهز بالإعداد الحالي</h2>
+            <p>{teamCount} فرق · {questionsPerTeam} أسئلة لكل فريق · {types.length} قسمًا</p>
+            <p>{ANSWER_MODE_OPTIONS.find((option) => option.id === answerMode)?.label} · {timer === 0 ? "بدون وقت" : `مؤقت إرشادي: ${timer} ثانية`}</p>
+            <p>{challengeMode === "classic" ? "مواجهة الجميع: اختيارات" : "تحدي الصور: هل هو…؟"}</p>
+            {types.includes("punishment") && <p>سؤال وعقاب مفعّل؛ اتفقوا على تحديات آمنة واختيارية قبل البداية، أو أوقفوه من الخيارات المتقدمة.</p>}
+          </section>
+
+          <details ref={advancedRef} id="advanced-setup" className="mb-6 rounded-xl border border-gold-faint/40 p-4">
+            <summary className="min-h-11 cursor-pointer font-bold text-gold-light">خيارات متقدمة: الإجابة والوقت والأقسام</summary>
+            <div className="pt-4">
           {/* من يثبت الإجابة */}
           <label className="block text-sm font-bold mb-2 text-gold-light/90">من يثبت الإجابة؟</label>
           <div className="grid gap-2 mb-6">
@@ -207,6 +263,7 @@ export default function HostSetup() {
               <button
                 key={id}
                 onClick={() => setAnswerMode(id)}
+                aria-pressed={answerMode === id}
                 className={`rounded-xl px-4 py-3 text-right font-cairo border transition-all ${
                   answerMode === id
                     ? "bg-gold/20 border-gold text-gold-light"
@@ -223,7 +280,7 @@ export default function HostSetup() {
             <legend className="mb-2 text-sm font-bold text-gold-light/90">نوع التحدي بعد 3 أسئلة لكل فريق</legend>
             <div className="grid gap-2">
               {([{ id: "classic", label: "مواجهة الجميع: اختيارات", hint: "سؤال مشترك؛ الأسرع بالإجابة الصحيحة يفوز" }, { id: "picture_guess", label: "تحدي الصور: هل هو…؟", hint: "فريقان، صورتان مختلفتان؛ الحكم يبدأ الدقيقتين ويختار الفائز بعد الوقت" }] as const).map((option) => (
-                <button key={option.id} type="button" disabled={option.id === "picture_guess" && teamCount !== 2} onClick={() => setChallengeMode(option.id)} aria-pressed={challengeMode === option.id}
+                <button key={option.id} type="button" disabled={option.id === "picture_guess" && (teamCount !== 2 || contentPreset !== "mixed")} onClick={() => setChallengeMode(option.id)} aria-pressed={challengeMode === option.id}
                   className={`rounded-xl border px-4 py-3 text-right font-cairo disabled:opacity-40 ${challengeMode === option.id ? "border-gold bg-gold/20 text-gold-light" : "border-gold-faint/40 text-muted-foreground"}`}>
                   <span className="block font-bold">{option.label}</span><span className="mt-1 block text-xs">{option.hint}</span>
                 </button>
@@ -232,10 +289,11 @@ export default function HostSetup() {
           </fieldset>
 
           {/* المؤقت */}
-          <label className="block text-sm font-bold mb-2 text-gold-light/90">وقت الإجابة لكل سؤال</label>
+          <label htmlFor="question-timer" className="block text-sm font-bold mb-2 text-gold-light/90">المؤقت الإرشادي للسؤال</label>
           <div className="flex gap-2 mb-6">
             <button
               onClick={() => setTimer(0)}
+              aria-pressed={timer === 0}
               className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 font-cairo font-bold border transition-all ${
                 timer === 0 ? "bg-gold/20 border-gold text-gold-light" : "border-gold-faint/40 text-muted-foreground hover:border-gold/50"
               }`}
@@ -250,14 +308,14 @@ export default function HostSetup() {
             >
               <Timer className={`w-4 h-4 shrink-0 ${timer > 0 ? "text-gold-light" : "text-muted-foreground"}`} />
               <select
-                value={timer > 0 ? timer : 30}
-                onClick={() => { if (timer === 0) setTimer(30); }}
-                onFocus={() => { if (timer === 0) setTimer(30); }}
+                id="question-timer"
+                value={timer}
                 onChange={(e) => setTimer(Number(e.target.value))}
                 className={`w-full bg-transparent py-2.5 font-cairo font-bold outline-none cursor-pointer ${
                   timer > 0 ? "text-gold-light" : "text-muted-foreground"
                 } [&>option]:bg-night-800`}
               >
+                <option value={0}>بدون وقت</option>
                 {TIMER_OPTIONS.map((s) => (
                   <option key={s} value={s}>{s} ثانية</option>
                 ))}
@@ -265,11 +323,14 @@ export default function HostSetup() {
             </div>
           </div>
 
+          <p className="-mt-4 mb-6 text-xs text-muted-foreground">المؤقت تنبيه للمجلس، ولا يقفل الإجابة عند الصفر؛ القرار للمقدم. مؤقت مواجهة الجميع ملزم على الخادم.</p>
+
           {/* أنواع الأسئلة */}
-          <label className="block text-sm font-bold mb-2 text-gold-light/90 flex items-center gap-2">
+          <fieldset id="question-types" ref={typesRef}>
+          <legend className="text-sm font-bold mb-2 text-gold-light/90 flex items-center gap-2">
             <Layers className="w-4 h-4" />
             أنواع الأسئلة
-          </label>
+          </legend>
           <div className="flex flex-wrap gap-2 mb-2">
             {allTypeOptions.map(({ id, label }) => {
               const on = types.includes(id);
@@ -277,6 +338,8 @@ export default function HostSetup() {
                 <button
                   key={id}
                   onClick={() => toggleType(id)}
+                  disabled={id === "punishment" && contentPreset !== "mixed"}
+                  aria-pressed={on}
                   className={`flex min-w-[132px] flex-1 items-center gap-2 rounded-2xl px-3 py-2 text-sm font-cairo font-bold border transition-all ${
                     on
                       ? "bg-gold/20 border-gold text-gold-light"
@@ -294,13 +357,17 @@ export default function HostSetup() {
               أنواعك المخصصة من لوحة التحكم تظهر هنا تلقائياً.
             </p>
           )}
+          </fieldset>
           <p className="text-xs text-muted-foreground leading-relaxed mb-8">
-            في كل دور يختار الفريق نوع سؤاله من الأنواع المفعّلة. مستوى السؤال يتبع اختيارك أعلاه،
+            في كل دور يختار الفريق نوع سؤاله من الأنواع المفعّلة. لا يوجد تصاعد تلقائي للصعوبة،
             وتزيد قيمة النوع كلما كرره الفريق، مع حد أقصى يحافظ على تنوع المسابقة.
           </p>
 
+            </div>
+          </details>
+
           {err && (
-            <div className="text-maroon-light text-sm font-bold bg-maroon/15 border border-maroon/40 rounded-xl px-4 py-2.5 mb-4">
+            <div role="alert" className="text-foreground text-sm font-bold bg-maroon/15 border border-maroon/40 rounded-xl px-4 py-2.5 mb-4">
               {err}
             </div>
           )}

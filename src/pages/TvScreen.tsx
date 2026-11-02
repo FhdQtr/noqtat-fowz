@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { Crown, Loader2, Timer, Users, XCircle, RotateCw, WifiOff, Eye, Drama, Zap } from "lucide-react";
-import { getTeamInvites, revealQuestionPrompt, subscribeMatch } from "../lib/matchApi";
+import { getTeamInvites, revealQuestionPrompt, subscribeMatch, typeProgress } from "../lib/matchApi";
+import SelectionRecovery from "../components/SelectionRecovery";
 import type { Match } from "../types/game";
 import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion, usesVerbalChoices } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
@@ -34,7 +35,7 @@ export default function TvScreen() {
   useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
 
   useEffect(() => {
-    if (!viewerKey && match?.status !== "lobby") return;
+    if (!viewerKey) { setTeamKeys({}); setShortCodes({}); setInviteError(false); return; }
     let cancelled = false;
     setInviteError(false);
     void getTeamInvites(code, viewerKey)
@@ -133,6 +134,8 @@ export default function TvScreen() {
     );
 
   const st = match.state;
+  const selectionPaused = st.phase === "choose" && (Boolean(st.selectionPause)
+    || Boolean(st.targetTeam && !match.enabledTypes.some((type) => typeProgress(match, st.targetTeam!, type).available)));
   const teams = match.teamOrder.map((c) => match.teams[c]).filter(Boolean);
   const chooseTeam =
     (st.targetTeam ? match.teams[st.targetTeam] : null) ??
@@ -192,7 +195,7 @@ export default function TvScreen() {
         {match.status === "lobby" && (
           <div className="flex flex-col items-center gap-6 animate-fade-up w-full">
             <h1 className="text-3xl sm:text-5xl font-black font-cairo text-gold-gradient drop-shadow-lg">
-              امسح الكود وادخل مع فريقك
+              {viewerKey ? "امسح الكود وادخل مع فريقك" : "اطلب دعوة فريقك من المقدم"}
             </h1>
             <div className="flex w-full flex-wrap justify-center gap-6 xl:gap-10">
               {teams.map((t) => {
@@ -208,7 +211,7 @@ export default function TvScreen() {
                     </div>
                     {teamKeys[t.code] ? (
                       <QrCode value={`${location.origin}/play/${t.code}?key=${encodeURIComponent(teamKeys[t.code])}`} size={teams.length > 3 ? 240 : 300} />
-                    ) : <div className="h-60 flex items-center justify-center"><Loader2 className="h-10 w-10 animate-spin text-gold" /></div>}
+                    ) : viewerKey ? <div role="status" aria-label="تحميل دعوة الفريق" className="h-60 flex items-center justify-center"><Loader2 className="h-10 w-10 animate-spin text-gold" /></div> : <p className="text-muted-foreground">شاشة مشاهدة عامة · الدعوات لدى المقدم</p>}
                     {shortCodes[t.code] ? <p dir="ltr" className="text-4xl font-black tracking-widest text-gold-light">{shortCodes[t.code]}</p> : null}
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Users className="w-4 h-4" />
@@ -224,7 +227,11 @@ export default function TvScreen() {
         )}
 
         {/* ═══ بين الأسئلة / اختيار النوع ═══ */}
-        {match.status === "playing" && (st.phase === "lobby" || st.phase === "choose" || !st.question) && st.phase !== "showdown" && st.phase !== "showdown_revealed" && (
+        {match.status === "playing" && st.phase === "choose" && st.targetTeam && (
+          <SelectionRecovery tv paused={selectionPaused}
+            busyInventory={st.selectionPause?.reason === "busy"} />
+        )}
+        {match.status === "playing" && (st.phase === "lobby" || st.phase === "choose" || !st.question) && st.phase !== "showdown" && st.phase !== "showdown_revealed" && !selectionPaused && (
           <div className="text-center animate-fade-up">
             <p className="text-muted-foreground text-xl mb-4">
               {st.phase === "choose" ? "الفريق يختار نوع السؤال من أجهزتهم…" : "استعدوا… السؤال القادم لفريق"}

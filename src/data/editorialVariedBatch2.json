@@ -1,0 +1,101 @@
+{
+  "batch": "varied-refresh-2",
+  "reviewer": "Hermes source/editorial review; not independent human verification or player calibration",
+  "reviewedAt": "2026-11-01",
+  "difficultyMeaning": "Editorial estimates only: one easy, four medium, three hard. Family-accessible bank stays enabled. No automatic progression, point or card changes.",
+  "scope": "Eight original Arabic items across four bank types and three categories; four additions target smaller completion/ordering pools. Evidence is archived outside deployable frontend sources. No image reuse, private bank access, live history reset or comprehensive bank verification.",
+  "entries": [
+    {
+      "id": 410201,
+      "action": "added",
+      "correctAnswer": "معاصر التمر",
+      "difficulty": "hard",
+      "sourceId": 1,
+      "sourceUrl": "https://qm.org.qa/en/project/al-zubarah",
+      "evidenceFile": "evidence/checkpoint11-source-zubarah.md",
+      "evidenceQuote": "Today, the site covers an area of 60 hectares with remains of houses, _masajid_ (mosques), _madabis_ (date presses), large fortified buildings, and a market.",
+      "rationale": "Official site explicitly glosses madabis as date presses; alternatives are distinct functions. Does not ask the ambiguous fort versus town construction date."
+    },
+    {
+      "id": 410202,
+      "action": "added",
+      "correctAnswer": "مسجد أبو القبيب ثم متحف قطر الوطني ثم منشآت الغاز في رأس لفان",
+      "difficulty": "hard",
+      "sourceId": 2,
+      "sourceUrl": "https://www.qcb.gov.qa/en/pages/currentbanknotes.aspx",
+      "evidenceFile": "evidence/checkpoint11-source-banknotes.md",
+      "evidenceQuote": "500 QR\n\nRas Laffan LNG Refinery and LNG carrier ship",
+      "additionalEvidenceQuotes": ["200 QR\n\nPalace of Sheikh Abdullah bin Jassim Al-Thani, Qatar National Museum and Museum of Islamic Art", "100 QR\n\nAbu Al Qubaib Mosque"],
+      "rationale": "QCB lists reverse subjects for 100/200/500. All options permute identical landmarks; ascending values checked numerically. No banknote image copied; specifically fifth series rather than all historical issues."
+    },
+    {
+      "id": 410203,
+      "action": "added",
+      "correctAnswer": "شدة الإضاءة",
+      "difficulty": "medium",
+      "sourceId": 3,
+      "sourceUrl": "https://www.bipm.org/en/measurement-units/si-base-units",
+      "evidenceFile": "evidence/checkpoint11-source-units.md",
+      "evidenceQuote": "| luminous intensity | _I_ v |  | candela | cd |",
+      "rationale": "Distinguishes base quantity luminous intensity from current, amount of substance and temperature; not luminous flux or illuminance. Arabic wording matches the quantity, not informal bulb brightness."
+    },
+    {
+      "id": 410204,
+      "action": "added",
+      "correctAnswer": "طيبا",
+      "difficulty": "medium",
+      "sourceId": 4,
+      "sourceUrl": "https://www.aldiwan.net/poem24730.html",
+      "evidenceFile": "evidence/checkpoint11-source-poem24730.md",
+      "evidenceQuote": "يَزيدُ سَفاهَةً فَأَزيدُ حِلماًكَعودٍ زادَهُ الإِحراقُ طيبا",
+      "rationale": "Exact public-domain verse completion from actual poem text, not generated explanation. Stem does not test disputed authorship; no claim of critical-edition attribution verification."
+    },
+    {
+      "id": 410205,
+      "action": "added",
+      "correctAnswer": "الأوائل",
+      "difficulty": "hard",
+      "sourceId": 5,
+      "sourceUrl": "https://www.aldiwan.net/poem101679.html",
+      "evidenceFile": "evidence/checkpoint11-source-poem101679.md",
+      "evidenceQuote": "وإني وإن كنتُ الأخيرَ زمانُهُلآتٍ بما لم تَسْتَطِعْهُ الأوائل",
+      "rationale": "Exact public-domain verse completion; one word absent and disjoint alternatives. Poem body read, generated commentary ignored; author attribution not tested."
+    },
+    {
+      "id": 410206,
+      "action": "added",
+      "correctAnswer": "الاكتفاء من القهوة",
+      "difficulty": "easy",
+      "sourceId": 6,
+      "sourceUrl": "https://ich.unesco.org/en/RL/arabic-coffee-a-symbol-of-generosity-02111",
+      "evidenceFile": "evidence/checkpoint11-source-coffee.md",
+      "evidenceQuote": "It is also customary for the person drinking the coffee to shake their cup to signal that they are done.",
+      "rationale": "UNESCO explicitly describes the etiquette. عادةً avoids a universal claim about every family. Retains accessible local content rather than making every addition obscure."
+    },
+    {
+      "id": 410207,
+      "action": "added",
+      "correctAnswer": "نبتون ثم أورانوس ثم زحل ثم المشتري",
+      "difficulty": "medium",
+      "sourceId": 7,
+      "sourceUrl": "https://science.nasa.gov/solar-system/planets/planet-sizes-and-locations-in-our-solar-system/",
+      "evidenceFile": "evidence/checkpoint11-source-diameters.md",
+      "evidenceQuote": "Neptune is the fourth largest planet. It’s about four times wider than Earth with an equatorial diameter of about 30,775 miles (49,528 kilometers).",
+      "additionalEvidenceQuotes": ["Uranus is the third largest planet in our solar system. It’s about four times wider than Earth, and has an equatorial diameter of about 31,763 miles (51,118 kilometers).", "with an equatorial diameter of about 74,898 miles (about 120,536 kilometers).", "with an equatorial diameter of 88,846 miles (about 142,984 kilometers)."],
+      "rationale": "NASA equatorial diameters sorted numerically. Explicitly diameter, not mass: Uranus/Neptune mass order differs (existing400225), so not a paraphrase of that concept; existing400223 is density. All options contain identical planets and stem is unsorted."
+    },
+    {
+      "id": 410208,
+      "action": "added",
+      "correctAnswer": "خطأ",
+      "difficulty": "medium",
+      "sourceId": 8,
+      "sourceUrl": "https://ich.unesco.org/en/RL/falconry-a-living-human-heritage-01708",
+      "evidenceFile": "evidence/checkpoint11-source-falconry.md",
+      "evidenceQuote": "Falconry is the traditional art and practice of training and flying falcons (and sometimes eagles, hawks, buzzards and other birds of prey).",
+      "rationale": "Tests the surprising breadth of UNESCO definition, not a changing inscription-country count/date. False because other birds of prey are explicitly included, not because falcons are absent."
+    }
+  ],
+  "semanticReview": "Compared all existing stems for key terms and inspected near-topic ordering/poetry items. New concepts are not ID-only renames; no new image assets. No exhaustive semantic equivalence certification. Existing small logo/memory pools not expanded with unlicensed material.",
+  "rotationCompatibility": "Existing per-section cycle AND previous10 consumed-competition exclusion unchanged. New genuine concepts can expand eligible pools without clearing legacy records; disabled/custom/live availability still requires authorized access."
+}

@@ -4,8 +4,9 @@
 // ═══════════════════════════════════════════════════════════
 import { initializeApp } from "firebase/app";
 import { getDatabase, connectDatabaseEmulator } from "firebase/database";
-import { getAuth, signInAnonymously, type User } from "firebase/auth";
+import { getAuth, signInAnonymously, connectAuthEmulator, type User } from "firebase/auth";
 import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
+import { backendTarget } from "./backendPolicy";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBnMTGZ2_YXNL5cjE4fzYyA3M_XD7ZXKck",
@@ -17,15 +18,13 @@ const firebaseConfig = {
   appId: "1:481624442217:web:f36bc520b71f64ce9aa9f8",
 };
 
-// محاكي محلي للتطوير والاختبار فقط — ما يشتغل على الدومين الحقيقي
-const USE_EMULATOR =
-  typeof window !== "undefined" &&
-  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
-  new URLSearchParams(window.location.search).get("emu") === "1";
+export const backend = backendTarget(typeof window === "undefined" ? "" : window.location.hostname, import.meta.env.PROD, import.meta.env.VITE_BACKEND_MODE);
+const USE_EMULATOR = backend.mode === "emulator";
+const isolatedConfig = { apiKey: "demo-al-midan-key", authDomain: "demo-al-midan.firebaseapp.com", projectId: "demo-al-midan", databaseURL: "https://demo-al-midan-default-rtdb.firebaseio.com", appId: "demo-al-midan" };
 
-export const app = initializeApp(firebaseConfig);
+export const app = initializeApp(backend.mode === "production" ? firebaseConfig : isolatedConfig);
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY?.trim();
-const appCheckReady = !USE_EMULATOR && appCheckSiteKey
+const appCheckReady = backend.mode === "production" && appCheckSiteKey
   ? import("firebase/app-check").then(({ initializeAppCheck, ReCaptchaEnterpriseProvider }) => {
       initializeAppCheck(app, {
         provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
@@ -38,6 +37,7 @@ export const auth = getAuth(app);
 export const functions = getFunctions(app, "asia-southeast1");
 
 if (USE_EMULATOR) {
+  connectAuthEmulator(auth, `http://${window.location.hostname}:9099`, { disableWarnings: true });
   connectDatabaseEmulator(db, window.location.hostname, 9000);
   connectFunctionsEmulator(functions, window.location.hostname, 5001);
 }
@@ -46,6 +46,7 @@ let ready: Promise<User> | null = null;
 
 /** دخول ضيف تلقائي — يشتغل مرة وحدة وننتظره قبل أي عملية */
 export async function ensureAuth(): Promise<User> {
+  if (backend.mode === "disabled") throw new Error("هذه معاينة بلا اتصال ببيانات اللعب؛ يلزم محاكي محلي أو بيئة اختبار منفصلة.");
   await appCheckReady;
   if (auth.currentUser) return Promise.resolve(auth.currentUser);
   if (!ready) {

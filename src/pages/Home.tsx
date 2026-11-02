@@ -229,6 +229,10 @@ export default function Home() {
 
       <footer className="am-footer">
         <span>فكرة وتصميم: <strong>فهد القحطاني</strong></span>
+        <nav aria-label="مساعدة الميدان" className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+          <Link to="/help" className="inline-flex min-h-11 items-center">طريقة اللعب</Link>
+          <Link to="/privacy" className="inline-flex min-h-11 items-center">البيانات وعمر الجلسة</Link>
+        </nav>
       </footer>
     </div>
   );

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress, sectionCycleProgress,
-  trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt,
+  trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt, captureAnswerContext, type AnswerContext,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
 import { TEAM_COLORS, typeLabel, viewSecondsFor, questionTimerSeconds, canPassQuestion, usesVerbalChoices } from "../types/game";
@@ -20,6 +20,7 @@ import { ANSWER_LETTERS } from "../lib/answers";
 import QuestionTypeIcon from "../components/QuestionTypeIcon";
 import PowerCardsWallet from "../components/PowerCardsWallet";
 import PowerCardEvent from "../components/PowerCardEvent";
+import SelectionRecovery from "../components/SelectionRecovery";
 import ShowdownPanel from "../components/ShowdownPanel";
 import { useShowdownFinish } from "../lib/useShowdownFinish";
 
@@ -45,7 +46,8 @@ export default function Play() {
   const [joinError, setJoinError] = useState("");
   const [busy, setBusy] = useState(false);
   const [myPick, setMyPick] = useState<number | null>(null);
-  const [status, setStatus] = useState<"" | "accepted" | "late">("");
+  const [status, setStatus] = useState<"" | "sending" | "accepted" | "late" | "stale" | "error">("");
+  const pendingAnswer = useRef<{ choice: number; context: AnswerContext } | null>(null);
   const [chooseMsg, setChooseMsg] = useState("");
   const [choosingType, setChoosingType] = useState<QuestionType | null>(null);
   const [cardMsg, setCardMsg] = useState("");
@@ -90,6 +92,8 @@ export default function Play() {
   const answerMode = match?.answerMode ?? "anyone";
   const canChooseType = answerMode !== "representative" || captainId === player?.id;
   const isMyChoose = st?.phase === "choose" && st.targetTeam === teamCode;
+  const selectionPaused = st?.phase === "choose" && (Boolean(st.selectionPause)
+    || Boolean(match && st.targetTeam && !match.enabledTypes.some((type) => typeProgress(match, st.targetTeam!, type).available)));
   const modeAllowsAnswer = answerMode === "host"
     ? false
     : answerMode === "representative"
@@ -112,6 +116,7 @@ export default function Play() {
     if (prevPhase.current !== st.phase || prevQid.current !== qid) {
       if (st.phase === "question" && (prevPhase.current !== "question" || prevQid.current !== qid)) {
         setMyPick(null);
+        pendingAnswer.current = null;
         setStatus("");
         if (st.targetTeam === teamCode) sfx.questionIn();
       }
@@ -152,11 +157,15 @@ export default function Play() {
   };
 
   const answer = async (i: number) => {
-    if (!player || !isMyTurn || myPick !== null || !canAnswer) return;
-    setMyPick(i);
+    if (!player || !isMyTurn || !st || !canAnswer || status === "sending" || (myPick !== null && status !== "error")) return;
+    const pending = pendingAnswer.current ?? { choice: i, context: captureAnswerContext(st) };
+    pendingAnswer.current = pending;
+    setMyPick(pending.choice);
+    setStatus("sending");
     unlockAudio();
-    const res = await submitAnswer(matchCode, player.id, player.name, i);
-    setStatus(res === "accepted" ? "accepted" : "late");
+    const res = await submitAnswer(matchCode, player.id, player.name, pending.choice, pending.context);
+    if (pendingAnswer.current !== pending) return; // Ignore response to an older attempt.
+    setStatus(res);
     if (res === "accepted") sfx.lock();
   };
 
@@ -175,18 +184,19 @@ export default function Play() {
   };
 
   const pickType = async (t: QuestionType) => {
-    if (choosingType) return;
+    if (choosingType || !match) return;
     setChoosingType(t);
     setChooseMsg("جاري اختيار السؤال…");
     unlockAudio();
     let accepted = false;
     try {
-      const res = await chooseType(matchCode, t);
-      if (res === "late") setChooseMsg("سبقك واحد من فريقك بالاختيار");
+      const res = await chooseType(matchCode, t, match);
+      if (res === "late") setChooseMsg("تغيّر الدور أو يوجد اختيار قيد التنفيذ؛ انتظر تحديث الشاشة ثم أعد المحاولة");
+      else if (res === "busy") setChooseMsg("ميدان آخر للمقدم يحجز الأسئلة مؤقتًا؛ انتظر قليلًا ثم أعد المحاولة أو اطلب من المقدم إعادة فحص المخزون");
       else if (res === "cap") setChooseMsg("خلص رصيدكم من هذا النوع — اختاروا نوع ثاني");
       else if (res === "cooldown") setChooseMsg("اخترتم هذا القسم في الدورة الحالية؛ أكملوا جميع الأقسام أولًا حتى تنفتح من جديد");
-      else if (res === "empty") setChooseMsg("لا توجد أسئلة متاحة من هذا النوع والمستوى");
-      else if (res === "rotation") setChooseMsg("نفدت الأسئلة غير المكررة خلال آخر 15 مسابقة — اختاروا قسمًا آخر");
+      else if (res === "empty") setChooseMsg("لا توجد أسئلة جديدة في هذا القسم؛ اختاروا قسمًا آخر أو راجعوا المقدم لإعادة فحص المخزون");
+      else if (res === "rotation") setChooseMsg("لا يوجد سؤال يحقق دورة القسم واستبعاد آخر 10 مسابقات — اختاروا قسمًا آخر أو أوقفوا اللعب لدى المقدم لتعديل الإعداد في ميدان جديد؛ لن نكرر سؤالًا حديثًا");
       else if (res === "error") setChooseMsg("تعذّر تحميل السؤال — اضغط مرة أخرى");
       else if (res === "accepted") {
         accepted = true;
@@ -207,9 +217,10 @@ export default function Play() {
   };
 
   const activateCard = async (card: PowerCardId, targetPlayerId?: string) => {
+    if (!match) return { accepted: false, reason: "stale" };
     setCardMsg("");
     unlockAudio();
-    const result = await requestPowerCard(matchCode, teamCode, card, targetPlayerId);
+    const result = await requestPowerCard(matchCode, teamCode, card, targetPlayerId, match);
     if (result.accepted) {
       sfx.correct();
       setCardMsg("تم تفعيل الكرت");
@@ -336,9 +347,6 @@ export default function Play() {
   return (
     <div className="min-h-dvh flex flex-col">
       <PowerCardEvent match={match} />
-      {st!.phase !== "showdown" && st!.phase !== "showdown_revealed" && st!.question?.type !== "punishment" ? (
-        <PowerCardsWallet match={match} teamCode={teamCode} onUse={activateCard} />
-      ) : null}
       {/* شريط النتائج */}
       <header className="sticky top-0 z-30 bg-night/90 backdrop-blur-md border-b border-gold-faint/30 px-3 py-2.5">
         <ScoreBoard match={match} highlight={st!.targetTeam} />
@@ -382,7 +390,11 @@ export default function Play() {
         )}
 
         {/* ═══ اختيار نوع السؤال ═══ */}
-        {match.status === "playing" && st!.phase === "choose" && (
+        {match.status === "playing" && st!.phase === "choose" && st!.targetTeam && (
+          <SelectionRecovery paused={selectionPaused}
+            busyInventory={st!.selectionPause?.reason === "busy"} />
+        )}
+        {match.status === "playing" && st!.phase === "choose" && !selectionPaused && (
           isMyChoose ? (
             <div className="w-full flex flex-col gap-4 animate-fade-up">
               <div className="text-center">
@@ -588,6 +600,12 @@ export default function Play() {
                   </>
                 )}
 
+                {status === "sending" && <p role="status">جاري إرسال الإجابة…</p>}
+                {status === "error" && <div role="alert" className="text-center text-gold-light">
+                  <p>تعذّر تأكيد وصول الإجابة. أعد إرسال الاختيار نفسه بأمان.</p>
+                  <button className="btn-ghost-gold mt-3" onClick={() => answer(myPick!)}>إعادة إرسال الإجابة</button>
+                </div>}
+                {status === "stale" && <p role="status">تغيّر السؤال أو المحاولة؛ انتظر تحديث الشاشة.</p>}
                 {status === "accepted" && (
                   <div className="flex items-center justify-center gap-2 text-gold-light font-cairo animate-scale-in">
                     <Lock className="w-4 h-4" />
@@ -701,14 +719,17 @@ export default function Play() {
       </main>
 
       {/* خروج */}
-      <footer className="pb-4 flex justify-center">
+      <footer className="team-play-footer pb-4 flex justify-center">
+        {st!.phase !== "showdown" && st!.phase !== "showdown_revealed" && st!.question?.type !== "punishment" ? (
+          <PowerCardsWallet match={match} teamCode={teamCode} onUse={activateCard} />
+        ) : null}
         <button
           onClick={async () => {
             await leaveMatch(matchCode, player.id);
             localStorage.removeItem(STORAGE_KEY);
             nav("/");
           }}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-maroon-light transition-colors"
+          className="min-h-11 px-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-maroon-light transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
         >
           <LogOut className="w-3.5 h-3.5" />
           مغادرة المسابقة

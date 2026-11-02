@@ -8,9 +8,16 @@ const file = readFileSync(new URL('../src/lib/firebase.ts', import.meta.url), 'u
 const source = ts.transpileModule(file.slice(file.indexOf('let ready:')), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 function api(auth, signInAnonymously, timers = {}) {
   const exports = {};
-  runInNewContext(source, { exports, auth, signInAnonymously, appCheckReady: Promise.resolve(), Promise, Error, setTimeout, clearTimeout, ...timers });
+  runInNewContext(source, { exports, auth, signInAnonymously, appCheckReady: Promise.resolve(), backend: { mode: 'production' }, Promise, Error, setTimeout, clearTimeout, ...timers });
   return exports;
 }
+
+test('disabled preview rejects before restoring or creating any auth session', async () => {
+  let calls = 0;
+  const helper = api({ currentUser: { uid: 'persisted' }, authStateReady: async () => { calls++; } }, async () => { calls++; }, { backend: { mode: 'disabled' } });
+  await assert.rejects(helper.ensureAuth(), /معاينة/);
+  assert.equal(calls, 0);
+});
 
 test('a failed guest sign-in is retried, instead of caching the rejected promise', async () => {
   let attempts = 0;

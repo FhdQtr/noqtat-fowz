@@ -72,6 +72,27 @@ test('audience UI has no images or private answers even if a view were accidenta
   assert.doesNotMatch(html, /<img |\/01\.webp|\/02\.webp|دباسة|طماط|منح النقاط/);
   assert.match(html, /الصور سرية/);
 });
+test('public TV lobby explains invitation privacy instead of promising a QR or spinning forever', () => {
+  const exports = {}, types = {};
+  const transpile = (path) => ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  runInNewContext(transpile('../src/types/game.ts'), { exports: types });
+  let index = 0;
+  const lobby = { code: 'A234', status: 'lobby', teamOrder: ['A'], teams: { A: { code: 'A', name: 'Hermes QA', color: 'maroon', score: 0 } }, players: {}, state: { phase: 'lobby' } };
+  const mocked = (name) => {
+    if (name === 'react') return { ...require(name), useState: (initial) => [index++ === 0 ? lobby : initial, () => {}], useEffect: () => {}, useMemo: (fn) => fn(), useRef: (x) => ({ current: x }) };
+    if (name === 'react-router') return { useParams: () => ({ code: 'A234' }), useSearchParams: () => [new URLSearchParams()] };
+    if (name.endsWith('/types/game')) return types;
+    if (name.endsWith('/useNow')) return { useNow: () => 2000 };
+    if (name.includes('/components/')) return { __esModule: true, default: () => null };
+    if (name.includes('/lib/')) return {};
+    return require(name);
+  };
+  runInNewContext(transpile('../src/pages/TvScreen.tsx'), { exports, require: mocked });
+  const html = renderToStaticMarkup(exports.default());
+  assert.match(html, /اطلب دعوة فريقك من المقدم/);
+  assert.doesNotMatch(html, /امسح الكود|animate-spin/);
+});
+
 test('nineteen object assets are unique valid WebP files and source manifest matches', () => {
   const items = JSON.parse(readFileSync(new URL('../src/data/pictureGuessItems.json', import.meta.url), 'utf8'));
   const sources = JSON.parse(readFileSync(new URL('../src/data/pictureGuessImageSources.json', import.meta.url), 'utf8'));

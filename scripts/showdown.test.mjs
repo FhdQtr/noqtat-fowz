@@ -10,6 +10,89 @@ const source = readFileSync(new URL('../functions/index.js', import.meta.url), '
 const realRequire = createRequire(new URL('../functions/index.js', import.meta.url));
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+test('release capabilities identify the contextual exhaustion ten-game presets protocol and built-in bank', async () => {
+  const h = harness();
+  const capabilities = await h.call('getGameCapabilities');
+  assert.equal(capabilities.protocol, 'al-midan-contextual-rotation2-presets1');
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  assert.equal(capabilities.builtinBankSha256, createHash('sha256').update(JSON.stringify(bank)).digest('hex'));
+  assert.equal(capabilities.pictureGuessManual, true);
+});
+
+test('create rejects unknown content preset before writing a lobby or rotation history', async () => {
+  const h = harness();
+  await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['multiple_choice'], questionsPerTeam: 2, contentPreset: 'silently-ignore-me' } }), { code: 'invalid-argument' });
+  assert.equal(Object.keys(h.data.matches).length, 1);
+  assert.equal(h.data.questionRotation, undefined);
+});
+
+test('gulf preset creation rejects an incompatible flag section instead of silently using global inventory', async () => {
+  const h = harness();
+  await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['flag'], questionsPerTeam: 2, contentPreset: 'gulf' } }), { code: 'failed-precondition' });
+  assert.equal(Object.keys(h.data.matches).length, 1);
+});
+
+test('reviewed difficulty preset never treats unclassified brand inventory as medium or hard', async () => {
+  const h = harness();
+  await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['brand'], questionsPerTeam: 2, contentPreset: 'reviewed_challenge' } }), { code: 'failed-precondition' });
+});
+
+for (const preset of ['gulf', 'reviewed_challenge']) for (const action of ['startMatch', 'chooseType', 'usePowerCard', 'recheckSelectionCapacity', 'advanceTurn']) test(`${preset} preset remains binding in ${action} when its pool is exhausted`, async () => {
+  const h = harness();
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  h.data.questionExclusions = Object.fromEntries(bank.filter(q => preset === 'gulf'
+    ? q.category === 'gulf' || ['gulf','qatari'].includes(q.region)
+    : ['medium','hard'].includes(q.editorialDifficulty)).map(q => [q.id, true]));
+  const match = h.match();
+  Object.assign(match, { contentPreset: preset, hostUid: 'host', enabledTypes: ['multiple_choice'], questionsPerTeam: 2,
+    typeCaps: { multiple_choice: 4 }, typeCounts: {}, usedIdsByTeam: {}, sectionCycleByTeam: {} });
+  match.teams['A234-1'].cardBalance = 1000; match.teams['A234-1'].powerCards = { swapQuestion: true };
+  match.state = { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] };
+  if (action === 'startMatch') {
+    match.status = 'lobby'; match.state.phase = 'lobby';
+    await assert.rejects(h.call(action, 'host', { firstTeamCode: 'A234-1' }), { code: 'failed-precondition' });
+    assert.equal(match.status, 'lobby');
+  } else if (action === 'chooseType') {
+    assert.equal((await h.call(action, 'user1', { type: 'multiple_choice' })).status, 'empty');
+    assert.equal(h.match().state.question ?? null, null);
+  } else if (action === 'recheckSelectionCapacity') {
+    const transition = presenterContext(match.state, 'preset-capacity');
+    assert.equal((await h.call(action, 'host', { transition })).available, false);
+    assert.equal(h.match().state.selectionPause.reason, 'capacity');
+  } else if (action === 'usePowerCard') {
+    Object.assign(match.state, { phase: 'question', round: 1, question: { id: 42, type: 'multiple_choice', options: ['A','B','C','D'], answer: -1 } });
+    const reply = await h.call(action, 'user1', { teamCode: 'A234-1', card: 'swapQuestion' });
+    assert.equal(reply.accepted, false); assert.equal(reply.reason, 'empty');
+    assert.equal(h.match().teams['A234-1'].cardBalance, 1000);
+    assert.equal(h.match().state.question.id, 42);
+  } else {
+    Object.assign(match.state, { phase: 'revealed', round: 6, question: { id: 42, type: 'multiple_choice', options: ['A','B','C','D'], answer: -1 } });
+    match.showdownCount = 0;
+    await h.call(action);
+    assert.equal(h.match().state.phase, 'choose', 'optional showdown must not secretly draw a different topic');
+  }
+});
+
+test('filtered presets reject player-authored punishment and unclassified picture mini-games', async () => {
+  for (const extra of [{ enabledTypes: ['multiple_choice', 'punishment'] }, { enabledTypes: ['multiple_choice'], challengeMode: 'picture_guess' }]) {
+    const h = harness();
+    await assert.rejects(h.call('createMatch', 'host', { options: { teamNames: ['Hermes QA A', 'Hermes QA B'], questionsPerTeam: 2, contentPreset: 'gulf', ...extra } }), { code: 'invalid-argument' });
+  }
+});
+
+test('changing content presets cannot shrink a section universe to recycle used items or clear its cycle', async () => {
+  const h = harness();
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const used = bank.filter(q => q.type === 'multiple_choice' && !q.disabled && (q.category === 'gulf' || ['gulf','qatari'].includes(q.region))).map(q => h.helpers.rotationAssetKey(q));
+  const ledger = { policyVersion: 2, games: [], cycles: { multiple_choice: { number: 3, used } } };
+  h.data.questionRotation = { host: clone(ledger) };
+  const options = { teamNames: ['Hermes QA A', 'Hermes QA B'], enabledTypes: ['multiple_choice'], questionsPerTeam: 2 };
+  await assert.rejects(h.call('createMatch', 'host', { options: { ...options, contentPreset: 'gulf' } }), { code: 'failed-precondition' });
+  assert.deepEqual(clone(h.data.questionRotation.host), ledger);
+  await h.call('createMatch', 'host', { options: { ...options, contentPreset: 'mixed' } });
+  assert.deepEqual(clone(h.data.questionRotation.host), ledger, 'preflight is pure and other section content stays eligible without reset');
+});
+
 test('sixty reviewed bank additions have verified answer mappings, unique image assets and valid orderings', () => {
   const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
   const review = JSON.parse(readFileSync(new URL('../src/data/bankSources-20261006.json', import.meta.url), 'utf8'));
@@ -75,6 +158,12 @@ test('reviewed October riddles have four unique choices, correct answer indexes 
   assert.equal(stats.BUILTIN_QUESTION_STATS.riddle, bank.filter((q) => q.type === 'riddle' && !q.disabled).length);
 });
 
+function presenterContext(state, requestId) {
+  return { questionId: state.question?.id ?? null, phase: state.phase, round: state.round || 0,
+    attemptId: `${state.round || 0}:${state.targetTeam || ''}:${state.passCount || 0}:${state.selectionRequestId || ''}`,
+    revision: state.revision || 0, requestId };
+}
+
 function fixture() {
   return {
     matches: { A234: {
@@ -121,7 +210,7 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   const snapshot = (value) => ({ val: () => clone(value), exists: () => value !== null });
   const ref = (path = '') => ({
     child: (key) => ref(`${path}/${key}`),
-    get: async () => { const snap = snapshot(read(path)); afterRead?.(); return snap; },
+    get: async () => { const snap = snapshot(clone(read(path))); afterRead?.(path); return snap; },
     set: async (value) => write(path, value),
     remove: async () => write(path, null),
     update: async (values) => { for (const [key, value] of Object.entries(values)) write(`${path}/${key}`, value); },
@@ -153,9 +242,24 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
   };
   mockedRequire.resolve = realRequire.resolve;
   const exports = {};
-  runInNewContext(source + '\nexports.testHelpers = { rotateQuestion, rotationAssetKey, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, rotateFlagQuestion, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
+  runInNewContext(source + '\nexports.testHelpers = { publishShowdown, cleanupMatchArtifacts, settleRotationReservations, rotationPublicationAllowed, rotateQuestion, rotationAssetKey, publicQuestion, registerRotationMatch, createMatch, sectionCycle, nextSectionCycle, powerCardCost, questionBank, fairTypeCaps };', { require: mockedRequire, exports, Buffer, process: { env: {} },
     Date: class extends Date { static now() { return clock; } }, console });
-  const call = (action, uid = 'host', extra = {}) => exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: { action, matchCode: 'A234', ...extra } });
+  let presenterSequence = 0;
+  const selections = new Map();
+  const call = (action, uid = 'host', extra = {}) => {
+    let selection = {};
+    if (action === 'chooseType') {
+      const requestId = extra.requestId || `selection-${++presenterSequence}`;
+      const key = `${extra.matchCode || 'A234'}:${uid}:${requestId}`;
+      if (!selections.has(key)) selections.set(key, presenterContext(data.matches[extra.matchCode || 'A234'].state, requestId));
+      selection = { requestId, transition: selections.get(key) };
+    }
+    return exports.gameAction({ auth: { uid }, rawRequest: { ip: '192.0.2.1' }, data: {
+      action, matchCode: 'A234', ...selection,
+      ...(['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer', 'usePowerCard', 'preparePunishment', 'judgePunishment', 'requestPunishmentOutcome', 'resolvePunishment', 'cancelPunishment'].includes(action)
+        ? { transition: presenterContext(data.matches.A234.state, `presenter-${++presenterSequence}`) } : {}), ...extra,
+    } });
+  };
   return { data, call, helpers: exports.testHelpers,
     adminCall: (action, extra = {}, admin = true) => exports.gameAction({ auth: { uid: 'owner', token: { admin } }, rawRequest: { ip: '192.0.2.2' }, data: { action, ...extra } }),
     authCall: (token) => exports.gameAction({ auth: { uid: 'owner', token }, rawRequest: { ip: '192.0.2.2' }, data: { action: 'syncAdminAccess' } }),
@@ -166,6 +270,594 @@ function harness(firebaseEmptyNodes = false, fixedMatchCode = false) {
     answer: (n, choice = 3) => call('submitShowdownAnswer', `user${n}`, { playerId: `p${n}`, questionId: 42, choice }),
   };
 }
+
+test('expired settled publication markers compact without permitting a delayed publisher', async () => {
+  const h = harness();
+  const q = { id: 71001, type: 'multiple_choice', question: 'Hermes QA marker lifecycle', options: ['A','B','C','D'], answer: 0 };
+  const draw = await h.helpers.rotateQuestion([q], 'qa-series', 'host', [q], 'qa-marker', false, 'A234');
+  const pending = Object.values(h.data.questionRotation.host.pending)[0];
+  h.match().rotationPublications = { [draw.reservation.key]: 'published' };
+  h.match().rotationPublicationExpiries = { [draw.reservation.key]: draw.reservation.expiresAt };
+  h.setClock(draw.reservation.expiresAt + 1);
+  await h.helpers.settleRotationReservations('host');
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(Object.keys(h.data.questionRotation.host.pending || {}).length, 0);
+  assert.ok(pending.publicationKey);
+  assert.ok(h.data.questionRotation.host.games.some(game => game.id === 'qa-series'));
+  assert.equal(h.match().rotationPublications?.[draw.reservation.key], undefined);
+  assert.equal(h.match().rotationPublicationExpiries?.[draw.reservation.key], undefined);
+  assert.equal(h.helpers.rotationPublicationAllowed(h.match(), draw.reservation), false);
+});
+
+test('publication marker compaction retains pending and unexpired receipts and bounds removals', async () => {
+  const h = harness();
+  h.match().rotationPublications = { legacy: 'cancelled', pending: 'published', live: 'cancelled' };
+  h.match().rotationPublicationExpiries = { pending: 1000, live: 3000 };
+  h.data.questionRotation = { host: { pending: { hold: { publicationKey: 'pending' } } } };
+  for (let i = 0; i < 140; i++) {
+    h.match().rotationPublications[`old${i}`] = 'cancelled';
+    h.match().rotationPublicationExpiries[`old${i}`] = 1000;
+  }
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(Object.keys(h.match().rotationPublications).length, 15);
+  assert.equal(h.match().rotationPublications.pending, 'published');
+  assert.equal(h.match().rotationPublications.live, 'cancelled');
+  assert.equal(h.match().rotationPublications.legacy, 'cancelled');
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(Object.keys(h.match().rotationPublications).length, 3);
+});
+
+test('bounded cleanup removes expired private or picture orphans but keeps current live and legacy secrets', async () => {
+  const h = harness();
+  h.match().state.secretVersion = 'current';
+  h.data.matchSecrets.A234 = { answer: 2, versions: {
+    current: { questionId: 42, answer: 3, stagingExpiresAt: 1000 },
+    orphan: { questionId: 44, answer: 0, stagingExpiresAt: 1000 },
+    picture: { questionId: 45, mode: 'picture_guess', pictures: { A: { id: 9 } }, stagingExpiresAt: 1000 },
+    live: { questionId: 46, answer: 1, stagingExpiresAt: 3000 },
+    legacy: { questionId: 47, answer: 2 },
+  } };
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  const root = h.data.matchSecrets.A234;
+  assert.equal(root.versions.orphan, undefined);
+  assert.equal(root.versions.picture, undefined);
+  assert.equal(root.versions.current.answer, 3);
+  assert.equal(root.versions.live.answer, 1);
+  assert.equal(root.versions.legacy.answer, 2);
+  assert.equal(root.answer, 2);
+});
+
+test('late staging after room removal is cleaned without recreating the room or erasing a legacy secret', async () => {
+  const h = harness();
+  delete h.data.matches.A234;
+  h.data.matchSecrets.A234.versions = { late: { answer: 1, stagingExpiresAt: 32000 } };
+  const legacyAnswer = h.data.matchSecrets.A234.answer;
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(h.data.matches.A234, undefined);
+  assert.equal(h.data.matchSecrets.A234.versions.late, undefined);
+  assert.equal(h.data.matchSecrets.A234.answer, legacyAnswer);
+});
+
+test('a delayed picture preparation cannot publish into a newly created room reusing the same short code', async () => {
+  const h = harness();
+  h.match().createdAt = 1000;
+  const before = clone(h.match());
+  h.beforeTransaction(() => { h.match().createdAt = 1500; });
+  const result = await h.helpers.publishShowdown('A234', before, { ...before.state, phase: 'showdown' },
+    { questionId: 800001, mode: 'picture_guess', pictures: { A: { id: 'qa' } } }, 1, 'qa-old-incarnation');
+  assert.equal(result.showdown, false);
+  assert.deepEqual(clone(h.match().state), before.state);
+});
+
+test('runtime ordinary publication records its expiry for bounded compaction', async () => {
+  const h = harness();
+  h.data.matchSecrets.A234.versions = { obsolete: { answer: 0, stagingExpiresAt: 1000 } };
+  h.match().rotationPublications = { obsolete: 'cancelled' };
+  h.match().rotationPublicationExpiries = { obsolete: 1000 };
+  Object.assign(h.match(), { enabledTypes: ['multiple_choice'], typeCounts: {}, usedIdsByTeam: {}, sectionCycleByTeam: {} });
+  h.match().state = { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] };
+  assert.equal((await h.call('chooseType', 'user1', { type: 'multiple_choice' })).status, 'accepted');
+  assert.equal(h.data.matchSecrets.A234.versions.obsolete, undefined);
+  assert.equal(h.match().rotationPublications.obsolete, undefined);
+  const key = h.match().state.secretVersion;
+  assert.ok(h.match().rotationPublicationExpiries?.[key] > 2000);
+  assert.equal(h.data.matchSecrets.A234.versions[key].stagingExpiresAt, h.match().rotationPublicationExpiries[key]);
+});
+
+test('expired picture preparation cannot publish after staging or resurrect its cleaned assignment', async () => {
+  const h = harness();
+  const before = clone(h.match());
+  h.beforeTransaction(() => h.setClock(40000));
+  const result = await h.helpers.publishShowdown('A234', before, { ...before.state, phase: 'showdown' },
+    { questionId: 800001, mode: 'picture_guess', pictures: { A: { id: 'qa' } } }, 1, 'qa-picture');
+  assert.equal(result.showdown, false);
+  assert.deepEqual(clone(h.match().state), before.state);
+  assert.deepEqual(clone(h.match().teams), before.teams);
+  assert.equal(h.match().status, before.status);
+  await h.helpers.cleanupMatchArtifacts('A234', 'host');
+  assert.equal(Object.keys(h.data.matchSecrets.A234.versions || {}).length, 0);
+});
+
+test('unpublished expired ordinary selection does not consume a competition or section asset', async () => {
+  const h = harness();
+  const match = h.match();
+  match.hostUid = 'host';
+  match.enabledTypes = ['multiple_choice'];
+  match.typeCounts = {}; match.usedIdsByTeam = {}; match.sectionCycleByTeam = {};
+  match.state = { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] };
+  let staged = false;
+  h.afterRead((path) => {
+    if (path === 'matches/A234/state') staged = true;
+  });
+  h.beforeTransaction(() => {
+    // Selection lease is acquired first; expire it only after preparation starts.
+    if (staged) h.setClock(40000);
+  });
+  const reply = await h.call('chooseType', 'user1', { teamCode: 'A234-1', type: 'multiple_choice', requestId: 'expired-preparation' });
+  assert.equal(reply.status, 'late');
+  assert.equal(match.state.question ?? null, null);
+  const ledger = h.data.questionRotation?.host;
+  assert.equal(Object.values(ledger?.games || {}).length, 0, 'an unshown selection must not age consumed-game history');
+  assert.equal(Object.values(ledger?.cycles || {}).length, 0, 'an unshown selection must not consume its cycle');
+});
+
+test('expired preparation is fenced, releases inventory and permits a fresh executor retry without consuming history', async () => {
+  const h = harness();
+  const pool = [{ id: 70001, type: 'flag', question: 'Fixture flag', options: ['A','B','C','D'], answer: 0, image: '/fixture/flag.webp' }];
+  const first = await h.helpers.rotateQuestion(pool, 'g0', 'host', pool, 'retryable', false, 'A234');
+  assert.equal(Object.values(h.data.questionRotation.host.games || {}).length, 0);
+  h.setClock(40000);
+  const next = await h.helpers.rotateQuestion(pool, 'g0', 'host', pool, 'retryable', false, 'A234');
+  assert.notEqual(next.reservation.key, first.reservation.key, 'recovery needs a fresh publication generation, not a permanently cancelled marker');
+  assert.equal(h.data.matches.A234.rotationPublications[first.reservation.key], 'cancelled');
+  assert.equal(next.question.id, first.question.id, 'unshown inventory remains available');
+  assert.equal(Object.values(h.data.questionRotation.host.games || {}).length, 0);
+});
+
+test('pending publication migration retains undated legacy flags in recent history', async () => {
+  const h = logoFixture();
+  const flag = { id: 70002, type: 'flag', question: 'Legacy flag', image: '/fixture/legacy.webp', options: ['A','B','C','D'], answer: 0 };
+  const key = h.helpers.rotationAssetKey(flag);
+  h.data.flagRotation = { v1: { host: { cycle: 4, used: [key] } } };
+  await h.call('chooseType', 'user1', { type: 'brand', requestId: 'migrate-on-publication' });
+  await assert.rejects(h.helpers.rotateQuestion([flag], 'next-game', 'host', [flag], 'legacy-recent'), { code: 'resource-exhausted' });
+  assert.deepEqual(h.data.flagRotation.v1.host, { cycle: 4, used: [key] });
+});
+
+test('power cards reject missing and stale displayed context before effects or claims', async () => {
+  for (const transition of [null, presenterContext({ phase: 'choose', round: 99 }, 'stale-card')]) {
+    const h = logoFixture();
+    Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { doublePoints: true } });
+    const before = clone(h.match());
+    const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'doublePoints', transition });
+    assert.deepEqual(clone(result), { accepted: false, reason: 'stale' });
+    assert.deepEqual(h.match(), before);
+  }
+});
+
+test('card lost-response retry replays the same immutable result and cannot change its command', async () => {
+  const h = logoFixture();
+  Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { doublePoints: true } });
+  const transition = presenterContext(h.match().state, 'card-lost-response');
+  const command = { teamCode: 'A234-1', card: 'doublePoints', transition };
+  assert.equal((await h.call('usePowerCard', 'user1', command)).accepted, true);
+  const saved = clone(h.match());
+  assert.equal((await h.call('usePowerCard', 'user1', command)).accepted, true);
+  assert.deepEqual(h.match(), saved);
+  const changed = await h.call('usePowerCard', 'user1', { ...command, card: 'freeze' });
+  assert.equal(changed.accepted, false);
+  assert.deepEqual(h.match(), saved);
+});
+
+test('card execution recovers an expired lease, rejects live ownership and does not change the displayed attempt', async () => {
+  for (const expired of [true, false]) {
+    const h = logoFixture();
+    Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { doublePoints: true } });
+    h.match().state.cardClaimId = 'crashed';
+    h.match().state.cardLease = { owner: 'crashed', expiresAt: expired ? 1999 : 9000 };
+    const transition = presenterContext(h.match().state, 'recover-card');
+    const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'doublePoints', transition });
+    assert.equal(result.accepted, expired);
+    assert.equal(h.match().state.selectionRequestId ?? null, null);
+    if (expired) {
+      assert.equal(h.match().state.cardClaimId ?? null, null);
+      assert.equal(h.match().state.cardLease ?? null, null);
+      assert.equal(h.match().teams['A234-1'].cardBalance, 1000 - h.helpers.powerCardCost('doublePoints', h.match().questionsPerTeam));
+    } else assert.equal(result.reason, 'busy');
+  }
+});
+
+test('temporary inventory holds report retryable busy rather than permanent rotation exhaustion', async () => {
+  const h = harness();
+  const pool = [{ id: 70004, type: 'brand', question: 'Held fixture', options: ['A','B','C','D'], answer: 0 }];
+  await h.helpers.rotateQuestion(pool, 'g0', 'host', pool, 'active', false, 'A234');
+  await assert.rejects(h.helpers.rotateQuestion(pool, 'g1', 'host', pool, 'competitor', false, 'A234'), { code: 'unavailable' });
+  assert.equal(Object.values(h.data.questionRotation.host.games || {}).length, 0);
+});
+
+test('new-game preflight reconciles expired unshown reservations before testing effective capacity', async () => {
+  const h = harness();
+  const bank = (await h.helpers.questionBank()).filter((q) => q.type === 'brand' && !q.disabled);
+  const pool = bank.slice(0, 2);
+  h.data.questionExclusions = Object.fromEntries(bank.slice(2).map((q) => [q.id, true]));
+  await h.helpers.rotateQuestion(pool, 'crashed-game', 'host', pool, 'hold-a', false, 'A234');
+  await h.helpers.rotateQuestion(pool, 'crashed-game', 'host', pool, 'hold-b', false, 'A234');
+  h.setClock(40000);
+  const created = await h.helpers.createMatch('host', { teamNames: ['Hermes QA A','Hermes QA B'], questionsPerTeam: 1, enabledTypes: ['brand'] });
+  assert.ok(created.code);
+  assert.equal(Object.values(h.data.questionRotation.host.games || {}).length, 0);
+  assert.equal(Object.values(h.data.questionRotation.host.pending || {}).length, 0);
+});
+
+test('capacity inspection with an expired pending preparation remains no-write', async () => {
+  const h = harness();
+  const pool = [{ id: 70003, type: 'brand', question: 'Pending logo', options: ['A','B','C','D'], answer: 0 }];
+  await h.helpers.rotateQuestion(pool, 'g0', 'host', pool, 'inspect-request', false, 'A234');
+  h.setClock(40000);
+  const before = clone(h.data);
+  await h.helpers.rotateQuestion(pool, 'g1', 'host', pool, null, true);
+  assert.deepEqual(h.data, before, 'capacity preview must not fence rooms or mutate history');
+});
+
+test('new and legacy create requests persist an explicit advisory timer contract', async () => {
+  for (const timerMode of [undefined, 'advisory']) {
+    const h = harness();
+    const created = await h.helpers.createMatch('timer-host', { teamNames: ['Hermes QA A', 'Hermes QA B'], questionsPerTeam: 4, enabledTypes: ['multiple_choice'], timer: 10, ...(timerMode ? { timerMode } : {}) });
+    const match = h.data.matches[created.code];
+    assert.equal(match.timerMode, 'advisory');
+    assert.equal(match.timer, 10);
+  }
+});
+
+test('unsupported strict timers are rejected before a misleading advisory lobby can be created', async () => {
+  const h = harness();
+  await assert.rejects(h.helpers.createMatch('timer-host', { teamNames: ['Hermes QA A', 'Hermes QA B'], questionsPerTeam: 4, enabledTypes: ['multiple_choice'], timer: 10, timerMode: 'strict' }), { code: 'invalid-argument' });
+  assert.equal(Object.keys(h.data.matches).length, 1);
+});
+
+test('room endpoints reject missing and malformed codes before any room read', async () => {
+  for (const action of ['getMatch', 'getTeamInvites', 'getHostAnswer', 'submitAnswer', 'advanceTurn']) {
+    for (const matchCode of [undefined, '', ' ', '../', 'A234/players', 'A2345', {}, 1234]) {
+      const h = harness();
+      let reads = 0;
+      h.afterRead(() => { reads += 1; });
+      await assert.rejects(h.call(action, 'host', { matchCode }), { code: 'invalid-argument' }, `${action}: ${String(matchCode)}`);
+      assert.equal(reads, 0, 'invalid room paths never reach Admin SDK reads');
+    }
+  }
+});
+
+function joinFixture() {
+  const h = harness();
+  h.match().status = 'lobby';
+  h.match().players = {};
+  h.data.matchAccess.A234.teamKeys = { 'A234-1': 'invite-one' };
+  return h;
+}
+
+test('join capacity is reserved atomically across different identities', async () => {
+  const h = joinFixture();
+  for (let i = 0; i < 19; i++) h.match().players[`existing-${i}`] = { id: `existing-${i}`, teamCode: 'A234-1', name: 'QA' };
+  const results = await Promise.allSettled(['new-one', 'new-two'].map((uid) => h.call('joinTeam', uid, { teamCode: 'A234-1', inviteKey: 'invite-one', name: 'Hermes QA' })));
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(Object.keys(h.match().players).length, 20);
+  assert.equal(results.find((r) => r.status === 'rejected').reason.code, 'resource-exhausted');
+});
+
+test('join capacity is rechecked after a competing last-slot reservation', async () => {
+  const h = joinFixture();
+  for (let i = 0; i < 19; i++) h.match().players[`existing-${i}`] = { id: `existing-${i}`, teamCode: 'A234-1', name: 'QA' };
+  let reads = 0;
+  h.afterRead((path) => {
+    if (path === 'matches/A234' && ++reads === 2) h.match().players.last = { id: 'last', teamCode: 'A234-1', name: 'QA last slot' };
+  });
+  await assert.rejects(h.call('joinTeam', 'new-one', { teamCode: 'A234-1', inviteKey: 'invite-one', name: 'Hermes QA' }), { code: 'resource-exhausted' });
+  assert.equal(Object.keys(h.match().players).length, 20);
+});
+
+test('public TV can view a lobby but cannot enumerate private invitations', async () => {
+  const h = joinFixture();
+  assert.ok((await h.call('getMatch', 'audience')).match);
+  await assert.rejects(h.call('getTeamInvites', 'audience'), { code: 'permission-denied' });
+  const invites = await h.call('getTeamInvites', 'host');
+  assert.equal(invites.teamKeys['A234-1'], 'invite-one');
+});
+
+test('join rejects start race and restores a committed reservation after missing mapping', async () => {
+  const closed = joinFixture();
+  closed.beforeTransaction(() => { closed.match().status = 'playing'; });
+  await assert.rejects(closed.call('joinTeam', 'new-one', { teamCode: 'A234-1', inviteKey: 'invite-one' }), { code: 'failed-precondition' });
+  assert.equal(Object.keys(closed.match().players).length, 0);
+  const h = joinFixture();
+  const request = { teamCode: 'A234-1', inviteKey: 'invite-one', name: 'Hermes QA' };
+  const first = await h.call('joinTeam', 'new-one', request);
+  delete h.data.matchAccess.A234.playerUids[first.player.id];
+  const second = await h.call('joinTeam', 'new-one', request);
+  assert.equal(second.player.id, first.player.id);
+  assert.equal(Object.keys(h.match().players).length, 1);
+  assert.equal(h.data.matchAccess.A234.playerUids[first.player.id], 'new-one');
+  assert.equal('authUid' in second.player, false);
+});
+
+test('assist cannot copy old secret choices onto a replacement question', async () => {
+  const h = harness();
+  Object.assign(h.match().state, { phase: 'question', targetTeam: 'A234-1', question: { id: 42, type: 'brand', optionsHidden: true }, assistUsed: false });
+  h.data.matchSecrets.A234.options = ['old a', 'old b'];
+  h.afterRead((path) => { if (path === 'matchSecrets/A234') h.match().state.question = { id: 43, type: 'brand', optionsHidden: true }; });
+  const result = await h.call('useAssist', 'user1', { teamCode: 'A234-1' });
+  assert.equal(result.accepted, false);
+  assert.equal(h.match().state.question.id, 43);
+  assert.equal(h.match().state.question.options, undefined);
+});
+
+test('timed prompt reveal cannot overwrite a replacement memory question', async () => {
+  const h = harness();
+  Object.assign(h.match().state, { phase: 'question', question: { id: 42, type: 'memory', promptHidden: true }, viewUntil: 1000 });
+  Object.assign(h.data.matchSecrets.A234, { question: 'old prompt', options: ['old a', 'old b'] });
+  h.afterRead((path) => { if (path === 'matchSecrets/A234') h.match().state.question = { id: 43, type: 'memory', promptHidden: true }; });
+  const result = await h.call('revealQuestionPrompt', 'user1');
+  assert.equal(result.accepted, false);
+  assert.equal(h.match().state.question.id, 43);
+  assert.equal(h.match().state.question.question, undefined);
+});
+
+test('editorial historical prompts stay private because obsolete stems can reveal the correct answer', () => {
+  const h = harness();
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const original = bank.find(q => q.id === 941);
+  const visible = h.helpers.publicQuestion(original);
+  assert.equal(visible.answer, -1);
+  assert.equal(visible.rotationLegacyPrompts, undefined, 'old correct sequence must never be publicly rendered or published');
+  assert.equal(original.rotationLegacyPrompts.length, 1, 'private source alias is retained');
+  assert.equal(visible.question, original.question);
+});
+
+test('all source wording edits keep the exact pre-edit built-in prompt blocked in persistent rotation', async () => {
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  for (const [id, original] of [[909, 'أكمل: من جدّ ___ وجد'], [920, 'أكمل: إذا غامرت في شرف مروم فلا تقنع بما ___'], [941, 'رتب الكواكب من الأقرب للشمس: عطارد - الزهرة - الأرض - المريخ']]) {
+    const q = bank.find(q => q.id === id);
+    const oldKey = createHash('sha256').update(`text:${original.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()}`).digest('hex');
+    const h = harness();
+    h.data.questionRotation = { host: { policyVersion: 2, games: [{ id: 'before-edit', assets: [oldKey] }], cycles: {} } };
+    await assert.rejects(h.helpers.rotateQuestion([q], 'after-edit', 'host', bank), { code: 'resource-exhausted' }, `edited built-in ${id}`);
+  }
+});
+
+test('editorial wording corrections preserve historical text aliases in recent windows and unfinished section cycles', async () => {
+  const oldText = 'Old wording with a wrong ending';
+  const legacy = createHash('sha256').update(`text:${oldText.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()}`).digest('hex');
+  const revised = { id: 990001, type: 'completion', conceptId: 'qa-wording-revision', rotationLegacyPrompts: [oldText], question: 'Corrected exact quotation', options: ['a', 'b'], answer: 0 };
+  const other = { id: 990002, type: 'completion', question: 'Unseen other quotation', options: ['a', 'b'], answer: 0 };
+  const recent = harness();
+  recent.data.questionRotation = { host: { policyVersion: 2, games: [{ id: 'old', assets: [legacy] }], cycles: {} } };
+  await assert.rejects(recent.helpers.rotateQuestion([revised], 'new', 'host', [revised, other]), { code: 'resource-exhausted' });
+  const cycle = harness();
+  cycle.data.questionRotation = { host: { policyVersion: 2, games: [], cycles: { completion: { number: 1, used: [legacy] } } } };
+  await assert.rejects(cycle.helpers.rotateQuestion([revised], 'new', 'host', [revised, other]), { code: 'resource-exhausted' });
+  assert.equal((await cycle.helpers.rotateQuestion([other], 'new', 'host', [revised, other])).question.id, other.id);
+  assert.equal((await cycle.helpers.rotateQuestion([revised], 'another', 'host', [revised, other])).question.id, revised.id);
+});
+
+test('editorial concept families block paraphrases and migrate legacy text history', async () => {
+  const h = harness();
+  const a = { id: 900001, type: 'multiple_choice', conceptId: 'qa-concept', question: 'First phrasing', options: ['a', 'b'], answer: 0 };
+  const b = { ...a, id: 900002, question: 'Different wording of the same fact' };
+  const first = await h.helpers.rotateQuestion([a], 'qa-game-one', 'host');
+  assert.equal(first.question.id, a.id);
+  await assert.rejects(h.helpers.rotateQuestion([b], 'qa-game-two', 'host'), { code: 'resource-exhausted' });
+  const old = harness();
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const original = bank.find((q) => q.id === 62);
+  const legacyHash = createHash('sha256').update(`text:${original.question.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()}`).digest('hex');
+  old.data.questionRotation = { host: { games: [{ id: 'legacy-game', assets: [legacyHash] }] } };
+  await assert.rejects(old.helpers.rotateQuestion([bank.find((q) => q.id === 899)], 'qa-game-new', 'host'), { code: 'resource-exhausted' });
+});
+
+test('a tied single-section match opens fresh section capacity for its deciding cycle', async () => {
+  const h = harness();
+  Object.assign(h.match(), { totalRounds: 8, turnIndex: 7, questionsPerTeam: 4, enabledTypes: ['multiple_choice'], typeCaps: { multiple_choice: 4 }, typeCounts: { 'A234-1': { multiple_choice: 4 }, 'A234-2': { multiple_choice: 4 } }, sectionCycleByTeam: { 'A234-1': { used: ['multiple_choice'], number: 4 }, 'A234-2': { used: ['multiple_choice'], number: 4 } } });
+  h.match().teams['A234-2'].score = 100;
+  Object.assign(h.match().state, { phase: 'revealed', round: 8 });
+  assert.equal((await h.call('advanceTurn')).tieBreaker, true);
+  assert.equal((await h.call('chooseType', 'user1', { type: 'multiple_choice', requestId: 'tie-pick-one' })).status, 'accepted');
+  assert.equal(h.match().state.targetTeam, 'A234-1');
+});
+
+function ordinaryAnswerFixture() {
+  const h = harness();
+  Object.assign(h.match().state, { phase: 'question', round: 1, targetTeam: 'A234-1', passCount: 0, revision: 4, selectionRequestId: 'selection-1', answer: null });
+  const context = { playerId: 'p1', choice: 3, questionId: 42, attemptId: '1:A234-1:0:selection-1', revision: 4, requestId: 'answer-1' };
+  return { h, context };
+}
+
+test('passing a wrong answer cannot overwrite a replacement committed after the room read', async () => {
+  const { h } = ordinaryAnswerFixture();
+  Object.assign(h.match().state, { phase: 'revealed', isCorrect: false });
+  h.afterRead((path) => {
+    if (path !== 'matches/A234') return;
+    h.afterRead(null);
+    Object.assign(h.match().state, { phase: 'question', revision: 5, question: { id: 43, options: ['A', 'B'], answer: -1 } });
+  });
+  await assert.rejects(h.call('passToNextTeam'), { code: 'failed-precondition' });
+  assert.equal(h.match().state.question.id, 43);
+  assert.equal(h.match().state.targetTeam, 'A234-1');
+  assert.equal(h.match().state.phase, 'question');
+});
+
+test('concurrent pass requests commit exactly one new attempt', async () => {
+  const { h } = ordinaryAnswerFixture();
+  Object.assign(h.match().state, { phase: 'revealed', isCorrect: false });
+  const results = await Promise.allSettled([h.call('passToNextTeam'), h.call('passToNextTeam')]);
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(h.match().state.targetTeam, 'A234-2');
+  assert.equal(h.match().state.passCount, 1);
+  assert.equal(h.match().state.revision, 5);
+});
+
+test('ordinary advance cannot skip an unanswered question or overwrite a newer turn', async () => {
+  const active = ordinaryAnswerFixture();
+  await assert.rejects(active.h.call('advanceTurn'), { code: 'failed-precondition' });
+  assert.equal(active.h.match().state.phase, 'question');
+  const { h } = ordinaryAnswerFixture();
+  h.match().state.phase = 'revealed';
+  h.afterRead((path) => {
+    if (path !== 'matches/A234') return;
+    h.afterRead(null);
+    Object.assign(h.match().state, { phase: 'question', revision: 5, question: { id: 43, options: ['A', 'B'] } });
+  });
+  await assert.rejects(h.call('advanceTurn'), { code: 'failed-precondition' });
+  assert.equal(h.match().state.question.id, 43);
+});
+
+test('concurrent ordinary advance commits one turn and preserves a concurrent score correction for tie resolution', async () => {
+  const { h } = ordinaryAnswerFixture(); h.match().state.phase = 'revealed';
+  const replies = await Promise.allSettled([h.call('advanceTurn'), h.call('advanceTurn')]);
+  assert.equal(replies.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(h.match().turnIndex, 6);
+  assert.equal(h.match().state.revision, 5);
+  const ending = ordinaryAnswerFixture().h;
+  Object.assign(ending.match(), { totalRounds: 1, turnIndex: 0, enabledTypes: ['multiple_choice'] });
+  ending.match().state.phase = 'revealed';
+  ending.afterRead((path) => {
+    if (path !== 'matches/A234') return;
+    ending.afterRead(null);
+    ending.match().teams['A234-1'].score = 150;
+  });
+  assert.equal((await ending.call('advanceTurn')).tieBreaker, true);
+  assert.equal(ending.match().status, 'playing');
+});
+
+test('presenter transitions reject missing or delayed client context before touching a newer attempt', async () => {
+  for (const action of ['passToNextTeam', 'advanceTurn', 'judgeVerbal', 'revealAnswer']) {
+    for (const bad of [{ transition: undefined }, { transition: { phase: 'revealed', round: 0, revision: 3, questionId: 41, attemptId: 'old', requestId: 'old-request' } }]) {
+      const { h } = ordinaryAnswerFixture();
+      Object.assign(h.match().state, { phase: 'revealed', isCorrect: false, answer: { choice: 3 } });
+      const before = clone(h.match());
+      await assert.rejects(h.call(action, 'host', { correct: true, ...bad }), { code: 'failed-precondition' });
+      assert.deepEqual(h.match(), before);
+    }
+  }
+});
+
+test('pass and ordinary advance replay a lost-response request without advancing again', async () => {
+  for (const action of ['passToNextTeam', 'advanceTurn']) {
+    const { h } = ordinaryAnswerFixture();
+    Object.assign(h.match().state, { phase: 'revealed', isCorrect: false });
+    const transition = presenterContext(h.match().state, 'fixed-lost-response');
+    const first = await h.call(action, 'host', { transition });
+    const committed = clone(h.match());
+    assert.deepEqual(clone(await h.call(action, 'host', { transition })), clone(first));
+    assert.deepEqual(h.match(), committed);
+    await assert.rejects(h.call(action, 'host', { transition: { ...transition, round: 999 } }), { code: 'failed-precondition' });
+  }
+});
+
+test('reveal cannot score a stale answer if an answer or assistance commits after its read', async () => {
+  for (const mutation of ['answer', 'assist']) {
+    const { h } = ordinaryAnswerFixture();
+    h.afterRead((path) => {
+      if (path !== 'matchSecrets/A234') return;
+      h.afterRead(null);
+      h.match().state.revision += 1;
+      if (mutation === 'answer') { h.match().state.phase = 'locked'; h.match().state.answer = { choice: 3 }; }
+      else h.match().state.assistUsed = true;
+    });
+    await assert.rejects(h.call('judgeVerbal', 'host', { correct: true }), { code: 'failed-precondition' });
+    assert.equal(h.match().teams['A234-1'].score, 100);
+    assert.notEqual(h.match().state.phase, 'revealed');
+  }
+});
+
+test('reveal lost-response retries do not double-score and reject a changed adjudication', async () => {
+  const { h } = ordinaryAnswerFixture();
+  const transition = presenterContext(h.match().state, 'reveal-lost-response');
+  const payload = { transition, correct: true };
+  assert.equal((await h.call('judgeVerbal', 'host', payload)).correct, true);
+  const after = clone(h.match());
+  assert.equal((await h.call('judgeVerbal', 'host', payload)).correct, true);
+  assert.deepEqual(h.match(), after);
+  await assert.rejects(h.call('judgeVerbal', 'host', { ...payload, correct: false }), { code: 'failed-precondition' });
+});
+
+test('presenter may explicitly skip the displayed unanswered question without inventing a wrong answer', async () => {
+  const { h } = ordinaryAnswerFixture();
+  const transition = presenterContext(h.match().state, 'explicit-host-skip');
+  const reply = await h.call('advanceTurn', 'host', { transition, skipUnanswered: true });
+  assert.equal(reply.ended, false);
+  assert.equal(h.match().state.phase, 'choose');
+  assert.equal(h.match().teams['A234-1'].score, 100);
+  assert.equal(h.match().teams['A234-1'].wrongCount, undefined);
+  assert.deepEqual(clone(await h.call('advanceTurn', 'host', { transition, skipUnanswered: true })), clone(reply));
+  await assert.rejects(h.call('advanceTurn', 'host', { transition, skipUnanswered: false }), { code: 'failed-precondition' });
+});
+
+test('unavailable optional showdown preserves an explicit skip and its retry receipt', async () => {
+  const { h } = ordinaryAnswerFixture();
+  Object.assign(h.match(), { showdownCount: 0, challengeMode: 'classic' });
+  h.match().state.round = 6;
+  h.data.customQuestions = { 993001: { id: 993001, type: 'true_false', question: 'Hermes fixture', options: ['Yes', 'No'], answer: 0 } };
+  const bank = await h.helpers.questionBank();
+  h.data.questionExclusions = Object.fromEntries(bank.filter((q) => q.id !== 993001).map((q) => [q.id, true]));
+  const transition = presenterContext(h.match().state, 'skip-with-empty-showdown');
+  assert.equal((await h.call('advanceTurn', 'host', { transition, skipUnanswered: true })).ended, false);
+  assert.equal(h.match().state.phase, 'choose');
+  assert.equal((await h.call('advanceTurn', 'host', { transition, skipUnanswered: true })).ended, false);
+});
+
+test('ordinary answers require exact question attempt and revision context', async () => {
+  for (const change of [{ questionId: undefined }, { questionId: 41 }, { attemptId: undefined }, { attemptId: 'old' }, { revision: undefined }, { revision: 3 }, { requestId: undefined }]) {
+    const { h, context } = ordinaryAnswerFixture();
+    const result = await h.call('submitAnswer', 'user1', { ...context, ...change });
+    assert.equal(result.status, 'stale');
+    assert.equal(h.match().state.phase, 'question');
+    assert.equal(h.match().state.answer, null);
+  }
+});
+
+test('ordinary answer cannot lock a question replaced between read and commit', async () => {
+  const { h, context } = ordinaryAnswerFixture();
+  h.beforeTransaction(() => { h.match().state.question.id = 43; });
+  const result = await h.call('submitAnswer', 'user1', context);
+  assert.equal(result.status, 'stale');
+  assert.equal(h.match().state.phase, 'question');
+  assert.equal(h.match().state.answer, null);
+});
+
+test('accepted ordinary answer retries are idempotent and cannot change the choice', async () => {
+  const { h, context } = ordinaryAnswerFixture();
+  assert.equal((await h.call('submitAnswer', 'user1', context)).status, 'accepted');
+  const accepted = clone(h.match().state);
+  assert.equal((await h.call('submitAnswer', 'user1', context)).status, 'accepted');
+  assert.deepEqual(h.match().state, accepted);
+  assert.equal((await h.call('submitAnswer', 'user1', { ...context, choice: 0 })).status, 'stale');
+  assert.equal((await h.call('submitAnswer', 'user2', context)).status, 'stale');
+  assert.deepEqual(h.match().state, accepted);
+});
+
+test('presenter ordinary answers enforce context, atomic mode checks and safe retries', async () => {
+  const { h, context } = ordinaryAnswerFixture();
+  h.match().answerMode = 'host';
+  assert.equal((await h.call('submitHostAnswer', 'host', { ...context, questionId: 41 })).status, 'stale');
+  assert.equal((await h.call('submitHostAnswer', 'host', context)).status, 'accepted');
+  assert.equal((await h.call('submitHostAnswer', 'host', context)).status, 'accepted');
+  assert.equal(h.match().state.answer.playerId, 'host');
+  const other = ordinaryAnswerFixture(); other.h.match().answerMode = 'host';
+  other.h.beforeTransaction(() => { other.h.match().answerMode = 'anyone'; });
+  await assert.rejects(other.h.call('submitHostAnswer', 'host', other.context), { code: 'failed-precondition' });
+  assert.equal(other.h.match().state.phase, 'question');
+});
+
+test('solo excludes memory questions until a real view-hide phase exists', async () => {
+  const h = harness(false, true);
+  const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
+  const enabled = bank.filter((q) => !q.disabled && q.type === 'multiple_choice').slice(0, 100);
+  const memory = bank.filter((q) => !q.disabled && q.type === 'memory');
+  const keep = new Set([...enabled, ...memory].map((q) => q.id));
+  h.data.questionExclusions = Object.fromEntries(bank.filter((q) => !keep.has(q.id)).map((q) => [q.id, true]));
+  const result = await h.call('startChallenge', 'solo-user');
+  assert.equal(result.questions.length, 100);
+  assert.equal(result.questions.some((q) => q.type === 'memory'), false);
+});
 
 test('twenty logo questions have unique native assets and verified private presenter metadata', async () => {
   const bank = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8'));
@@ -207,7 +899,9 @@ function pictureGuessFixture() {
 
 test('picture challenge prepares private pictures after three questions per team and waits for host timer', async () => {
   const h = pictureGuessFixture();
+  h.data.matchSecrets.A234.versions = { orphan: { mode: 'picture_guess', stagingExpiresAt: 1000 } };
   await h.call('advanceTurn');
+  assert.equal(h.data.matchSecrets.A234.versions.orphan, undefined);
   const s = h.match().state;
   assert.equal(s.showdown.kind, 'picture_guess');
   assert.equal(s.showdown.opensAt, 0);
@@ -217,7 +911,7 @@ test('picture challenge prepares private pictures after three questions per team
   assert.equal(s.question.options, undefined); // RTDB prunes deliberately empty arrays.
   assert.equal(JSON.stringify(h.match()).includes('/img/picture-guess/'), false);
   assert.equal('pictures' in s.showdown, false);
-  const pictures = h.data.matchSecrets.A234.pictures;
+  const pictures = h.data.matchSecrets.A234.versions[h.match().state.secretVersion].pictures;
   assert.notEqual(pictures['A234-1'].id, pictures['A234-2'].id);
   assert.equal(pictures['A234-1'].targetTeam, 'A234-2');
   assert.equal(pictures['A234-2'].targetTeam, 'A234-1');
@@ -316,6 +1010,123 @@ test('host score corrections allow increases and deductions, record reason, reje
   assert.equal(h.match().teams['A234-1'].scoreAdjustment.delta, -400);
 });
 
+test('picture showdown preparation cannot replace an ended room after reading its phase', async () => {
+  const h = pictureGuessFixture();
+  h.afterRead((path) => {
+    if (path === 'matches/A234/state') {
+      h.match().status = 'ended';
+      h.match().state.phase = 'ended';
+    }
+  });
+  const r = await h.call('advanceTurn');
+  assert.equal(r.showdown, false);
+  assert.equal(h.match().state.phase, 'ended');
+  assert.equal(h.match().showdownCount, 0);
+});
+
+test('classic showdown preparation cannot replace a room ended while loading its bank', async () => {
+  const h = harness();
+  Object.assign(h.match(), { challengeMode: 'classic', showdownCount: 0, questionsPerTeam: 8, timer: 30 });
+  h.match().state.phase = 'revealed';
+  h.match().state.round = 6;
+  h.afterRead((path) => {
+    if (path === 'customQuestions') {
+      h.match().status = 'ended';
+      h.match().state.phase = 'ended';
+    }
+  });
+  const r = await h.call('advanceTurn');
+  assert.equal(r.showdown, false);
+  assert.equal(h.match().state.phase, 'ended');
+  assert.equal(h.match().showdownCount, 0);
+  assert.equal(Object.values(h.data.questionRotation?.host?.games || {}).length, 0, 'unpublished showdown must not age history');
+});
+
+test('selection execution ownership never changes the displayed choose attempt before publication', async () => {
+  const h = logoFixture();
+  let inspected = false;
+  h.afterRead((path) => {
+    if (path === 'matches/A234/state') {
+      inspected = true;
+      assert.equal(h.match().state.selectionRequestId ?? null, null);
+      assert.ok(h.match().state.selectionLease?.owner);
+    }
+  });
+  assert.equal((await h.call('chooseType', 'user1', { type: 'brand', requestId: 'stable-choose-attempt' })).status, 'accepted');
+  assert.equal(inspected, true);
+});
+
+test('ordinary selection rejects missing or stale displayed choose context before history consumption', async () => {
+  const h = logoFixture();
+  for (const transition of [null, presenterContext({ ...h.match().state, revision: 77 }, 'stale-selection')]) {
+    const before = clone(h.match());
+    const r = await h.call('chooseType', 'user1', { type: 'brand', requestId: 'context-selection', transition });
+    assert.equal(r.status, 'late');
+    assert.deepEqual(h.match(), before);
+    assert.equal(h.data.questionRotation ?? null, null);
+  }
+});
+
+test('swap cannot replace a question or spend a card after a concurrent answer', async () => {
+  const h = logoFixture();
+  await h.call('chooseType', 'user1', { type: 'brand', requestId: 'swap-fixture' });
+  const oldQuestion = h.match().state.question.id;
+  h.match().teams['A234-1'].cardBalance = 1000;
+  h.match().teams['A234-1'].powerCards = { swapQuestion: true };
+  let answered = false;
+  h.afterRead((path) => {
+    if (!answered && path === 'customQuestions') {
+      answered = true;
+      h.match().state.answer = { playerId: 'p1', choice: 0 };
+      h.match().state.phase = 'locked';
+      h.match().state.revision += 1;
+    }
+  });
+  const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'swapQuestion' });
+  assert.equal(answered, true);
+  assert.equal(result.accepted, false);
+  assert.equal(h.match().state.question.id, oldQuestion);
+  assert.equal(h.match().teams['A234-1'].cardBalance, 1000);
+  assert.equal(h.match().teams['A234-1'].powerCards.swapQuestion, true);
+  assert.equal((await h.call('getHostAnswer')).questionId, oldQuestion);
+  assert.equal(Object.values(h.data.questionRotation.host.games[0].reservations).length, 1, 'failed swap must not consume a second question');
+});
+
+test('ordinary selection recovers an expired executor lease but never takes a live one', async () => {
+  for (const expired of [false, true]) {
+    const h = logoFixture();
+    h.match().state.selectionRequestId = 'crashed-request';
+    h.match().state.selectionLease = { owner: 'old-executor', expiresAt: expired ? 1999 : 9000 };
+    const r = await h.call('chooseType', 'user1', { type: 'brand', requestId: 'recovery-request' });
+    assert.equal(r.status, expired ? 'accepted' : 'late');
+    if (expired) {
+      assert.equal(h.match().state.selectionRequestId, 'recovery-request');
+      assert.ok(h.match().state.secretVersion);
+      assert.equal(h.match().state.selectionLease ?? null, null);
+      assert.equal((await h.call('getHostAnswer')).questionId, h.match().state.question.id);
+    }
+  }
+});
+
+test('ordinary selection cannot resurrect an ended room after its last choose-state read', async () => {
+  const h = logoFixture();
+  let ended = false;
+  h.afterRead((path) => {
+    if (!ended && path === 'matches/A234/state') {
+      ended = true;
+      h.match().status = 'ended';
+      h.match().state.phase = 'ended';
+      h.match().state.revision = 99;
+    }
+  });
+  const result = await h.call('chooseType', 'user1', { type: 'brand', requestId: 'late-selection' });
+  assert.equal(result.status, 'late');
+  assert.equal(h.match().status, 'ended');
+  assert.equal(h.match().state.phase, 'ended');
+  assert.equal(h.match().state.revision, 99);
+  assert.equal(h.match().state.question, null);
+});
+
 test('simultaneous host score correction and ordinary question judgment preserve both awards', async () => {
   const h = logoFixture();
   await h.call('chooseType', 'user1', { type: 'brand' });
@@ -354,7 +1165,9 @@ test('logo name and industry are available only to the presenter, with hidden co
   assert.equal(details.questionId, q.id);
   assert.ok(details.brandInfo.acceptedNames.includes(details.answerText));
   assert.ok(details.brandInfo.industry);
-  h.data.matchSecrets.A234.questionId += 1;
+  const rootSecret = h.data.matchSecrets.A234;
+  const activeSecret = h.match().state.secretVersion ? rootSecret.versions[h.match().state.secretVersion] : rootSecret;
+  activeSecret.questionId += 1;
   const stale = await h.call('getHostAnswer');
   assert.equal(stale.brandInfo, null);
   assert.equal(stale.answerText, null);
@@ -378,8 +1191,12 @@ test('swapping a logo refreshes presenter details and avoids reuse for the other
   await h.call('chooseType', 'user1', { type: 'brand' });
   const first = clone(h.match().state.question);
   Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { swapQuestion: true } });
+  h.data.matchSecrets.A234.versions.orphanSwap = { answer: 0, stagingExpiresAt: 1000 };
   assert.equal((await h.call('usePowerCard', 'user1', { card: 'swapQuestion', teamCode: 'A234-1' })).accepted, true);
+  assert.equal(h.data.matchSecrets.A234.versions.orphanSwap, undefined);
   const second = clone(h.match().state.question);
+  assert.equal(h.data.matchSecrets.A234.versions[h.match().state.secretVersion].stagingExpiresAt,
+    h.match().rotationPublicationExpiries[h.match().state.secretVersion]);
   assert.notEqual(second.image, first.image);
   assert.equal('brandInfo' in second, false);
   const details = await h.call('getHostAnswer');
@@ -541,12 +1358,12 @@ for (const type of ['multiple_choice', 'flag', 'memory']) {
   });
 }
 
-test('audience lobby gets unique short team codes that resolve to the right team', async () => {
+test('host lobby gets unique short team codes that resolve to the right team', async () => {
   const h = harness();
   h.match().status = 'lobby';
   h.match().expiresAt = 999999;
   h.data.matchAccess.A234.teamKeys = { 'A234-1': 'SECRET11', 'A234-2': 'SECRET22' };
-  const invites = await h.call('getTeamInvites', 'audience');
+  const invites = await h.call('getTeamInvites', 'host');
   const codes = Object.values(invites.shortTeamCodes);
   assert.equal(new Set(codes).size, 2);
   for (const value of codes) assert.match(value, /^[A-Z][0-9]{3}$/);
@@ -555,7 +1372,7 @@ test('audience lobby gets unique short team codes that resolve to the right team
     assert.equal(result.teamCode, teamCode);
     assert.equal(result.inviteKey, h.data.matchAccess.A234.teamKeys[teamCode]);
   }
-  const again = await h.call('getTeamInvites', 'audience');
+  const again = await h.call('getTeamInvites', 'host');
   assert.deepEqual(again.shortTeamCodes, invites.shortTeamCodes);
   h.match().status = 'ended';
   await assert.rejects(h.call('resolveTeamCode', 'guest', { shortCode: codes[0] }), { code: 'not-found' });
@@ -578,17 +1395,17 @@ test('concurrent invite loading keeps a stable code for each team', async () => 
   assert.equal(Object.keys(h.data.teamJoinCodes).length, 1);
 });
 
-test('rotation prevents repeating question assets during fifteen competitions', async () => {
+test('rotation retains eleven consumed games and does not recycle an unfinished section', async () => {
   const h = harness(true);
   const pool = Array.from({ length: 45 }, (_, id) => ({ id, type: 'image', image: `/image-${id}.svg`, question: `flag ${id}`, options: ['a', 'b'], answer: 0 }));
   const recent = [];
   for (let game = 0; game < 35; game++) {
     const draw = await h.helpers.rotateQuestion(pool, `game${game}`, 'host');
     assert.equal(draw.reused, false);
-    assert.ok(!recent.slice(-14).includes(draw.question.id));
+    assert.ok(!recent.includes(draw.question.id));
     recent.push(draw.question.id);
   }
-  assert.equal(h.data.questionRotation.host.games.length, 15);
+  assert.equal(h.data.questionRotation.host.games.length, 11);
 });
 
 test('rotation identifies same image/text despite different question ids and reports bank shortage', async () => {
@@ -596,9 +1413,11 @@ test('rotation identifies same image/text despite different question ids and rep
   const a = { id: 1, type: 'acting', question: 'المثل نفسه', options: [], answer: 0 };
   const b = { ...a, id: 2, question: '  المثل   نفسه  ' };
   await h.helpers.rotateQuestion([a], 'one', 'host');
-  await assert.rejects(h.helpers.rotateQuestion([b], 'two', 'host'), /15/);
+  await assert.rejects(h.helpers.rotateQuestion([b], 'two', 'host'), /10/);
   for (let game = 2; game <= 16; game++) await h.helpers.registerRotationMatch('host', `empty${game}`);
-  const next = await h.helpers.rotateQuestion([b], 'empty16', 'host');
+  await assert.rejects(h.helpers.rotateQuestion([b], 'empty16', 'host'), /10/);
+  for (let game = 1; game <= 10; game++) await h.helpers.rotateQuestion([{ ...a, id: 990000 + game, type: 'ct_age', question: `age ${game}` }], `consumed${game}`, 'host');
+  const next = await h.helpers.rotateQuestion([b], 'consumed11', 'host');
   assert.equal(next.question.id, 2);
   assert.equal(h.helpers.rotationAssetKey(a), h.helpers.rotationAssetKey(b));
   assert.equal(h.helpers.rotationAssetKey({ ...a, image: '/same.svg' }), h.helpers.rotationAssetKey({ ...b, image: '/same.svg' }));
@@ -612,6 +1431,129 @@ function punishmentFixture() {
   h.match().state = { phase: 'choose', round: 0, targetTeam: 'A234-1', question: null, usedIds: [] };
   return h;
 }
+
+test('punishment section selection cannot revive an ended room or ignore a changed displayed revision', async () => {
+  for (const mutate of [(match) => { match.status = 'ended'; }, (match) => { match.state.revision = 8; }]) {
+    const h = punishmentFixture();
+    h.beforeTransaction(() => mutate(h.match()));
+    const reply = await h.call('chooseType', 'user1', { type: 'punishment' });
+    assert.equal(reply.status, 'late');
+    assert.equal(h.match().state.question ?? null, null);
+    assert.equal(h.match().state.punishment ?? null, null);
+  }
+});
+
+test('punishment preparation cannot replace a newer private secret after the room ends during its initial read', async () => {
+  const h = punishmentFixture();
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const state = clone(h.match().state);
+  const original = clone(h.data.matchSecrets.A234);
+  h.afterRead((path) => {
+    if (path === 'matchAccess/A234') h.match().status = 'ended';
+  });
+  await assert.rejects(h.call('preparePunishment', 'user1', {
+    questionId: state.question.id, transition: presenterContext(state, 'ended-draft'),
+    targetTeam: 'A234-2', prompt: 'obsolete draft', answerText: 'obsolete answer', mode: 'deduct',
+  }), { code: 'failed-precondition' });
+  assert.deepEqual(h.data.matchSecrets.A234, original, 'a stale preparation must not overwrite the private root or version tree');
+  assert.equal(h.match().state.punishment.stage, 'prepare');
+});
+
+test('punishment commands require the displayed context even when the question id still matches', async () => {
+  for (const transition of [null, presenterContext({ phase: 'question', round: 99, question: { id: 2000 } }, 'stale-punishment')]) {
+    const h = punishmentFixture();
+    await h.call('chooseType', 'user1', { type: 'punishment' });
+    const before = clone(h.match());
+    const secret = clone(h.data.matchSecrets);
+    await assert.rejects(h.call('preparePunishment', 'user1', { questionId: h.match().state.question.id,
+      transition, targetTeam: 'A234-2', prompt: 'old context', answerText: 'private', mode: 'perform',
+    }), { code: 'failed-precondition' });
+    assert.deepEqual(h.match(), before);
+    assert.deepEqual(h.data.matchSecrets, secret);
+  }
+});
+
+test('punishment retry replays one immutable preparation and one deduction without exposing or replacing other private versions', async () => {
+  const h = punishmentFixture();
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const originalRoot = clone(h.data.matchSecrets.A234);
+  h.data.matchSecrets.A234.versions = { orphanPunishment: { answer: 0, stagingExpiresAt: 1000 } };
+  const command = { questionId: h.match().state.question.id,
+    transition: presenterContext(h.match().state, 'same-punishment-command'),
+    targetTeam: 'A234-2', prompt: 'retryable prompt', answerText: 'private answer', mode: 'deduct' };
+  await h.call('preparePunishment', 'user1', command);
+  const published = clone(h.match());
+  const secrets = clone(h.data.matchSecrets.A234);
+  assert.equal(secrets.versions.orphanPunishment, undefined);
+  assert.deepEqual(clone(await h.call('preparePunishment', 'user1', command)), { ok: true });
+  assert.deepEqual(h.match(), published);
+  assert.deepEqual(h.data.matchSecrets.A234, secrets);
+  assert.equal(h.data.matchSecrets.A234.answer, originalRoot.answer, 'legacy root retained');
+  assert.ok(h.match().state.secretVersion);
+  assert.equal(secrets.versions[h.match().state.secretVersion].stagingExpiresAt, 32000);
+  assert.equal(JSON.stringify(h.match()).includes('private answer'), false);
+  assert.equal((await h.call('getHostAnswer')).answerText, 'private answer');
+  await assert.rejects(h.call('preparePunishment', 'user1', { ...command, answerText: 'changed answer' }), { code: 'failed-precondition' });
+  const judge = { questionId: command.questionId, correct: false, transition: presenterContext(h.match().state, 'one-deduction') };
+  await h.call('judgePunishment', 'host', judge);
+  const judged = clone(h.match());
+  assert.deepEqual(clone(await h.call('judgePunishment', 'host', judge)), { ok: true });
+  assert.deepEqual(h.match(), judged);
+  assert.equal(h.match().teams['A234-2'].score, -50);
+  await assert.rejects(h.call('judgePunishment', 'host', { ...judge, correct: true }), { code: 'failed-precondition' });
+});
+
+test('punishment commits revalidate room status and current representative rather than stale loaded state', async () => {
+  for (const action of ['preparePunishment', 'judgePunishment', 'requestPunishmentOutcome', 'resolvePunishment', 'cancelPunishment']) {
+    const h = punishmentFixture();
+    if (action === 'preparePunishment') await h.call('chooseType', 'user1', { type: 'punishment' });
+    else await preparedPunishment(h);
+    if (['resolvePunishment', 'requestPunishmentOutcome'].includes(action)) {
+      await h.call('judgePunishment', 'host', { questionId: h.match().state.question.id, correct: false });
+      delete h.match().state.punishment.selectedMode; // legacy-room choice path
+    }
+    const before = clone(h.match().state);
+    h.afterRead((path) => { if (path === 'matchAccess/A234') h.match().status = 'ended'; });
+    await assert.rejects(h.call(action, action === 'preparePunishment' ? 'user1' : action === 'requestPunishmentOutcome' ? 'user2' : 'host', {
+      questionId: before.question.id, transition: presenterContext(before, `ended-${action}`),
+      targetTeam: 'A234-2', prompt: 'obsolete', answerText: 'secret', mode: 'perform', correct: false,
+    }), { code: 'failed-precondition' }, action);
+    assert.deepEqual(h.match().state, before, action);
+  }
+  const h = punishmentFixture();
+  h.match().answerMode = 'representative';
+  h.match().teams['A234-1'].captainId = 'p1';
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const before = clone(h.match().state);
+  h.beforeTransaction(() => { h.match().teams['A234-1'].captainId = 'p3'; });
+  await assert.rejects(h.call('preparePunishment', 'user1', { questionId: before.question.id,
+    targetTeam: 'A234-2', prompt: 'obsolete captain', answerText: 'secret', mode: 'deduct',
+  }), { code: 'failed-precondition' });
+  assert.deepEqual(h.match().state, before);
+});
+
+test('punishment delayed staging cannot publish after lease takeover or release a successor executor', async () => {
+  const h = punishmentFixture();
+  await h.call('chooseType', 'user1', { type: 'punishment' });
+  const before = clone(h.match().state);
+  const original = clone(h.data.matchSecrets.A234);
+  let transactions = 0;
+  h.beforeTransaction(() => {
+    if (++transactions === 2) {
+      h.match().state.punishmentLease = { owner: 'successor', expiresAt: 40000 };
+      h.data.matchSecrets.A234.versions ||= {};
+      h.data.matchSecrets.A234.versions.successor = { questionId: 99, answer: 2 };
+    }
+  });
+  await assert.rejects(h.call('preparePunishment', 'user1', {
+    questionId: before.question.id, targetTeam: 'A234-2', prompt: 'delayed draft', answerText: 'private', mode: 'perform',
+  }), { code: 'failed-precondition' });
+  assert.equal(h.match().state.punishment.stage, 'prepare');
+  assert.equal(h.match().state.punishmentLease.owner, 'successor');
+  assert.equal(h.match().state.secretVersion ?? null, null);
+  assert.equal(h.data.matchSecrets.A234.answer, original.answer);
+  assert.equal(h.data.matchSecrets.A234.versions.successor.answer, 2);
+});
 
 async function preparedPunishment(h, mode = 'perform') {
   assert.equal((await h.call('chooseType', 'user1', { type: 'punishment', requestId: 'p-request' })).status, 'accepted');
@@ -711,9 +1653,110 @@ test('two simultaneous punishment drafts cannot mismatch prompt and private answ
   const results = await Promise.allSettled(['one', 'two'].map((suffix) => h.call('preparePunishment', 'user1', { questionId, targetTeam: 'A234-2', prompt: `prompt-${suffix}`, answerText: `answer-${suffix}`, penalty: 'حركة', mode: 'perform' })));
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
   const prompt = h.match().state.question.question;
-  assert.equal(h.data.matchSecrets.A234.answerText, prompt.replace('prompt-', 'answer-'));
+  assert.equal((await h.call('getHostAnswer')).answerText, prompt.replace('prompt-', 'answer-'));
+  assert.equal(Object.keys(h.data.matchSecrets.A234.versions).length, 1, 'only the winning executor stages a private version');
 });
 
+
+test('host capacity recovery pauses exhausted selections and restores newly eligible content without clearing history', async () => {
+  const h = harness(true);
+  const q = { id: 996003, type: 'ct_recover', category: 'custom', question: 'Used capacity fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  await h.helpers.rotateQuestion([q], 'previous', 'host');
+  Object.assign(h.match(), { enabledTypes: ['ct_recover'], turnIndex: 0, typeCaps: { ct_recover: 4 },
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] } });
+  const history = clone(h.data.questionRotation);
+  const send = () => h.call('recheckSelectionCapacity', 'host', { transition: presenterContext(h.match().state, 'capacity-recheck') });
+  assert.equal((await send()).available, false);
+  assert.equal(h.match().state.selectionPause.reason, 'capacity');
+  assert.equal(h.match().rotationBlocked['A234-1'].ct_recover.bank, true);
+  assert.deepEqual(h.data.questionRotation, history);
+  const q2 = { ...q, id: 996004, question: 'Fresh capacity fixture' };
+  h.data.customQuestions[q2.id] = q2;
+  assert.equal((await send()).available, true);
+  assert.equal(h.match().state.selectionPause ?? null, null);
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_recover?.bank, undefined);
+  assert.deepEqual(h.data.questionRotation, history);
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_recover' })).status, 'accepted');
+  assert.equal(h.match().state.question.id, q2.id);
+});
+
+test('capacity recovery is host-only, contextual, immutable on retry and fenced against a changed turn', async () => {
+  const h = logoFixture();
+  const transition = presenterContext(h.match().state, 'capacity-command');
+  await assert.rejects(h.call('recheckSelectionCapacity', 'user1', { transition }), { code: 'permission-denied' });
+  await assert.rejects(h.call('recheckSelectionCapacity', 'host'), { code: 'failed-precondition' });
+  const response = await h.call('recheckSelectionCapacity', 'host', { transition });
+  const accepted = clone(h.match());
+  assert.deepEqual(clone(await h.call('recheckSelectionCapacity', 'host', { transition })), clone(response));
+  assert.deepEqual(h.match(), accepted);
+  const next = presenterContext(h.match().state, 'capacity-stale');
+  h.afterRead((path) => {
+    if (path !== 'questionDeletions') return;
+    h.afterRead(null); h.match().status = 'ended'; h.match().state.phase = 'ended';
+  });
+  await assert.rejects(h.call('recheckSelectionCapacity', 'host', { transition: next }), { code: 'failed-precondition' });
+  assert.equal(h.match().state.phase, 'ended');
+});
+
+test('capacity recovery distinguishes held inventory and never persistently blocks a busy section', async () => {
+  const h = harness(true);
+  const q = { id: 996005, type: 'ct_busy', category: 'custom', question: 'Held capacity fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  Object.assign(h.match(), { enabledTypes: ['ct_busy'], turnIndex: 0, typeCaps: { ct_busy: 4 },
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] } });
+  h.data.matches.B345 = { status: 'playing' };
+  await h.helpers.rotateQuestion([q], 'other-game', 'host', [q], 'held-selection', false, 'B345');
+  const result = await h.call('recheckSelectionCapacity', 'host', { transition: presenterContext(h.match().state, 'held-capacity') });
+  assert.equal(result.busy, true);
+  assert.equal(h.match().state.selectionPause.reason, 'busy');
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_busy?.bank, undefined);
+  h.setClock(40000);
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_busy' })).status, 'accepted');
+  assert.equal(h.match().state.selectionPause ?? null, null, 'successful publication must clear the pause');
+});
+
+test('a temporarily held section returns busy, not a teammate lost-selection claim', async () => {
+  const h = harness(true);
+  const q = { id: 996006, type: 'ct_held_pick', category: 'custom', question: 'Concurrent held pick fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  Object.assign(h.match(), { enabledTypes: ['ct_held_pick'], turnIndex: 0, typeCaps: { ct_held_pick: 4 },
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] } });
+  h.data.matches.B345 = { status: 'playing' };
+  await h.helpers.rotateQuestion([q], 'other-game', 'host', [q], 'held-pick', false, 'B345');
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_held_pick' })).status, 'busy');
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_held_pick?.bank, undefined);
+});
+
+test('pure current-match empty section is marked without consuming history or counters', async () => {
+  const h = harness(true);
+  const q = { id: 996001, type: 'ct_empty', category: 'custom', question: 'Only fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  Object.assign(h.match(), { enabledTypes: ['ct_empty', 'multiple_choice'], turnIndex: 0,
+    state: { phase: 'choose', round: 1, targetTeam: 'A234-1', usedIds: [q.id], usedAssets: [] } });
+  const before = clone(h.data.questionRotation || {});
+  assert.equal((await h.call('chooseType', 'user1', { type: 'ct_empty' })).status, 'empty');
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_empty?.bank, true);
+  assert.equal(h.match().typeCounts?.['A234-1']?.ct_empty || 0, 0);
+  assert.deepEqual(h.data.questionRotation || {}, before);
+});
+
+test('stale exhausted draw cannot mark a section after the room has ended', async () => {
+  const h = harness(true);
+  const q = { id: 996002, type: 'ct_stale', category: 'custom', question: 'Recent fixture', options: ['A','B','C','D'], answer: 0 };
+  h.data.customQuestions = { [q.id]: q };
+  await h.helpers.rotateQuestion([q], 'previous', 'host');
+  Object.assign(h.match(), { enabledTypes: ['ct_stale'], turnIndex: 0,
+    state: { phase: 'choose', round: 0, targetTeam: 'A234-1', usedIds: [], usedAssets: [] } });
+  h.afterRead((path) => {
+    if (path !== 'questionRotation/host') return;
+    h.afterRead(null);
+    h.match().status = 'ended'; h.match().state.phase = 'ended';
+  });
+  await h.call('chooseType', 'user1', { type: 'ct_stale' });
+  assert.equal(h.match().rotationBlocked?.['A234-1']?.ct_stale?.bank, undefined);
+  assert.equal(h.match().state.phase, 'ended');
+});
 
 test('exhausted rotation leaves selection usable and marks only that section bank', async () => {
   const h = harness();
@@ -727,6 +1770,26 @@ test('exhausted rotation leaves selection usable and marks only that section ban
   assert.equal(h.match().state.question, null);
   assert.equal(h.match().rotationBlocked['A234-1'].ct_rotation.bank, true);
   assert.equal(h.match().typeCounts?.['A234-1']?.ct_rotation || 0, 0);
+});
+
+test('a non-swap card cannot spend balance or modify a replaced question after validation', async () => {
+  const { h } = ordinaryAnswerFixture();
+  Object.assign(h.match(), { timer: 30, questionsPerTeam: 8 });
+  Object.assign(h.match().state, { questionStartedAt: 1000, questionDuration: 30 });
+  Object.assign(h.match().teams['A234-1'], { cardBalance: 1000, powerCards: { extraTime: true } });
+  let reads = 0;
+  h.afterRead((path) => {
+    if (path !== 'matches/A234' || ++reads !== 2) return;
+    h.afterRead(null);
+    h.match().state.question.id = 43;
+    h.match().state.revision += 1;
+  });
+  const result = await h.call('usePowerCard', 'user1', { teamCode: 'A234-1', card: 'extraTime' });
+  assert.equal(result.accepted, false);
+  assert.equal(result.reason, 'stale');
+  assert.equal(h.match().teams['A234-1'].cardBalance, 1000);
+  assert.equal(h.match().teams['A234-1'].powerCards.extraTime, true);
+  assert.equal(h.match().state.extraTimeUsed, undefined);
 });
 
 test('extra time rejects the exact deadline and later without spending balance or card', async () => {
@@ -762,7 +1825,7 @@ test('extra time works just before deadline and during memory viewing, only once
 
 test('concurrent creation using the same audience code cannot overwrite the first match', async () => {
   const h = harness(false, true);
-  const options = { teamNames: ['ألف', 'باء'], enabledTypes: ['mcq'], difficulty: 'easy', questionsPerTeam: 1 };
+  const options = { teamNames: ['ألف', 'باء'], enabledTypes: ['multiple_choice'], difficulty: 'easy', questionsPerTeam: 1 };
   const results = await Promise.allSettled([
     h.helpers.createMatch('host-one', { ...options, hostName: 'الأول' }),
     h.helpers.createMatch('host-two', { ...options, hostName: 'الثاني' }),
@@ -859,7 +1922,7 @@ test('all enabled sections must be used per team before any section repeats', as
 
 test('single-section cycle resets and card prices match the client at all match lengths', () => {
   const h = harness();
-  const single = { enabledTypes: ['flag'], sectionCycleByTeam: {} };
+  const single = { enabledTypes: ['flag'], teamOrder: ['one', 'two'], questionsPerTeam: 4, totalRounds: 8, sectionCycleByTeam: {} };
   single.sectionCycleByTeam.one = h.helpers.nextSectionCycle(single, 'one', 'flag');
   assert.equal(h.helpers.sectionCycle(single, 'one').used.length, 0);
   assert.equal(single.sectionCycleByTeam.one.number, 2);
@@ -913,22 +1976,23 @@ test('invalid bulk ids leave all availability unchanged', async () => {
   assert.equal(h.data.questionExclusions, undefined);
 });
 
-test('admin inventory counts exactly the playable bank and explains a 739 to 723 difference', async () => {
+test('admin inventory counts exactly the playable bank and explains deletion/exclusion differences', async () => {
   const h = harness();
   const base = await h.adminCall('getAdminQuestions');
   const builtin = base.questions.filter((q) => q.type === 'multiple_choice' && !q.disabled && !q.custom);
-  assert.equal(builtin.length, 739);
+  const expectedBuiltin = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8')).filter(q => q.type === 'multiple_choice');
+  assert.equal(builtin.length, expectedBuiltin.filter(q => !q.disabled).length);
   h.data.questionDeletions = Object.fromEntries(builtin.slice(0, 10).map((q) => [q.id, true]));
   h.data.questionExclusions = Object.fromEntries(builtin.slice(10, 16).map((q) => [q.id, true]));
   // A deleted and excluded marker must not subtract the same question twice.
   h.data.questionExclusions[builtin[0].id] = true;
   const catalog = await h.adminCall('getAdminQuestions');
   const counts = catalog.inventory.multiple_choice;
-  assert.equal(counts.builtin, 789);
-  assert.equal(counts.legacyDisabled, 50);
+  assert.equal(counts.builtin, expectedBuiltin.length);
+  assert.equal(counts.legacyDisabled, expectedBuiltin.filter(q => q.disabled).length);
   assert.equal(counts.deleted, 10);
   assert.equal(counts.excluded, 6);
-  assert.equal(counts.available, 723);
+  assert.equal(counts.available, builtin.length - 16);
   const bank = await h.helpers.questionBank();
   for (const [type, inventory] of Object.entries(catalog.inventory)) {
     assert.equal(inventory.available, bank.filter((q) => q.type === type && !q.disabled).length);
@@ -944,14 +2008,15 @@ test('admin inventory counts exactly the playable bank and explains a 739 to 723
 
 test('admin inventory refreshes after custom additions and permanent deletion', async () => {
   const h = harness();
+  const expectedActive = JSON.parse(readFileSync(new URL('../src/data/questions.json', import.meta.url), 'utf8')).filter(q => q.type === 'multiple_choice' && !q.disabled).length;
   h.data.customQuestions = { 900001: { id: 900001, type: 'multiple_choice', question: 'خاص', options: ['أ', 'ب'], answer: 0 } };
   let catalog = await h.adminCall('getAdminQuestions');
   assert.equal(catalog.inventory.multiple_choice.customAvailable, 1);
-  assert.equal(catalog.inventory.multiple_choice.available, 740);
+  assert.equal(catalog.inventory.multiple_choice.available, expectedActive + 1);
   await h.adminCall('deleteAdminQuestions', { ids: [900001] });
   catalog = await h.adminCall('getAdminQuestions');
   assert.equal(catalog.inventory.multiple_choice.customAvailable, 0);
-  assert.equal(catalog.inventory.multiple_choice.available, 739);
+  assert.equal(catalog.inventory.multiple_choice.available, expectedActive);
 });
 
 test('solo challenge never draws questions excluded by admin', async () => {
@@ -1003,6 +2068,218 @@ test('permanent delete validates the whole batch before changing any question', 
   assert.equal(h.data.questionDeletions, undefined);
 });
 
+test('owner contract: every section traverses its entire pool before reuse across new games', async () => {
+  const h = harness(true, true);
+  const pool = Array.from({ length: 30 }, (_, id) => ({ id: 980000 + id, type: 'ct_cycle', question: `cycle question ${id}`, options: ['a', 'b'], answer: 0 }));
+  const seen = new Set();
+  for (let i = 0; i < pool.length; i++) {
+    const { question } = await h.helpers.rotateQuestion(pool, `cycle-game-${i}`, 'host', pool);
+    assert.equal(seen.has(question.id), false, `repeated before exhaustion at draw ${i}`);
+    seen.add(question.id);
+  }
+  assert.equal(seen.size, pool.length);
+});
+
+test('owner contract: recent protection includes g10 and ends at g11 only after exhaustion', async () => {
+  const h = harness(true, true);
+  const pool = Array.from({ length: 11 }, (_, id) => ({ id: 981000 + id, type: 'ct_boundary', question: `boundary ${id}`, options: ['a', 'b'], answer: 0 }));
+  const first = (await h.helpers.rotateQuestion(pool, 'g0', 'host', pool)).question;
+  for (let i = 1; i <= 10; i++) {
+    await assert.rejects(h.helpers.rotateQuestion([first], `g${i}`, 'host', pool), { code: 'resource-exhausted' });
+    await h.helpers.rotateQuestion(pool, `g${i}`, 'host', pool);
+  }
+  const reused = await h.helpers.rotateQuestion([first], 'g11', 'host', pool);
+  assert.equal(reused.question.id, first.id);
+  assert.equal(reused.reused, true);
+});
+
+test('owner contract: flags cannot recycle recent assets even after their cycle is exhausted', async () => {
+  const h = harness(true, true);
+  const flags = (await h.helpers.questionBank()).filter((q) => q.type === 'flag' && !q.disabled).slice(0, 3);
+  for (let i = 0; i < flags.length; i++) await h.helpers.rotateQuestion(flags, `flag-small-${i}`, 'host', flags);
+  await assert.rejects(h.helpers.rotateQuestion(flags, 'flag-small-3', 'host', flags), { code: 'resource-exhausted' });
+});
+
+test('owner contract: empty competitions cannot age protection or discard cycle metadata', async () => {
+  const h = harness(true, true);
+  const pool = Array.from({ length: 20 }, (_, id) => ({ id: 982000 + id, type: 'ct_empty', question: `empty ${id}`, options: ['a', 'b'], answer: 0 }));
+  const first = (await h.helpers.rotateQuestion(pool, 'consumed', 'host', pool)).question;
+  const before = JSON.stringify(h.data.questionRotation.host);
+  for (let i = 0; i < 20; i++) await h.helpers.registerRotationMatch('host', `lobby-${i}`);
+  assert.equal(JSON.stringify(h.data.questionRotation.host), before);
+  await assert.rejects(h.helpers.rotateQuestion([first], 'next-consumed', 'host', pool), { code: 'resource-exhausted' });
+});
+
+test('owner contract: migration keeps legacy text cycles and separate flag usage without deleting records', async () => {
+  const h = harness(true, true);
+  const pool = Array.from({ length: 20 }, (_, id) => ({ id: 983000 + id, type: 'ct_migrate', question: `legacy ${id}`, options: ['a', 'b'], answer: 0 }));
+  const first = pool[0];
+  const legacy = { games: [{ id: 'old-used', assets: [h.helpers.rotationAssetKey(first)] }], unrelated: 'keep' };
+  h.data.questionRotation = { host: structuredClone(legacy) };
+  // Age recent protection using other sections; the old section cycle must survive.
+  for (let i = 0; i < 11; i++) await h.helpers.rotateQuestion([{ id: 984000 + i, type: 'ct_other', question: `other ${i}`, options: ['a', 'b'], answer: 0 }], `age-${i}`, 'host');
+  await assert.rejects(h.helpers.rotateQuestion([first], 'new', 'host', pool), { code: 'resource-exhausted' });
+  assert.equal(h.data.questionRotation.host.unrelated, 'keep');
+  const flags = (await h.helpers.questionBank()).filter((q) => q.type === 'flag' && !q.disabled).slice(0, 3);
+  const oldFlags = { cycle: 7, used: flags.slice(0, 2).map(h.helpers.rotationAssetKey) };
+  h.data.flagRotation = { v1: { host: structuredClone(oldFlags) } };
+  const selected = await h.helpers.rotateQuestion(flags, 'new-flag', 'host', flags);
+  assert.equal(selected.question.id, flags[2].id);
+  assert.equal(JSON.stringify(h.data.flagRotation.v1.host), JSON.stringify(oldFlags), 'legacy flag node is preserved');
+});
+
+test('owner contract: mixed showdown draws share per-section cycles with ordinary draws', async () => {
+  const h = harness(true, true);
+  const a = { id: 985001, type: 'ct_mixed_a', question: 'mixed a1', options: ['a', 'b'], answer: 0 };
+  const b = { ...a, id: 985002, question: 'mixed a2' };
+  const c = { ...a, id: 985003, type: 'ct_mixed_b', question: 'mixed b' };
+  await h.helpers.rotateQuestion([a], 'start', 'host', [a, b, c]);
+  for (let i = 0; i < 11; i++) await h.helpers.rotateQuestion([{ ...c, id: 986000 + i, question: `age mixed ${i}` }], `mixed-age-${i}`, 'host');
+  await h.helpers.rotateQuestion([c], 'mixed-final', 'host', [a, b, c]);
+  await assert.rejects(h.helpers.rotateQuestion([c, a], 'mixed-final', 'host', [a, b, c]), { code: 'resource-exhausted' }, 'mixed pool cannot bypass unfinished a section');
+});
+
+test('owner contract: concurrent lost-response retries reserve once and replay identical shuffled content', async () => {
+  const h = harness(true);
+  const pool = Array.from({ length: 12 }, (_, id) => ({ id: 987000 + id, type: 'ct_retry', question: `retry ${id}`, options: ['a', 'b', 'c', 'd'], answer: 2 }));
+  const draws = await Promise.all(Array.from({ length: 5 }, () => h.helpers.rotateQuestion(pool, 'retry-game', 'host', pool, 'selection-1')));
+  assert.equal(new Set(draws.map((draw) => JSON.stringify(draw))).size, 1);
+  assert.equal(h.data.questionRotation.host.games[0].assets.length, 1);
+  const replay = await h.helpers.rotateQuestion(pool, 'retry-game', 'host', pool, 'selection-1');
+  assert.equal(JSON.stringify(replay), JSON.stringify(draws[0]));
+  const next = await h.helpers.rotateQuestion(pool, 'retry-game', 'host', pool, 'selection-2');
+  assert.notEqual(next.question.id, replay.question.id);
+});
+
+test('owner contract: editorial families also exclude image variants, not only identical URLs', async () => {
+  const h = harness(true);
+  const a = { id: 988001, type: 'image', question: 'photo one', image: '/qa-one.webp', conceptId: 'qa-same-landmark', options: ['a', 'b'], answer: 0 };
+  const b = { ...a, id: 988002, question: 'photo two', image: '/qa-two.webp' };
+  await h.helpers.rotateQuestion([a], 'photo-first', 'host', [a, b]);
+  await assert.rejects(h.helpers.rotateQuestion([b], 'photo-next', 'host', [a, b]), { code: 'resource-exhausted' });
+});
+
+test('owner contract: unknown legacy flag dates receive a conservative ten consumed-game quarantine', async () => {
+  const h = harness(true, true);
+  const flag = (await h.helpers.questionBank()).find((q) => q.type === 'flag' && !q.disabled);
+  h.data.flagRotation = { v1: { host: { cycle: 4, used: [h.helpers.rotationAssetKey(flag)] } } };
+  // Existing text history must not push the undated legacy flag import out of the window.
+  h.data.questionRotation = { host: { games: Array.from({ length: 15 }, (_, i) => ({ id: `legacy-${i}`, assets: [`old-${i}`] })) } };
+  await assert.rejects(h.helpers.rotateQuestion([flag], 'flag-too-early', 'host', [flag]), { code: 'resource-exhausted' });
+  for (let i = 1; i <= 10; i++) {
+    const q = { id: 989000 + i, type: 'ct_flag_age', question: `flag aging ${i}`, options: ['a', 'b'], answer: 0 };
+    await h.helpers.rotateQuestion([q], `flag-age-${i}`, 'host', [q]);
+    if (i < 10) await assert.rejects(h.helpers.rotateQuestion([flag], `flag-probe-${i}`, 'host', [flag]), { code: 'resource-exhausted' });
+  }
+  assert.equal((await h.helpers.rotateQuestion([flag], 'flag-safe', 'host', [flag])).question.id, flag.id);
+});
+
+test('owner contract: all ten active built-in types traverse their editorial assets before reuse', async () => {
+  const base = harness(true, true);
+  const bank = (await base.helpers.questionBank()).filter((q) => !q.disabled);
+  const types = [...new Set(bank.map((q) => q.type))];
+  assert.equal(types.length, 10);
+  for (const type of types) {
+    const h = harness(true, true);
+    const pool = bank.filter((q) => q.type === type);
+    const key = (q) => q.conceptId || q.image || h.helpers.rotationAssetKey(q);
+    const count = new Set(pool.map(key)).size;
+    const seen = new Set();
+    for (let i = 0; i < count; i++) {
+      const draw = await h.helpers.rotateQuestion(pool, `${type}-${i}`, `host-${type}`, bank);
+      assert.equal(seen.has(key(draw.question)), false, `${type}: duplicate at ${i}`);
+      seen.add(key(draw.question));
+    }
+    assert.equal(seen.size, count, type);
+  }
+});
+
+test('owner contract: disabled, restored and newly added bank items do not reset valid cycle usage', async () => {
+  const h = harness(true, true);
+  const q = (i) => ({ id: 991000 + i, type: 'ct_version', question: `version ${i}`, options: ['a', 'b'], answer: 0 });
+  const bank = [q(0), q(1), q(2)];
+  await h.helpers.rotateQuestion([bank[0]], 'version-g0', 'host', bank);
+  for (let i = 1; i <= 11; i++) await h.helpers.rotateQuestion([{ ...q(i + 10), type: 'ct_version_age' }], `version-age-${i}`, 'host');
+  const changed = [bank[0], { ...bank[1], disabled: true }, bank[2], q(3)];
+  assert.equal((await h.helpers.rotateQuestion(changed, 'version-g1', 'host', changed)).question.id, bank[2].id);
+  await assert.rejects(h.helpers.rotateQuestion([bank[0]], 'version-g2', 'host', changed), { code: 'resource-exhausted' });
+  const restored = [bank[0], bank[1], bank[2], q(3)];
+  assert.equal((await h.helpers.rotateQuestion(restored, 'version-g3', 'host', restored)).question.id, bank[1].id);
+});
+
+test('owner contract: creation preflight rejects a section whose effective history capacity is insufficient', async () => {
+  const h = harness(true, true);
+  const bank = (await h.helpers.questionBank()).filter((q) => q.type === 'brand' && !q.disabled);
+  h.data.questionRotation = { host: { games: [{ id: 'recent-brands', assets: bank.map(h.helpers.rotationAssetKey) }] } };
+  const before = JSON.stringify(h.data.questionRotation.host);
+  await assert.rejects(h.helpers.createMatch('host', { teamNames: ['Hermes QA One', 'Hermes QA Two'], enabledTypes: ['brand'], questionsPerTeam: 4 }), { code: 'failed-precondition' });
+  assert.equal(JSON.stringify(h.data.questionRotation.host), before, 'preflight does not consume or clear history');
+  assert.equal(Object.keys(h.data.matches).length, 1, 'no new lobby written');
+});
+
+test('owner contract: start rechecks effective capacity after another competition consumed the section', async () => {
+  const h = harness(true);
+  Object.assign(h.match(), { status: 'lobby', answerMode: 'host', enabledTypes: ['brand'], questionsPerTeam: 4, totalRounds: 8 });
+  h.match().state.phase = 'lobby';
+  const bank = (await h.helpers.questionBank()).filter((q) => q.type === 'brand' && !q.disabled);
+  h.data.questionRotation = { host: { games: [{ id: 'consumed-after-lobby', assets: bank.map(h.helpers.rotationAssetKey) }] } };
+  const history = JSON.stringify(h.data.questionRotation.host);
+  await assert.rejects(h.call('startMatch', 'host', { firstTeamCode: 'A234-1' }), { code: 'failed-precondition' });
+  assert.equal(h.match().status, 'lobby');
+  assert.equal(JSON.stringify(h.data.questionRotation.host), history);
+});
+
+test('start cannot revive a lobby ended after the initial room read', async () => {
+  const h = harness(true);
+  Object.assign(h.match(), { status: 'lobby', answerMode: 'host', enabledTypes: ['multiple_choice'], questionsPerTeam: 4, totalRounds: 8 });
+  h.match().state.phase = 'lobby';
+  h.afterRead((path) => {
+    if (path !== 'matches/A234') return;
+    h.afterRead(null);
+    h.match().status = 'ended'; h.match().state.phase = 'ended';
+  });
+  await assert.rejects(h.call('startMatch', 'host', { firstTeamCode: 'A234-1' }), { code: 'failed-precondition' });
+  assert.equal(h.match().status, 'ended');
+});
+
+test('capped sections are excluded from cooldown on server and client', () => {
+  const h = harness(true);
+  const match = { enabledTypes: ['ct_open', 'ct_capped'], questionsPerTeam: 4, totalRounds: 8, teamOrder: ['one','two'],
+    typeCaps: { ct_open: 4, ct_capped: 1 }, typeCounts: { one: { ct_open: 1, ct_capped: 1 } },
+    sectionCycleByTeam: { one: { number: 2, used: ['ct_open'] } } };
+  assert.equal(h.helpers.sectionCycle(match, 'one').used.includes('ct_open'), false);
+  const file = readFileSync(new URL('../src/lib/matchApi.ts', import.meta.url), 'utf8');
+  const block = file.slice(file.indexOf('export function sectionCycleProgress'), file.indexOf('export async function chooseType'));
+  const client = {};
+  runInNewContext(ts.transpileModule(block, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
+    exports: client, typeCap: (m, t) => m.typeCaps[t],
+  });
+  assert.equal(client.sectionCycleProgress(match, 'one').used.includes('ct_open'), false);
+  assert.equal(client.sectionCycleProgress(match, 'one').remaining, 1);
+});
+
+test('owner contract: an exhausted section cannot trap a team behind the section cooldown', () => {
+  const h = harness(true);
+  const match = { enabledTypes: ['ct_a', 'ct_b'], questionsPerTeam: 8, totalRounds: 16, teamOrder: ['one', 'two'], sectionCycleByTeam: { one: { number: 1, used: ['ct_a'] } }, rotationBlocked: { one: { ct_b: { bank: true } } } };
+  assert.equal(h.helpers.sectionCycle(match, 'one').used.includes('ct_a'), false);
+  const file = readFileSync(new URL('../src/lib/matchApi.ts', import.meta.url), 'utf8');
+  const block = file.slice(file.indexOf('export function sectionCycleProgress'), file.indexOf('export async function chooseType'));
+  const client = {};
+  runInNewContext(ts.transpileModule(block, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: client, typeCap: (m, t) => m.typeCaps?.[t] ?? 4 });
+  assert.equal(client.sectionCycleProgress(match, 'one').used.includes('ct_a'), false);
+  assert.equal(client.sectionCycleProgress(match, 'one').remaining, 1);
+});
+
+test('owner contract: reservation retries preserve empty acting choices after RTDB array pruning', async () => {
+  const h = harness(true);
+  const q = { id: 992001, type: 'acting', question: 'act this', options: [], answer: 0 };
+  const first = await h.helpers.rotateQuestion([q], 'acting-retry', 'host', [q], 'acting-selection');
+  const replay = await h.helpers.rotateQuestion([q], 'acting-retry', 'host', [q], 'acting-selection');
+  assert.ok(Array.isArray(first.question.options));
+  assert.equal(first.question.options.length, 0);
+  assert.equal(JSON.stringify(first), JSON.stringify(replay));
+});
+
 test('the 160 flags form a full persistent cycle across competitions before any reuse', async () => {
   const h = harness(true);
   const bank = await h.helpers.questionBank();
@@ -1025,7 +2302,7 @@ test('the 160 flags form a full persistent cycle across competitions before any 
   const next = await h.helpers.rotateQuestion(flags, 'game-next', 'host', flags);
   assert.equal(next.reused, true);
   assert.ok(seen.has(next.question.image));
-  assert.equal(h.data.flagRotation.v1.host.cycle, 2);
+  assert.equal(h.data.questionRotation.host.cycles.flag.number, 2);
 });
 
 test('concurrent flag draws cannot give two teams the same flag and owners rotate independently', async () => {
@@ -1034,17 +2311,17 @@ test('concurrent flag draws cannot give two teams the same flag and owners rotat
   const draws = await Promise.all(Array.from({ length: 8 }, (_, i) => h.helpers.rotateQuestion(flags, `game-${i}`, 'host', flags)));
   assert.equal(new Set(draws.map((draw) => draw.question.image)).size, 8);
   await h.helpers.rotateQuestion(flags, 'other-game', 'other-host', flags);
-  assert.equal(h.data.flagRotation.v1['other-host'].used.length, 1);
-  assert.equal(h.data.flagRotation.v1.host.used.length, 8);
+  assert.equal(h.data.questionRotation['other-host'].cycles.flag.used.length, 1);
+  assert.equal(h.data.questionRotation.host.cycles.flag.used.length, 8);
 });
 
 test('flag rotation cannot reset early when the remaining flags are unavailable in this match', async () => {
   const h = harness(true);
   const flags = (await h.helpers.questionBank()).filter((q) => q.type === 'flag' && !q.disabled).slice(0, 3);
-  const first = await h.helpers.rotateFlagQuestion(flags, 'host', flags);
-  await assert.rejects(h.helpers.rotateFlagQuestion([first.question], 'host', flags), { code: 'resource-exhausted' });
-  assert.equal(h.data.flagRotation.v1.host.cycle, 1);
-  const second = await h.helpers.rotateFlagQuestion(flags, 'host', flags);
+  const first = await h.helpers.rotateQuestion(flags, 'first', 'host', flags);
+  await assert.rejects(h.helpers.rotateQuestion([first.question], 'first', 'host', flags), { code: 'resource-exhausted' });
+  assert.equal(h.data.questionRotation.host.cycles.flag.number, 1);
+  const second = await h.helpers.rotateQuestion(flags, 'first', 'host', flags);
   assert.notEqual(second.question.image, first.question.image);
 });
 

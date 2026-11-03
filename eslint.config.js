@@ -6,7 +6,22 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', '.desloppify', 'functions/.desloppify', 'output']),
+  {
+    files: ['functions/**/*.js', 'scripts/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      globals: globals.node,
+    },
+    rules: {
+      'no-unused-vars': ['error', { ignoreRestSiblings: true }],
+    },
+  },
+  {
+    files: ['functions/**/*.js'],
+    languageOptions: { sourceType: 'commonjs' },
+  },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -28,12 +43,6 @@ export default defineConfig([
     rules: {
       'react-refresh/only-export-components': 'off',
       'react-hooks/purity': 'off',
-    },
-  },
-  {
-    files: ['src/components/YouTubeClip.tsx', 'src/lib/sounds.ts'],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 ])

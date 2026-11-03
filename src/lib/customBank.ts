@@ -6,6 +6,7 @@ import { ref, set, update, remove, onValue, type Unsubscribe } from "firebase/da
 import { db, ensureAuth } from "./firebase";
 import { registerTypeLabels } from "../types/game";
 import type { Question, CustomType } from "../types/game";
+import { createLiveList } from "./liveList";
 import type { BrandInfo } from "./matchApi";
 
 export interface CustomQuestion extends Question {
@@ -16,71 +17,36 @@ export interface CustomQuestion extends Question {
 
 const FIRST_CUSTOM_ID = 900000; // أسئلة المقدم تبدأ من ٩٠٠٠٠٠ بعيداً عن أرقام البنك الأصلي
 
-// ─── المزامنة الحية: أي تغيير في Firebase ينعكس فوراً على اللعبة ───
-let typesStarted = false;
-let questionsStarted = false;
-let latestTypes: CustomType[] = [];
-let latestQuestions: CustomQuestion[] = [];
-const typeListeners = new Set<(t: CustomType[]) => void>();
-const questionListeners = new Set<(q: CustomQuestion[]) => void>();
+// Shared listeners release private cached questions when the admin screen closes.
+const types = createLiveList<CustomType>(ensureAuth, (receive, failed) =>
+  onValue(ref(db, "customTypes"), (snapshot) => {
+    const value = Object.values((snapshot.val() ?? {}) as Record<string, CustomType>)
+      .sort((a, b) => a.createdAt - b.createdAt);
+    registerTypeLabels(value);
+    receive(value);
+  }, failed),
+);
+const questions = createLiveList<CustomQuestion>(ensureAuth, (receive, failed) =>
+  onValue(ref(db, "customQuestions"), (snapshot) => {
+    receive(Object.values((snapshot.val() ?? {}) as Record<string, CustomQuestion>)
+      .map((question) => ({ ...question, options: question.options || [] }))
+      .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)));
+  }, failed),
+);
 
-function emit() {
-  typeListeners.forEach((cb) => cb(latestTypes));
-  questionListeners.forEach((cb) => cb(latestQuestions));
+export function subscribeCustomTypes(cb: (value: CustomType[]) => void): Unsubscribe {
+  return types.subscribe(cb);
 }
 
-/** يشتغل مرة وحدة — يبقي نسخة محلية محدثة من البنك المخصص */
-function startTypeSync() {
-  if (typesStarted) return;
-  typesStarted = true;
-  void ensureAuth().then(() => {
-    onValue(ref(db, "customTypes"), (s) => {
-      const v = (s.val() ?? {}) as Record<string, CustomType>;
-      latestTypes = Object.values(v).sort((a, b) => a.createdAt - b.createdAt);
-      registerTypeLabels(latestTypes);
-      emit();
-    });
-  });
-}
-
-function startQuestionSync() {
-  if (questionsStarted) return;
-  questionsStarted = true;
-  void ensureAuth().then(() => {
-    onValue(ref(db, "customQuestions"), (s) => {
-      const v = (s.val() ?? {}) as Record<string, CustomQuestion>;
-      latestQuestions = Object.values(v).map((q) => ({ ...q, options: q.options || [] })).sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
-      emit();
-    });
-  });
-}
-
-/** الاشتراك في قائمة الأنواع المخصصة */
-export function subscribeCustomTypes(cb: (t: CustomType[]) => void): Unsubscribe {
-  startTypeSync();
-  typeListeners.add(cb);
-  cb(latestTypes);
-  return () => typeListeners.delete(cb);
-}
-
-/** الاشتراك في قائمة أسئلة المقدم (كلها — بما فيها المعطّلة، للوحة التحكم) */
-export function subscribeCustomQuestions(cb: (q: CustomQuestion[]) => void): Unsubscribe {
-  startQuestionSync();
-  questionListeners.add(cb);
-  cb(latestQuestions);
-  return () => questionListeners.delete(cb);
-}
-
-export function getCustomTypes(): CustomType[] {
-  startTypeSync();
-  return latestTypes;
+export function subscribeCustomQuestions(cb: (value: CustomQuestion[]) => void): Unsubscribe {
+  return questions.subscribe(cb);
 }
 
 // ─── الأنواع المخصصة ───
 export async function addCustomType(name: string): Promise<CustomType> {
   await ensureAuth();
   const clean = name.trim().slice(0, 30);
-  const existing = latestTypes.find(
+  const existing = types.get().find(
     (t) => t.name === clean
   );
   if (existing) return existing;
@@ -105,7 +71,7 @@ export async function deleteCustomType(id: string) {
 
 // ─── أسئلة المقدم ───
 function nextCustomId(): number {
-  return Math.max(Date.now(), latestQuestions.reduce((mx, q) => Math.max(mx, q.id), FIRST_CUSTOM_ID - 1) + 1);
+  return Math.max(Date.now(), questions.get().reduce((mx, q) => Math.max(mx, q.id), FIRST_CUSTOM_ID - 1) + 1);
 }
 
 export async function addCustomQuestion(q: Omit<CustomQuestion, "id" | "createdAt">): Promise<CustomQuestion> {
@@ -113,7 +79,7 @@ export async function addCustomQuestion(q: Omit<CustomQuestion, "id" | "createdA
   const full: CustomQuestion = { ...q, id: nextCustomId(), createdAt: Date.now() };
   await set(ref(db, `customQuestions/${full.id}`), full);
   // إضافة محلية فورية حتى لا يتكرر الرقم عند الإضافة السريعة المتتالية (المزامنة تحدّث القائمة لاحقاً)
-  if (!latestQuestions.some((x) => x.id === full.id)) latestQuestions = [...latestQuestions, full];
+  if (!questions.get().some((x) => x.id === full.id)) questions.replace([...questions.get(), full]);
   return full;
 }
 
@@ -175,19 +141,19 @@ export interface BankBackup {
 }
 
 export function exportBackup(): BankBackup {
-  return { version: 1, exportedAt: Date.now(), types: latestTypes, questions: latestQuestions };
+  return { version: 1, exportedAt: Date.now(), types: types.get(), questions: questions.get() };
 }
 
 /** استرجاع نسخة احتياطية — يدمج ولا يمسح الموجود */
 export async function importBackup(b: BankBackup) {
   await ensureAuth();
   for (const t of b.types ?? []) {
-    if (!latestTypes.some((x) => x.id === t.id)) {
+    if (!types.get().some((x) => x.id === t.id)) {
       await set(ref(db, `customTypes/${t.id}`), t);
     }
   }
   for (const q of b.questions ?? []) {
-    if (!latestQuestions.some((x) => x.id === q.id)) {
+    if (!questions.get().some((x) => x.id === q.id)) {
       await set(ref(db, `customQuestions/${q.id}`), q);
     }
   }

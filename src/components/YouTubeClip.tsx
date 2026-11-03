@@ -6,37 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import { Play, Loader2, CheckCircle2 } from "lucide-react";
 import type { QuestionVideo } from "../types/game";
 
-declare global {
-  interface Window {
-    YT?: any;
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-let ytApiPromise: Promise<any> | null = null;
-
-function loadYtApi(): Promise<any> {
-  if (ytApiPromise) return ytApiPromise;
-  ytApiPromise = new Promise((resolve) => {
-    if (window.YT?.Player) return resolve(window.YT);
-    const prev = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      prev?.();
-      resolve(window.YT);
-    };
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    tag.onerror = () => resolve(null);
-    document.head.appendChild(tag);
-    // احتياط: لو الـ API تأخر، ما نعلّق للأبد
-    setTimeout(() => (window.YT?.Player ? resolve(window.YT) : resolve(null)), 8000);
-  });
-  return ytApiPromise;
-}
+import { loadYouTubeAPI, type YouTubePlayer } from "../lib/youtube";
 
 export default function YouTubeClip({ video }: { video: QuestionVideo }) {
   const holderRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YouTubePlayer | null>(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -44,13 +18,20 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
 
   useEffect(() => {
     let destroyed = false;
-    loadYtApi().then((YT) => {
+    const holder = holderRef.current;
+    setReady(false);
+    setPlaying(false);
+    setEnded(false);
+    setFailed(false);
+    void loadYouTubeAPI().then((YT) => {
       if (destroyed) return;
-      if (!YT || !holderRef.current) {
+      if (!YT || !holder) {
         setFailed(true);
         return;
       }
-      playerRef.current = new YT.Player(holderRef.current, {
+      const target = document.createElement("div");
+      holder.replaceChildren(target);
+      playerRef.current = new YT.Player(target, {
         videoId: video.youtubeId,
         width: "100%",
         height: "100%",
@@ -65,9 +46,9 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
         },
         events: {
           onReady: () => !destroyed && setReady(true),
-          onStateChange: (e: any) => {
+          onStateChange: (e) => {
             if (destroyed) return;
-            if (e.data === YT.PlayerState.PLAYING) setPlaying(true);
+            setPlaying(e.data === YT.PlayerState.PLAYING);
             if (e.data === YT.PlayerState.ENDED) {
               setEnded(true);
               setPlaying(false);
@@ -76,22 +57,24 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
           onError: () => !destroyed && setFailed(true),
         },
       });
-    });
+    }).catch(() => { if (!destroyed) setFailed(true); });
     return () => {
       destroyed = true;
       try {
-        playerRef.current?.destroy?.();
+        playerRef.current?.destroy();
       } catch {
-        /* تجاهل */
+        // The iframe may already have been removed by navigation.
       }
+      playerRef.current = null;
+      holder?.replaceChildren();
     };
   }, [video.youtubeId, video.start, video.end]);
 
   const play = () => {
     try {
-      playerRef.current?.playVideo?.();
+      playerRef.current?.playVideo();
     } catch {
-      /* تجاهل */
+      setFailed(true);
     }
   };
 
@@ -103,7 +86,7 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
       >
         <div ref={holderRef} className="absolute inset-0 w-full h-full [&>iframe]:w-full [&>iframe]:h-full" />
         {/* زر التشغيل — يختفي أول ما يشتغل المقطع */}
-        {!playing && !ended && (
+        {!playing && !ended && !failed && (
           <button
             onClick={play}
             disabled={!ready}

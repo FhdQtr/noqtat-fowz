@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import LeaveMatchButton from "../components/LeaveMatchButton";
 import PunishmentPanel from "../components/PunishmentPanel";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
-  Loader2, Users, XCircle, Crown, Lock, Hourglass, LogOut, WifiOff,
+  Loader2, Users, XCircle, Crown, Lock, Hourglass, WifiOff,
   HelpCircle, MessageSquare, ListChecks, Eye, Drama, Zap,
 } from "lucide-react";
 import {
-  subscribeMatch, joinTeam, leaveMatch, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress, sectionCycleProgress,
+  subscribeMatch, joinTeam, submitAnswer, chooseType, useAssist as requestAssist, usePowerCard as requestPowerCard, typeProgress, sectionCycleProgress,
   trackQuestionVisibility, submitShowdownAnswer, revealQuestionPrompt,
 } from "../lib/matchApi";
 import type { Match, Player, PowerCardId, QuestionType } from "../types/game";
@@ -22,6 +23,7 @@ import PowerCardsWallet from "../components/PowerCardsWallet";
 import PowerCardEvent from "../components/PowerCardEvent";
 import ShowdownPanel from "../components/ShowdownPanel";
 import { useShowdownFinish } from "../lib/useShowdownFinish";
+import { readStored, writeStored } from "../lib/storage";
 
 const STORAGE_KEY = "al_midan_player";
 
@@ -35,7 +37,7 @@ export default function Play() {
   const [match, setMatch] = useState<Match | null | undefined>(undefined);
   const [player, setPlayer] = useState<Player | null>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      const saved = JSON.parse(readStored(STORAGE_KEY) || "null");
       return saved?.teamCode === teamCode ? saved : null;
     } catch {
       return null;
@@ -140,7 +142,7 @@ export default function Play() {
     try {
       const p = await joinTeam(matchCode, teamCode, name, inviteKey);
       setPlayer(p);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+      writeStored(STORAGE_KEY, JSON.stringify(p));
       nav(`/play/${teamCode}`, { replace: true });
       sfx.join();
     } catch (error) {
@@ -308,17 +310,7 @@ export default function Play() {
         </h1>
         <p className="mt-2 text-gold-light font-cairo text-xl">{team.score} نقطة · {team.correctCount} إجابة صحيحة</p>
         <div className="mt-5"><ScoreBoard match={match} /></div>
-        <button
-          onClick={async () => {
-            await leaveMatch(matchCode, player.id);
-            localStorage.removeItem(STORAGE_KEY);
-            nav("/");
-          }}
-          className="btn-ghost-gold mt-8 flex items-center gap-2"
-        >
-          <LogOut className="w-4 h-4" />
-          خروج
-        </button>
+        <LeaveMatchButton matchCode={matchCode} playerId={player.id} storageKey={STORAGE_KEY} />
       </div>
     );
   }
@@ -702,17 +694,7 @@ export default function Play() {
 
       {/* خروج */}
       <footer className="pb-4 flex justify-center">
-        <button
-          onClick={async () => {
-            await leaveMatch(matchCode, player.id);
-            localStorage.removeItem(STORAGE_KEY);
-            nav("/");
-          }}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-maroon-light transition-colors"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          مغادرة المسابقة
-        </button>
+        <LeaveMatchButton matchCode={matchCode} playerId={player.id} storageKey={STORAGE_KEY} compact />
       </footer>
     </div>
   );

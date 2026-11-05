@@ -6,7 +6,7 @@ let ctx: AudioContext | null = null;
 let muted = localStorage.getItem("al_midan_muted") === "1";
 
 function ac(): AudioContext {
-  if (!ctx) ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  if (!ctx) ctx = new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!)();
   if (ctx.state === "suspended") void ctx.resume();
   return ctx;
 }

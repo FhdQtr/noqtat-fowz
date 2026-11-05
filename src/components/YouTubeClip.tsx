@@ -6,37 +6,47 @@ import { useEffect, useRef, useState } from "react";
 import { Play, Loader2, CheckCircle2 } from "lucide-react";
 import type { QuestionVideo } from "../types/game";
 
+// الحد الأدنى من واجهة YouTube IFrame API اللي نستخدمها
+interface YtPlayer {
+  playVideo?: () => void;
+  destroy?: () => void;
+}
+interface YtNamespace {
+  Player: new (el: HTMLElement, options: Record<string, unknown>) => YtPlayer;
+  PlayerState: { PLAYING: number; ENDED: number };
+}
+
 declare global {
   interface Window {
-    YT?: any;
+    YT?: YtNamespace;
     onYouTubeIframeAPIReady?: () => void;
   }
 }
 
-let ytApiPromise: Promise<any> | null = null;
+let ytApiPromise: Promise<YtNamespace | null> | null = null;
 
-function loadYtApi(): Promise<any> {
+function loadYtApi(): Promise<YtNamespace | null> {
   if (ytApiPromise) return ytApiPromise;
   ytApiPromise = new Promise((resolve) => {
     if (window.YT?.Player) return resolve(window.YT);
     const prev = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
       prev?.();
-      resolve(window.YT);
+      resolve(window.YT ?? null);
     };
     const tag = document.createElement("script");
     tag.src = "https://www.youtube.com/iframe_api";
     tag.onerror = () => resolve(null);
     document.head.appendChild(tag);
     // احتياط: لو الـ API تأخر، ما نعلّق للأبد
-    setTimeout(() => (window.YT?.Player ? resolve(window.YT) : resolve(null)), 8000);
+    setTimeout(() => resolve(window.YT?.Player ? window.YT : null), 8000);
   });
   return ytApiPromise;
 }
 
 export default function YouTubeClip({ video }: { video: QuestionVideo }) {
   const holderRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YtPlayer | null>(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -65,7 +75,7 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
         },
         events: {
           onReady: () => !destroyed && setReady(true),
-          onStateChange: (e: any) => {
+          onStateChange: (e: { data: number }) => {
             if (destroyed) return;
             if (e.data === YT.PlayerState.PLAYING) setPlaying(true);
             if (e.data === YT.PlayerState.ENDED) {

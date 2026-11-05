@@ -286,23 +286,19 @@ export async function usePowerCard(
   }
 }
 
-export async function judgeVerbal(matchCode: string, _match: Match, correct: boolean) {
-  void _match;
+export async function judgeVerbal(matchCode: string, correct: boolean) {
   await gameAction("judgeVerbal", { matchCode, correct });
 }
 
-export async function revealAnswer(matchCode: string, _match: Match) {
-  void _match;
+export async function revealAnswer(matchCode: string) {
   await gameAction("revealAnswer", { matchCode });
 }
 
-export async function passToNextTeam(matchCode: string, _match: Match) {
-  void _match;
+export async function passToNextTeam(matchCode: string) {
   await gameAction("passToNextTeam", { matchCode });
 }
 
-export async function advanceTurn(matchCode: string, _match: Match) {
-  void _match;
+export async function advanceTurn(matchCode: string) {
   await gameAction("advanceTurn", { matchCode });
 }
 

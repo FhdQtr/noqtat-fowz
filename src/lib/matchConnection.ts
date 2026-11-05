@@ -94,10 +94,7 @@ export function subscribeMatch(code: string, cb: (m: Match | null) => void, onEr
         onError?.("");
         cb(normalizeMatch(snapshot.exists() ? snapshot.val() as Match : null));
       },
-      (error) => {
-        void error;
-        startPolling();
-      },
+      () => startPolling(),
     );
   }).catch((error: unknown) => {
     if (cancelled) return;

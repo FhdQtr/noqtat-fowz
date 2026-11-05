@@ -79,7 +79,7 @@ export default function PunishmentPanel({ match, matchCode, teamCode, host = fal
       {p.stage === "resolved" ? <p className="font-cairo font-black text-2xl text-gold-light">{p.mode === "cancelled" ? "أُنهيت الجولة بدون عقاب أو خصم" : match.state.isCorrect ? "إجابة صحيحة — نجوا من العقاب!" : p.mode === "deduct" ? "تم خصم 200 نقطة من المنافس" : "تم تنفيذ العقاب"}</p> : null}
     </>}
     {host && ["prepare", "answering"].includes(p.stage) ? <button className="btn-ghost-gold !text-sm" disabled={busy} onClick={() => void act("cancelPunishment")}>إنهاء الجولة دون عقاب أو خصم</button> : null}
-    {host && p.stage === "resolved" ? <button className="btn-gold" disabled={busy} onClick={() => { setBusy(true); void advanceTurn(matchCode, match).catch(() => setError("تعذّر الانتقال للسؤال التالي")).finally(() => setBusy(false)); }}>متابعة المسابقة</button> : null}
+    {host && p.stage === "resolved" ? <button className="btn-gold" disabled={busy} onClick={() => { setBusy(true); void advanceTurn(matchCode).catch(() => setError("تعذّر الانتقال للسؤال التالي")).finally(() => setBusy(false)); }}>متابعة المسابقة</button> : null}
     {busy ? <Loader2 className="h-5 w-5 animate-spin text-gold" /> : null}
     {error ? <p role="alert" className="font-bold text-maroon-light">{error}</p> : null}
   </section>;

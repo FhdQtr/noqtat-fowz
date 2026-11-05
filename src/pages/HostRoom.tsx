@@ -165,7 +165,7 @@ export default function HostRoom() {
           <ShowdownPanel match={match} matchCode={code} host size="regular" finishError={showdownFinish.error}
             finishing={showdownFinish.pending} onRetryFinish={showdownFinish.retry} />
           {st.phase === "showdown_revealed" ? (
-            <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
+            <button onClick={() => act(() => advanceTurn(code))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
               <SkipForward className="h-5 w-5" />
               {st.round >= match.totalRounds ? "إعلان الفائز" : "العودة للمسابقة"}
             </button>
@@ -398,7 +398,7 @@ export default function HostRoom() {
               </div>
               <div className="flex gap-3 flex-wrap justify-center">
                 <button
-                  onClick={() => act(() => judgeVerbal(code, match, true))}
+                  onClick={() => act(() => judgeVerbal(code, true))}
                   disabled={busy || viewing || actingTimerWaiting}
                   className="btn-gold shine flex items-center gap-2 text-lg px-8"
                 >
@@ -406,7 +406,7 @@ export default function HostRoom() {
                   أجابوا صح
                 </button>
                 <button
-                  onClick={() => act(() => judgeVerbal(code, match, false))}
+                  onClick={() => act(() => judgeVerbal(code, false))}
                   disabled={busy || viewing || actingTimerWaiting}
                   className="btn-maroon flex items-center gap-2 text-lg px-8"
                 >
@@ -453,14 +453,14 @@ export default function HostRoom() {
           {/* أزرار التحكم */}
           <div className="flex flex-wrap gap-3 justify-center pb-4">
             {st.phase === "locked" && (
-              <button onClick={() => act(() => revealAnswer(code, match))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
+              <button onClick={() => act(() => revealAnswer(code))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
                 <Eye className="w-5 h-5" />
                 اكشف النتيجة
               </button>
             )}
             {st.phase === "question" && (
               <div className="flex gap-2 opacity-80">
-                <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-ghost-gold !text-sm !px-4 !py-2 flex items-center gap-2">
+                <button onClick={() => act(() => advanceTurn(code))} disabled={busy} className="btn-ghost-gold !text-sm !px-4 !py-2 flex items-center gap-2">
                   <SkipForward className="w-4 h-4" />
                   تخطي السؤال
                 </button>
@@ -469,12 +469,12 @@ export default function HostRoom() {
             {st.phase === "revealed" && (
               <>
                 {canPassAfterWrong && (
-                  <button onClick={() => act(() => passToNextTeam(code, match))} disabled={busy} className="btn-maroon flex items-center gap-2 text-lg px-6">
+                  <button onClick={() => act(() => passToNextTeam(code))} disabled={busy} className="btn-maroon flex items-center gap-2 text-lg px-6">
                     <Repeat2 className="w-5 h-5" />
                     انقل السؤال لفريق ثاني
                   </button>
                 )}
-                <button onClick={() => act(() => advanceTurn(code, match))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
+                <button onClick={() => act(() => advanceTurn(code))} disabled={busy} className="btn-gold shine flex items-center gap-2 text-lg px-8">
                   <SkipForward className="w-5 h-5" />
                   {isShowdownDue(match) ? match.challengeMode === "picture_guess" ? "تحدي الصور" : "مواجهة الجميع" : st.round >= match.totalRounds ? "إعلان الفائز" : "السؤال التالي"}
                 </button>

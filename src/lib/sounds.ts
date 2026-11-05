@@ -2,13 +2,23 @@
 // الميدان — مؤثرات صوتية مولّدة بالكود (WebAudio) بدون ملفات
 // ═══════════════════════════════════════════════════════════
 
-let ctx: AudioContext | null = null;
-let muted = localStorage.getItem("al_midan_muted") === "1";
+import { readStored, writeStored } from "./storage";
 
-function ac(): AudioContext {
-  if (!ctx) ctx = new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!)();
-  if (ctx.state === "suspended") void ctx.resume();
-  return ctx;
+let ctx: AudioContext | null = null;
+let muted = readStored("al_midan_muted") === "1";
+
+function ac(): AudioContext | null {
+  try {
+    const AudioContextClass = window.AudioContext || (window as Window & {
+      webkitAudioContext?: typeof AudioContext;
+    }).webkitAudioContext;
+    if (!AudioContextClass) return null;
+    if (!ctx) ctx = new AudioContextClass();
+    if (ctx.state === "suspended") void ctx.resume().catch(() => undefined);
+    return ctx;
+  } catch {
+    return null;
+  }
 }
 
 function tone(
@@ -21,6 +31,7 @@ function tone(
 ) {
   if (muted) return;
   const c = ac();
+  if (!c) return;
   const o = c.createOscillator();
   const g = c.createGain();
   o.type = type;
@@ -112,7 +123,7 @@ export function isAudioMuted() {
 
 export function setAudioMuted(value: boolean) {
   muted = value;
-  localStorage.setItem("al_midan_muted", value ? "1" : "0");
+  writeStored("al_midan_muted", value ? "1" : "0");
   if (!value) {
     unlockAudio();
     sfx.click();

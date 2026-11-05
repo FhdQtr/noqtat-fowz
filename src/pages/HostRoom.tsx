@@ -1,128 +1,40 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
-  Tv, Play, Users, Crown, Eye, Repeat2, SkipForward,
-  Trophy, Loader2, LogOut, Timer, CheckCircle2, XCircle, Share2, Trash2, WifiOff,
+  Tv, Users, Crown, Eye, Repeat2, SkipForward,
+  Loader2, LogOut, Timer, CheckCircle2, XCircle, WifiOff,
   MessageSquare, EyeOff, Drama, Zap, ListChecks, PlayCircle,
 } from "lucide-react";
 import {
-  subscribeMatch, startMatch, revealAnswer, judgeVerbal,
-  passToNextTeam, advanceTurn, endMatch, deleteMatch, setCaptain,
+  revealAnswer, judgeVerbal,
+  passToNextTeam, advanceTurn, endMatch, setCaptain,
   setAnswerMode, submitHostAnswer, startQuestionTimer, useAssist as requestAssist,
-  getHostAnswerDetails, isShowdownDue, getTeamInvites, revealQuestionPrompt,
+  isShowdownDue,
 } from "../lib/matchApi";
-import type { TeamInvites, HostAnswerDetails } from "../lib/matchApi";
-import type { AnswerMode, Match } from "../types/game";
-import { TEAM_COLORS, viewSecondsFor, questionPoints, questionTimerSeconds, canPassQuestion, usesVerbalChoices } from "../types/game";
+import { TEAM_COLORS, viewSecondsFor, questionPoints, canPassQuestion, usesVerbalChoices } from "../types/game";
 import ScoreBoard from "../components/ScoreBoard";
-import QrCode from "../components/QrCode";
-import GoldConfetti from "../components/GoldConfetti";
 import { QuestionMeta, QuestionBody, OptionsDisplay } from "../components/QuestionCard";
-import { sfx, unlockAudio } from "../lib/sounds";
-import { useNow } from "../lib/useNow";
+import { unlockAudio } from "../lib/sounds";
 import { ANSWER_LETTERS } from "../lib/answers";
 import PowerCardEvent from "../components/PowerCardEvent";
 import ShowdownPanel from "../components/ShowdownPanel";
 import { useShowdownFinish } from "../lib/useShowdownFinish";
 import PunishmentPanel from "../components/PunishmentPanel";
 import ScoreAdjustmentPanel from "../components/ScoreAdjustmentPanel";
+import { useAsyncAction } from "../lib/useAsyncAction";
 
-const PUBLIC_GAME_ORIGIN = "https://qtrgame.net";
+import { PUBLIC_GAME_ORIGIN } from "../lib/links";
+import { useHostRoom } from "./host/useHostRoom";
+import HostLobby from "./host/HostLobby";
+import HostResults from "./host/HostResults";
+import AnswerModeControls from "./host/AnswerModeControls";
 
 export default function HostRoom() {
   const { code = "" } = useParams();
   const nav = useNavigate();
-  const [match, setMatch] = useState<Match | null | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  const [connErr, setConnErr] = useState("");
-  const [hostAnswer, setHostAnswer] = useState<HostAnswerDetails | null>(null);
-  const [invites, setInvites] = useState<TeamInvites | null>(null);
-  const prevPhase = useRef<string>("");
-  const lastTimerSecond = useRef<number | null>(null);
-
-  useEffect(() => subscribeMatch(code, setMatch, setConnErr), [code]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void getTeamInvites(code)
-      .then((result) => { if (!cancelled) setInvites(result); })
-      .catch(() => { if (!cancelled) setInvites(null); });
-    return () => { cancelled = true; };
-  }, [code]);
-
-  const questionId = match?.state.question?.id ?? null;
-  const pictureQuestion = match?.state.showdown?.kind === "picture_guess";
-  useEffect(() => {
-    let cancelled = false;
-    if (questionId === null || pictureQuestion) {
-      setHostAnswer(null);
-      return () => { cancelled = true; };
-    }
-    setHostAnswer(null);
-    void getHostAnswerDetails(code, questionId)
-      .then((answer) => { if (!cancelled) setHostAnswer(answer); })
-      .catch(() => { if (!cancelled) setHostAnswer(null); });
-    return () => { cancelled = true; };
-  }, [code, questionId, pictureQuestion]);
-
-  const players = useMemo(() => Object.values(match?.players ?? {}), [match]);
-
+  const { match, timeLeft, connErr, hostAnswer, invites, now } = useHostRoom(code);
+  const { busy, error: actionError, run: runAction } = useAsyncAction();
+  const players = Object.values(match?.players ?? {});
   const showdownFinish = useShowdownFinish(code, match);
-
-  // ساعة حيّة لعدّاد معاينة الصور (الذاكرة/الأعلام)
-  const stv = match?.state;
-  const now = useNow(
-    stv?.viewUntil && (stv.phase === "question" || stv.phase === "locked") ? 250 : null
-  );
-
-  useEffect(() => {
-    if (!stv?.question?.promptHidden || !stv.viewUntil) return;
-    const timer = window.setTimeout(
-      () => { void revealQuestionPrompt(code); },
-      Math.max(0, stv.viewUntil - Date.now() + 100),
-    );
-    return () => window.clearTimeout(timer);
-  }, [code, stv?.question?.id, stv?.question?.promptHidden, stv?.viewUntil]);
-
-  // مؤقت السؤال (اختياري)
-  useEffect(() => {
-    lastTimerSecond.current = null;
-    const duration = match ? questionTimerSeconds(match) : 0;
-    if (!match || duration === 0 || match.state.phase !== "question" || !match.state.questionStartedAt) {
-      setTimeLeft(null);
-      return;
-    }
-    const tick = () => {
-      const elapsed = Math.floor((Date.now() - match.state.questionStartedAt!) / 1000);
-      const total = duration + (match.state.extraTimeUsed ? 15 : 0);
-      const left = Math.max(0, total - elapsed);
-      if (left !== lastTimerSecond.current) {
-        setTimeLeft(left);
-        if (left <= 5 && left > 0) sfx.tick();
-        lastTimerSecond.current = left;
-      }
-    };
-    tick();
-    const iv = setInterval(tick, 250);
-    return () => clearInterval(iv);
-  }, [match]);
-
-  // مؤثرات عند تغير المرحلة
-  useEffect(() => {
-    if (!match) return;
-    const ph = match.state.phase;
-    if (prevPhase.current !== ph) {
-      if (ph === "locked") sfx.lock();
-      if (ph === "revealed") {
-        if (match.state.isCorrect) sfx.correct();
-        else sfx.wrong();
-      }
-      if (ph === "ended") sfx.fanfare();
-      prevPhase.current = ph;
-    }
-  }, [match]);
 
   if (connErr)
     return (
@@ -156,8 +68,6 @@ export default function HostRoom() {
   const chooseTeam =
     (st.targetTeam ? match.teams[st.targetTeam] : null) ??
     match.teams[match.teamOrder[match.turnIndex % match.teamOrder.length]];
-  const winners = st.phase === "ended" ? [...teams].sort((a, b) => b.score - a.score) : [];
-  const isTie = winners.length > 1 && winners[0].score === winners[1].score;
 
   const visual = st.question ? viewSecondsFor(st.question) !== null : false;
   const viewing = !!(st.viewUntil && now < st.viewUntil);
@@ -173,9 +83,6 @@ export default function HostRoom() {
     && st.phase === "question"
     && st.question?.type !== "acting"
     && !(usesVerbalChoices(st.question?.type) && !st.assistUsed);
-  const missingRepresentatives = match.answerMode === "representative"
-    ? teams.some((team) => !team.captainId || !match.players?.[team.captainId])
-    : false;
   const canPassAfterWrong = canPassQuestion(match);
   const awayPlayers = (st.phase === "question" || st.phase === "showdown") && st.question
     ? Object.entries(match.questionWatch ?? {}).flatMap(([playerId, watch]) => {
@@ -187,186 +94,17 @@ export default function HostRoom() {
     : [];
 
   const act = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
     unlockAudio();
-    try {
-      await fn();
-    } finally {
-      setBusy(false);
-    }
+    await runAction(fn);
   };
 
-  const shareTv = () => {
-    const viewerKey = invites?.viewerKey;
-    const url = `${PUBLIC_GAME_ORIGIN}/tv/${code}${viewerKey ? `?key=${encodeURIComponent(viewerKey)}` : ""}`;
-    navigator.clipboard?.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  // ═══════════ شاشة النهاية ═══════════
-  if (st.phase === "ended")
-    return (
-      <div className="min-h-dvh flex flex-col items-center justify-center px-4 relative">
-        <GoldConfetti />
-        <div className="fixed inset-0 -z-10">
-          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-30" />
-          <div className="absolute inset-0 bg-night/80" />
-        </div>
-        <img src="/img/trophy.png" alt="الكأس" className="w-44 h-44 object-contain animate-float-slow drop-shadow-[0_0_44px_rgba(212,175,55,0.6)]" />
-        <h1 className="mt-4 text-3xl sm:text-5xl font-black font-cairo text-gold-gradient text-center">
-          {isTie ? "تعادل مثير!" : `الفائز: ${winners[0]?.name}`}
-        </h1>
-        {!isTie && winners[0] && (
-          <p className="mt-2 text-gold-light font-cairo text-xl">{winners[0].score} نقطة</p>
-        )}
-        <div className="mt-8 glass-card p-6 w-full max-w-md">
-          {winners.map((t, i) => {
-            const c = TEAM_COLORS[t.color];
-            return (
-              <div key={t.code} className="flex items-center gap-3 py-2.5 border-b border-gold-faint/20 last:border-0">
-                <span className="w-8 text-center font-black font-cairo text-gold-light">{i + 1}</span>
-                <span className="w-3.5 h-3.5 rounded-full" style={{ background: c.light }} />
-                <span className="flex-1 font-cairo font-bold">{t.name}</span>
-                <span className="text-xs text-muted-foreground">{t.correctCount} صح · {t.wrongCount} غلط</span>
-                <span className="font-black font-cairo text-gold-gradient text-xl">{t.score}</span>
-              </div>
-            );
-          })}
-        </div>
-        <ScoreAdjustmentPanel match={match} matchCode={code} />
-        <div className="mt-8 flex flex-wrap gap-3 justify-center">
-          <button onClick={() => nav("/host")} className="btn-gold flex items-center gap-2">
-            <Trophy className="w-5 h-5" />
-            مسابقة جديدة
-          </button>
-          <button onClick={() => nav("/")} className="btn-ghost-gold">الرئيسية</button>
-          <button onClick={() => act(() => deleteMatch(code))} className="btn-ghost-gold !border-maroon/50 !text-maroon-light flex items-center gap-2">
-            <Trash2 className="w-4 h-4" />
-            حذف الغرفة
-          </button>
-        </div>
-      </div>
-    );
-
-  // ═══════════ اللوبي (قبل البدء) ═══════════
-  if (match.status === "lobby")
-    return (
-      <div className="min-h-dvh px-4 py-6 flex flex-col items-center">
-        <div className="fixed inset-0 -z-10">
-          <img src="/img/al-midan-hero.webp" alt="" className="w-full h-full object-cover opacity-25" />
-          <div className="absolute inset-0 bg-night/85" />
-        </div>
-
-        <p className="text-sm text-muted-foreground">كود المسابقة</p>
-        <div className="flex items-center gap-3 mt-1">
-          <span className="text-4xl sm:text-5xl font-black font-cairo tracking-[0.3em] text-gold-gradient" dir="ltr">{code}</span>
-          <button onClick={shareTv} className="btn-ghost-gold !p-2" title="نسخ رابط شاشة العرض">
-            {copied ? <CheckCircle2 className="w-5 h-5 text-emerald2-light" /> : <Share2 className="w-5 h-5" />}
-          </button>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-3 justify-center">
-          <button onClick={() => window.open(`${PUBLIC_GAME_ORIGIN}/tv/${code}${invites?.viewerKey ? `?key=${encodeURIComponent(invites.viewerKey)}` : ""}`, "_blank", "noopener,noreferrer")} className="btn-gold flex items-center gap-2">
-            <Tv className="w-5 h-5" />
-            افتح شاشة العرض (التلفزيون)
-          </button>
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">كل لاعب يمسح QR حق فريقه ويدخل مباشرة</p>
-
-        <div className="mt-6 w-full max-w-3xl">
-          <AnswerModeControls
-            value={match.answerMode ?? "anyone"}
-            disabled={busy}
-            onChange={(mode) => act(() => setAnswerMode(code, mode))}
-          />
-        </div>
-
-        {/* بطاقات الفرق مع QR */}
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-5 w-full max-w-3xl">
-          {teams.map((t) => {
-            const c = TEAM_COLORS[t.color];
-            const members = players.filter((p) => p.teamCode === t.code);
-            return (
-              <div
-                key={t.code}
-                className="glass-card p-5 flex flex-col items-center animate-fade-up"
-                style={{ borderColor: `${c.hex}88` }}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-4 h-4 rounded-full" style={{ background: c.light, boxShadow: `0 0 10px ${c.light}` }} />
-                  <h3 className="font-cairo font-black text-xl" style={{ color: c.light }}>{t.name}</h3>
-                </div>
-                {invites?.teamKeys[t.code] ? (
-                  <>
-                    <p className="mb-3 text-3xl font-black tracking-widest text-gold-light" dir="ltr">{invites.shortTeamCodes?.[t.code] ?? `${t.code}-${invites.teamKeys[t.code]}`}</p>
-                    <QrCode value={`${PUBLIC_GAME_ORIGIN}/play/${t.code}?key=${encodeURIComponent(invites.teamKeys[t.code])}`} size={130} label="امسح للدخول الآمن" />
-                  </>
-                ) : (
-                  <div className="flex h-[166px] items-center justify-center text-sm text-muted-foreground">
-                    <Loader2 className="ml-2 h-5 w-5 animate-spin" /> جاري تجهيز رابط الفريق
-                  </div>
-                )}
-                <div className="mt-4 w-full">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
-                    <Users className="w-3.5 h-3.5" />
-                    <span>{members.length} لاعب</span>
-                    <span className="text-muted-foreground/60">— اضغط على الاسم لتعيينه ممثل الفريق</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 min-h-[28px]">
-                    {members.map((p) => {
-                      const isCap = t.captainId === p.id;
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => setCaptain(code, t.code, isCap ? null : p.id)}
-                          title={isCap ? "إلغاء التعيين" : "تعيين ممثل الفريق"}
-                          className={`rounded-full px-3 py-1 text-xs font-bold font-cairo animate-scale-in transition-all flex items-center gap-1 ${
-                            isCap ? "ring-2 ring-gold scale-105" : "hover:scale-105"
-                          }`}
-                          style={{
-                            background: isCap ? "#d4af3733" : `${c.hex}33`,
-                            color: isCap ? "#f3dd9a" : c.light,
-                            border: `1px solid ${isCap ? "#d4af37" : `${c.hex}66`}`,
-                          }}
-                        >
-                          {isCap && <Crown className="w-3 h-3" />}
-                          {p.name}
-                        </button>
-                      );
-                    })}
-                    {members.length === 0 && <span className="text-xs text-muted-foreground/60">بانتظار اللاعبين…</span>}
-                  </div>
-                  {t.captainId && (
-                    <p className="mt-1.5 text-[11px] text-gold-light/80 font-cairo">
-                      ممثل الفريق هو الوحيد الذي يثبت الإجابة في وضع «ممثل الفريق»
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <button
-          onClick={() => act(() => startMatch(code, match.teamOrder[0]))}
-          disabled={busy || players.length === 0 || missingRepresentatives}
-          className="btn-gold shine mt-10 text-lg px-10 flex items-center gap-2"
-        >
-          <Play className="w-5 h-5" />
-          {players.length === 0
-            ? "بانتظار دخول اللاعبين…"
-            : missingRepresentatives
-              ? "عيّن ممثلاً لكل فريق"
-              : "ابدأ المسابقة"}
-        </button>
-      </div>
-    );
+  if (st.phase === "ended") return <HostResults match={match} code={code} />;
+  if (match.status === "lobby") return <HostLobby match={match} code={code} invites={invites} />;
 
   // ═══════════ أثناء اللعب — تحكم المقدم ═══════════
   return (
     <div className="min-h-dvh px-4 py-5 flex flex-col max-w-3xl mx-auto w-full">
+      {actionError && <p role="alert" className="mb-4 text-maroon-light font-bold">{actionError}</p>}
       <PowerCardEvent match={match} />
       <ScoreAdjustmentPanel match={match} matchCode={code} />
       <div className="fixed inset-0 -z-10">
@@ -745,51 +483,6 @@ export default function HostRoom() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-const ANSWER_MODE_LABELS: Record<AnswerMode, { label: string; hint: string }> = {
-  representative: { label: "ممثل الفريق", hint: "شخص محدد من كل فريق يثبت الإجابة" },
-  host: { label: "المقدم فقط", hint: "الفرق تختار النوع والمقدم يثبت الإجابة" },
-  anyone: { label: "أي لاعب", hint: "أول لاعب يضغط يثبت الإجابة" },
-};
-
-function AnswerModeControls({
-  value,
-  disabled,
-  compact = false,
-  onChange,
-}: {
-  value: AnswerMode;
-  disabled: boolean;
-  compact?: boolean;
-  onChange: (mode: AnswerMode) => void;
-}) {
-  return (
-    <div className={`glass-card ${compact ? "p-3" : "p-4"}`}>
-      <p className="mb-2 text-xs font-bold text-gold-light">من يثبت الإجابة؟</p>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {(Object.keys(ANSWER_MODE_LABELS) as AnswerMode[]).map((mode) => {
-          const option = ANSWER_MODE_LABELS[mode];
-          const active = value === mode;
-          return (
-            <button
-              key={mode}
-              onClick={() => onChange(mode)}
-              disabled={disabled || active}
-              className={`rounded-xl border px-3 py-2 text-right font-cairo transition-colors ${
-                active
-                  ? "border-gold bg-gold/20 text-gold-light"
-                  : "border-gold-faint/40 text-muted-foreground hover:border-gold/60"
-              }`}
-            >
-              <span className="block text-sm font-bold">{option.label}</span>
-              {!compact && <span className="mt-0.5 block text-[11px] opacity-75">{option.hint}</span>}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }

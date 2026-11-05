@@ -6,47 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import { Play, Loader2, CheckCircle2 } from "lucide-react";
 import type { QuestionVideo } from "../types/game";
 
-// الحد الأدنى من واجهة YouTube IFrame API اللي نستخدمها
-interface YtPlayer {
-  playVideo?: () => void;
-  destroy?: () => void;
-}
-interface YtNamespace {
-  Player: new (el: HTMLElement, options: Record<string, unknown>) => YtPlayer;
-  PlayerState: { PLAYING: number; ENDED: number };
-}
-
-declare global {
-  interface Window {
-    YT?: YtNamespace;
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-let ytApiPromise: Promise<YtNamespace | null> | null = null;
-
-function loadYtApi(): Promise<YtNamespace | null> {
-  if (ytApiPromise) return ytApiPromise;
-  ytApiPromise = new Promise((resolve) => {
-    if (window.YT?.Player) return resolve(window.YT);
-    const prev = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      prev?.();
-      resolve(window.YT ?? null);
-    };
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    tag.onerror = () => resolve(null);
-    document.head.appendChild(tag);
-    // احتياط: لو الـ API تأخر، ما نعلّق للأبد
-    setTimeout(() => resolve(window.YT?.Player ? window.YT : null), 8000);
-  });
-  return ytApiPromise;
-}
+import { loadYouTubeAPI, type YouTubePlayer } from "../lib/youtube";
 
 export default function YouTubeClip({ video }: { video: QuestionVideo }) {
   const holderRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<YtPlayer | null>(null);
+  const playerRef = useRef<YouTubePlayer | null>(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -54,13 +18,20 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
 
   useEffect(() => {
     let destroyed = false;
-    loadYtApi().then((YT) => {
+    const holder = holderRef.current;
+    setReady(false);
+    setPlaying(false);
+    setEnded(false);
+    setFailed(false);
+    void loadYouTubeAPI().then((YT) => {
       if (destroyed) return;
-      if (!YT || !holderRef.current) {
+      if (!YT || !holder) {
         setFailed(true);
         return;
       }
-      playerRef.current = new YT.Player(holderRef.current, {
+      const target = document.createElement("div");
+      holder.replaceChildren(target);
+      playerRef.current = new YT.Player(target, {
         videoId: video.youtubeId,
         width: "100%",
         height: "100%",
@@ -75,9 +46,9 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
         },
         events: {
           onReady: () => !destroyed && setReady(true),
-          onStateChange: (e: { data: number }) => {
+          onStateChange: (e) => {
             if (destroyed) return;
-            if (e.data === YT.PlayerState.PLAYING) setPlaying(true);
+            setPlaying(e.data === YT.PlayerState.PLAYING);
             if (e.data === YT.PlayerState.ENDED) {
               setEnded(true);
               setPlaying(false);
@@ -86,22 +57,24 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
           onError: () => !destroyed && setFailed(true),
         },
       });
-    });
+    }).catch(() => { if (!destroyed) setFailed(true); });
     return () => {
       destroyed = true;
       try {
-        playerRef.current?.destroy?.();
+        playerRef.current?.destroy();
       } catch {
-        /* تجاهل */
+        // The iframe may already have been removed by navigation.
       }
+      playerRef.current = null;
+      holder?.replaceChildren();
     };
   }, [video.youtubeId, video.start, video.end]);
 
   const play = () => {
     try {
-      playerRef.current?.playVideo?.();
+      playerRef.current?.playVideo();
     } catch {
-      /* تجاهل */
+      setFailed(true);
     }
   };
 
@@ -113,7 +86,7 @@ export default function YouTubeClip({ video }: { video: QuestionVideo }) {
       >
         <div ref={holderRef} className="absolute inset-0 w-full h-full [&>iframe]:w-full [&>iframe]:h-full" />
         {/* زر التشغيل — يختفي أول ما يشتغل المقطع */}
-        {!playing && !ended && (
+        {!playing && !ended && !failed && (
           <button
             onClick={play}
             disabled={!ready}
